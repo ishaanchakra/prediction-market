@@ -1,13 +1,26 @@
 @import "tailwindcss";
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --carnelian: #B31B1B;
   --carnelian-dark: #8B1414;
-  --cream: #F7F4EF;
-  --eggshell: #FAF8F3;
+  --cream: #FFF9F0;
+  --eggshell: #FFFBF5;
 }
 
 body {
-  background-color: var(--eggshell);
+  background-color: var(--cream);
   color: #1a1a1a;
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #B31B1B 0%, #CC3333 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 }

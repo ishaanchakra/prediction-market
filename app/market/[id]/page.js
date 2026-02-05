@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { doc, getDoc, updateDoc, addDoc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { calculateBet } from '@/utils/amm';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -156,100 +157,119 @@ export default function MarketPage() {
   const isResolved = market.resolution !== null;
 
   return (
-    <div className="min-h-screen bg-eggshell p-8">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-carnelian">{market.question}</h1>
-        
-        <div className="bg-carnelian rounded-lg p-6 mb-8 shadow-lg">
-          <p className="text-5xl font-bold text-cream text-center">
-            {typeof market.probability === 'number'
-              ? `${Math.round(market.probability * 100)}%`
-              : 'N/A'}
-          </p>
-          <p className="text-center text-cream mt-2 opacity-90">Current Probability</p>
+    <div className="min-h-screen bg-cream py-8">
+      <div className="max-w-4xl mx-auto px-6">
+        {/* Market Title */}
+        <div className="mb-8">
+          <Link href="/" className="text-carnelian font-semibold hover:underline mb-4 inline-block">
+            ← Back to markets
+          </Link>
+          <h1 className="text-5xl font-black text-gray-900 leading-tight">
+            {market.question}
+          </h1>
         </div>
 
+        {/* Current Probability - Big Display */}
+        <div className="bg-gradient-to-br from-carnelian to-carnelian-dark rounded-3xl p-8 mb-6 shadow-xl">
+          <div className="text-center">
+            <p className="text-white text-lg font-bold mb-2 opacity-90 uppercase tracking-wide">
+              Yes Chance
+            </p>
+            <p className="text-8xl font-black text-white">
+              {typeof market.probability === 'number'
+                ? `${Math.round(market.probability * 100)}%`
+                : '—'}
+            </p>
+          </div>
+        </div>
+
+        {/* Chart */}
         {betHistory.length > 1 && (
-          <div className="bg-cream border-2 border-carnelian rounded-lg p-6 mb-6 shadow-md">
-            <h2 className="text-lg font-semibold mb-4 text-carnelian">Probability History</h2>
-            <ResponsiveContainer width="100%" height={250}>
+          <div className="bg-white rounded-3xl border-2 border-gray-100 p-8 mb-6 shadow-lg">
+            <h2 className="text-2xl font-black mb-6 text-gray-900">Market Activity</h2>
+            <ResponsiveContainer width="100%" height={300}>
               <LineChart data={betHistory}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ddd" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis 
                   dataKey="timestamp" 
                   tickFormatter={(timestamp) => {
                     const date = new Date(timestamp);
-                    return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                    return `${date.getMonth()+1}/${date.getDate()}`;
                   }}
-                  tick={{ fontSize: 12, fill: '#666' }}
+                  tick={{ fontSize: 13, fontWeight: 600, fill: '#666' }}
                 />
                 <YAxis 
                   domain={['dataMin - 0.1', 'dataMax + 0.1']}
                   tickFormatter={(value) => `${Math.round(value * 100)}%`}
-                  tick={{ fontSize: 12, fill: '#666' }}
+                  tick={{ fontSize: 13, fontWeight: 600, fill: '#666' }}
                 />
                 <Tooltip 
-                  formatter={(value) => `${Math.round(value * 100)}%`}
-                  labelFormatter={(timestamp) => {
-                    const date = new Date(timestamp);
-                    return date.toLocaleString();
+                  formatter={(value) => [`${Math.round(value * 100)}%`, 'Probability']}
+                  labelFormatter={(timestamp) => new Date(timestamp).toLocaleString()}
+                  contentStyle={{ 
+                    backgroundColor: '#fff', 
+                    border: '2px solid #B31B1B',
+                    borderRadius: '12px',
+                    fontWeight: 600
                   }}
-                  contentStyle={{ backgroundColor: '#F7F4EF', border: '2px solid #B31B1B' }}
                 />
                 <Line 
                   type="monotone" 
                   dataKey="probability" 
                   stroke="#B31B1B" 
-                  strokeWidth={3}
-                  dot={{ fill: '#B31B1B', r: 4 }}
+                  strokeWidth={4}
+                  dot={{ fill: '#B31B1B', r: 5, strokeWidth: 2, stroke: '#fff' }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
         )}
 
-        <div className="bg-cream border-2 border-carnelian rounded-lg p-6 mb-6 shadow-md">
+        {/* Betting Interface */}
+        <div className="bg-white rounded-3xl border-2 border-gray-100 p-8 mb-6 shadow-lg">
           {isResolved ? (
-            <div className="text-center py-8">
-              <div className="text-5xl mb-4">
-                {market.resolution === 'YES' ? '✅' : '❌'}
+            <div className="text-center py-12">
+              <div className="text-7xl mb-6">
+                {market.resolution === 'YES' ? '🎉' : '😔'}
               </div>
-              <h2 className="text-2xl font-bold mb-2 text-carnelian">
-                Market Resolved: {market.resolution}
+              <h2 className="text-4xl font-black mb-3 text-gray-900">
+                Resolved: {market.resolution}
               </h2>
-              <p className="text-gray-600">
-                This market is closed for betting.
+              <p className="text-xl text-gray-600 font-semibold">
+                This market is closed for trading
               </p>
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-semibold mb-4 text-carnelian">Place a Bet</h2>
+              <h2 className="text-3xl font-black mb-6 text-gray-900">Place Your Bet</h2>
               
-              <div className="flex gap-4 mb-4">
-                <button
-                  onClick={() => setSelectedSide('YES')}
-                  className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors ${
-                    selectedSide === 'YES'
-                      ? 'bg-carnelian text-cream shadow-lg'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  YES
-                </button>
-                <button
-                  onClick={() => setSelectedSide('NO')}
-                  className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors ${
-                    selectedSide === 'NO'
-                      ? 'bg-carnelian text-cream shadow-lg'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  NO
-                </button>
-              </div>
+              {/* YES/NO Buttons */}
+<div className="grid grid-cols-2 gap-4 mb-6">
+  <button
+    onClick={() => setSelectedSide('YES')}
+    className={`py-6 px-8 rounded-2xl font-black text-2xl transition-all ${
+      selectedSide === 'YES'
+        ? 'bg-green-600 text-white shadow-xl scale-105'
+        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+    }`}
+  >
+    YES
+  </button>
+  <button
+    onClick={() => setSelectedSide('NO')}
+    className={`py-6 px-8 rounded-2xl font-black text-2xl transition-all ${
+      selectedSide === 'NO'
+        ? 'bg-red-600 text-white shadow-xl scale-105'
+        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+    }`}
+  >
+    NO
+  </button>
+</div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              {/* Amount Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
                   Bet Amount (rep)
                 </label>
                 <input
@@ -257,29 +277,35 @@ export default function MarketPage() {
                   value={betAmount}
                   onChange={(e) => setBetAmount(e.target.value)}
                   placeholder="Enter amount"
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-carnelian focus:border-carnelian"
+                  className="w-full px-6 py-4 border-2 border-gray-200 rounded-2xl text-2xl font-bold focus:ring-4 focus:ring-carnelian/20 focus:border-carnelian transition-all"
                   min="1"
                 />
               </div>
 
+              {/* Preview */}
               {preview && (
-                <div className="bg-eggshell border border-carnelian rounded-lg p-4 mb-4">
-                  <p className="text-sm text-gray-600 mb-2">Preview:</p>
-                  <p className="font-semibold text-carnelian">You'll receive: {preview.shares.toFixed(2)} shares</p>
-                  <p className="text-sm text-gray-600">New probability: {Math.round(preview.newProbability * 100)}%</p>
+                <div className="bg-cream border-2 border-carnelian/20 rounded-2xl p-6 mb-6">
+                  <p className="text-sm font-bold text-gray-600 mb-3 uppercase tracking-wide">Preview</p>
+                  <p className="text-2xl font-black text-carnelian mb-1">
+                    {preview.shares.toFixed(2)} shares
+                  </p>
+                  <p className="text-gray-600 font-semibold">
+                    New probability: {Math.round(preview.newProbability * 100)}%
+                  </p>
                 </div>
               )}
 
+              {/* Submit Button */}
               <button
                 onClick={handlePlaceBet}
                 disabled={!betAmount || submitting || !auth.currentUser}
-                className="w-full bg-carnelian text-cream py-3 px-6 rounded-lg font-semibold hover:bg-carnelian-dark disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors shadow-md"
+                className="w-full bg-gradient-to-r from-carnelian to-carnelian-dark text-white py-5 px-8 rounded-2xl text-xl font-black hover:shadow-2xl disabled:bg-gray-300 disabled:cursor-not-allowed transition-all transform hover:scale-105 disabled:transform-none"
               >
-                {submitting ? 'Placing Bet...' : 'Place Bet'}
+                {submitting ? 'Placing Bet...' : `Bet ${selectedSide}`}
               </button>
 
               {!auth.currentUser && (
-                <p className="text-sm text-carnelian mt-2 text-center font-medium">
+                <p className="text-center text-carnelian font-bold mt-4">
                   Please log in to place bets
                 </p>
               )}
@@ -287,10 +313,23 @@ export default function MarketPage() {
           )}
         </div>
 
-        <div className="bg-cream border-2 border-carnelian rounded-lg p-4 shadow-md">
-          <h3 className="font-semibold mb-2 text-carnelian">Liquidity Pool</h3>
-          <p className="text-sm text-gray-600">YES: {market.liquidityPool?.yes?.toFixed(2) || 0}</p>
-          <p className="text-sm text-gray-600">NO: {market.liquidityPool?.no?.toFixed(2) || 0}</p>
+        {/* Liquidity Pool */}
+        <div className="bg-white rounded-2xl border-2 border-gray-100 p-6 shadow-md">
+          <h3 className="font-black text-gray-900 mb-3 text-lg">Liquidity Pool</h3>
+          <div className="grid grid-cols-2 gap-4 text-center">
+            <div className="bg-cream rounded-xl p-4">
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">YES</p>
+              <p className="text-2xl font-black text-carnelian">
+                {market.liquidityPool?.yes?.toFixed(0) || 0}
+              </p>
+            </div>
+            <div className="bg-cream rounded-xl p-4">
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">NO</p>
+              <p className="text-2xl font-black text-gray-700">
+                {market.liquidityPool?.no?.toFixed(0) || 0}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
