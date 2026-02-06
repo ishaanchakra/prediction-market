@@ -34,6 +34,13 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      // Check for cornell.edu email
+      if (!email.endsWith('@cornell.edu')) {
+        setError('Only @cornell.edu emails are allowed to sign up.');
+        setIsLoading(false);
+        return;
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 

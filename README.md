@@ -2,6 +2,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+**Tailwind CSS:** The dev script uses Webpack (required for PostCSS/Tailwind in Next.js 16). Run from **this project directory** (the folder you opened in the editor), not a different copy (e.g. not from `Desktop/prediction-market` if your project is elsewhere).
+
 First, run the development server:
 
 ```bash
