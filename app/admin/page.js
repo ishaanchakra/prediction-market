@@ -5,7 +5,6 @@ import { collection, query, where, getDocs, doc, getDoc, updateDoc, writeBatch, 
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-// Add your email here to grant admin access
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 export default function AdminPage() {
@@ -13,12 +12,12 @@ export default function AdminPage() {
   const [markets, setMarkets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState(null);
-  const router = useRouter();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newMarketQuestion, setNewMarketQuestion] = useState('');
   const [creating, setCreating] = useState(false);
-  const [initialProbability, setInitialProbability] = useState(50); // ADD THIS (default 50%)
-  const [liquidityAmount, setLiquidityAmount] = useState(1000);     // ADD THIS (default 1000)
+  const [initialProbability, setInitialProbability] = useState(50);
+  const [liquidityAmount, setLiquidityAmount] = useState(1000);
+  const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -27,7 +26,6 @@ export default function AdminPage() {
         return;
       }
 
-      // Check if user is admin
       if (!ADMIN_EMAILS.includes(currentUser.email)) {
         alert('Access denied. Admin only.');
         router.push('/');
@@ -59,6 +57,48 @@ export default function AdminPage() {
     }
   }
 
+  async function handleCreateMarket() {
+    if (!newMarketQuestion.trim()) {
+      alert('Please enter a question');
+      return;
+    }
+
+    if (initialProbability < 1 || initialProbability > 99) {
+      alert('Probability must be between 1% and 99%');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const probDecimal = initialProbability / 100;
+      const yesPool = liquidityAmount * probDecimal / (1 - probDecimal);
+      const noPool = liquidityAmount;
+
+      await addDoc(collection(db, 'markets'), {
+        question: newMarketQuestion.trim(),
+        probability: probDecimal,
+        liquidityPool: {
+          yes: yesPool,
+          no: noPool
+        },
+        resolution: null,
+        createdAt: new Date()
+      });
+
+      alert('Market created successfully!');
+      setNewMarketQuestion('');
+      setInitialProbability(50);
+      setLiquidityAmount(1000);
+      setShowCreateForm(false);
+      await fetchUnresolvedMarkets();
+    } catch (error) {
+      console.error('Error creating market:', error);
+      alert('Error creating market. Check console.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function handleResolve(marketId, resolution) {
     if (!confirm(`Are you sure you want to resolve this market as ${resolution}?`)) {
       return;
@@ -66,21 +106,17 @@ export default function AdminPage() {
 
     setResolving(marketId);
     try {
-      // Fetch all bets for this market
       const betsQuery = query(
         collection(db, 'bets'),
         where('marketId', '==', marketId)
       );
       const betsSnapshot = await getDocs(betsQuery);
       
-      // Calculate payouts
       const batch = writeBatch(db);
-      const userPayouts = {}; // Track total payout per user
+      const userPayouts = {};
 
       betsSnapshot.docs.forEach(betDoc => {
         const bet = betDoc.data();
-        
-        // Winners get 1 rep per share, losers get 0
         if (bet.side === resolution) {
           const payout = bet.shares;
           if (!userPayouts[bet.userId]) {
@@ -90,37 +126,34 @@ export default function AdminPage() {
         }
       });
 
-      // Update user balances and create notifications
-const marketDoc = await getDoc(doc(db, 'markets', marketId));
-const marketQuestion = marketDoc.data().question;
+      const marketDoc = await getDoc(doc(db, 'markets', marketId));
+      const marketQuestion = marketDoc.data().question;
 
-for (const [userId, payout] of Object.entries(userPayouts)) {
-  const userRef = doc(db, 'users', userId);
-  const userSnap = await getDoc(userRef);
-  
-  if (userSnap.exists()) {
-    const userData = userSnap.data();
-    batch.update(userRef, {
-      weeklyRep: userData.weeklyRep + payout,
-      lifetimeRep: userData.lifetimeRep + payout
-    });
+      for (const [userId, payout] of Object.entries(userPayouts)) {
+        const userRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          batch.update(userRef, {
+            weeklyRep: userData.weeklyRep + payout,
+            lifetimeRep: userData.lifetimeRep + payout
+          });
 
-    // Create notification
-    const notificationRef = doc(collection(db, 'notifications'));
-    batch.set(notificationRef, {
-      userId: userId,
-      type: 'payout',
-      marketId: marketId,
-      marketQuestion: marketQuestion,
-      amount: Math.round(payout),
-      resolution: resolution,
-      read: false,
-      createdAt: new Date()
-    });
-  }
-}
+          const notificationRef = doc(collection(db, 'notifications'));
+          batch.set(notificationRef, {
+            userId: userId,
+            type: 'payout',
+            marketId: marketId,
+            marketQuestion: marketQuestion,
+            amount: Math.round(payout),
+            resolution: resolution,
+            read: false,
+            createdAt: new Date()
+          });
+        }
+      }
 
-      // Mark market as resolved
       batch.update(doc(db, 'markets', marketId), {
         resolution: resolution,
         resolvedAt: new Date()
@@ -140,41 +173,6 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
 
   if (loading) return <div className="p-8">Loading...</div>;
   if (!user) return <div className="p-8">Access denied</div>;
-
-  async function handleCreateMarket() {
-    if (!newMarketQuestion.trim()) {
-      alert('Please enter a question');
-      return;
-    }
-  
-    if (initialProbability < 1 || initialProbability > 99) {
-      alert('Probability must be between 1% and 99%');
-      return;
-    
-    setCreating(true);
-    try {
-      await addDoc(collection(db, 'markets'), {
-        question: newMarketQuestion.trim(),
-        probability: 0.5,
-        liquidityPool: {
-          yes: 1000,
-          no: 1000
-        },
-        resolution: null,
-        createdAt: new Date()
-      });
-  
-      alert('Market created successfully!');
-      setNewMarketQuestion('');
-      setShowCreateForm(false);
-      await fetchUnresolvedMarkets(); // Refresh the list
-    } catch (error) {
-      console.error('Error creating market:', error);
-      alert('Error creating market. Check console.');
-    } finally {
-      setCreating(false);
-    }
-  }
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -197,6 +195,7 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
         ) : (
           <div className="bg-white border rounded-lg p-6">
             <h2 className="text-xl font-semibold mb-4">Create New Market</h2>
+            
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Market Question
@@ -209,6 +208,7 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
+
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -226,6 +226,7 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
                   Default: 50% (no opinion)
                 </p>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Liquidity Depth
@@ -244,10 +245,12 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
                 </p>
               </div>
             </div>
+
             <p className="text-xs text-gray-500 mb-4">
-              Preview: YES pool ≈ {Math.round(liquidityAmount * (initialProbability/100) / (1 - initialProbability/100))},
+              Preview: YES pool ≈ {Math.round(liquidityAmount * (initialProbability/100) / (1 - initialProbability/100))}, 
               NO pool = {liquidityAmount}
             </p>
+
             <div className="flex gap-3">
               <button
                 onClick={handleCreateMarket}
@@ -256,6 +259,7 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
               >
                 {creating ? 'Creating...' : 'Create Market'}
               </button>
+              
               <button
                 onClick={() => {
                   setShowCreateForm(false);
@@ -316,5 +320,4 @@ for (const [userId, payout] of Object.entries(userPayouts)) {
       )}
     </div>
   );
-  }
 }
