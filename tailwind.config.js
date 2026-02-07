@@ -6,9 +6,6 @@ module.exports = {
       "./app/**/*.{js,ts,jsx,tsx,mdx}",
     ],
     theme: {
-<<<<<<< HEAD
-      extend: {},
-=======
       extend: {
         colors: {
           carnelian: {
@@ -20,7 +17,6 @@ module.exports = {
           eggshell: '#FAF8F3',
         },
       },
->>>>>>> df276324ebf5caac22ac815a1daa21df544addb7
     },
     plugins: [],
   }

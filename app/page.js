@@ -1,29 +1,50 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 
-console.log("Database object:", db); // ADD THIS LINE
-
 export default function Home() {
-  const [markets, setMarkets] = useState([]);
+  const [activeMarkets, setActiveMarkets] = useState([]);
+  const [resolvedMarkets, setResolvedMarkets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     async function fetchMarkets() {
       try {
-        const q = query(
+        // Fetch active markets
+        const activeQuery = query(
           collection(db, 'markets'),
           where('resolution', '==', null)
         );
-        const snapshot = await getDocs(q);
-        const marketData = snapshot.docs.map(doc => ({
+        const activeSnapshot = await getDocs(activeQuery);
+        const activeData = activeSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        console.log('Fetched markets:', marketData); // DEBUG
-        setMarkets(marketData);
+        setActiveMarkets(activeData);
+
+        // Fetch recently resolved markets (limit 6)
+        const resolvedQuery = query(
+          collection(db, 'markets'),
+          where('resolution', '!=', null),
+          orderBy('resolvedAt', 'desc'),
+          limit(6)
+        );
+        const resolvedSnapshot = await getDocs(resolvedQuery);
+        const resolvedData = resolvedSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setResolvedMarkets(resolvedData);
       } catch (error) {
         console.error('Error fetching markets:', error);
       } finally {
@@ -33,47 +54,192 @@ export default function Home() {
     fetchMarkets();
   }, []);
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-600 text-xl">Loading markets...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-6">Active Markets</h1>
-      {markets.length === 0 ? (
-        <p className="text-gray-500">No active markets yet.</p>
-      ) : (
-        <div className="grid gap-4">
-          {markets.map((market) => {
-            console.log("Market ID:", market.id);
-            console.log("Full market data:", market);
-            return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Hero Section - Only for logged out users */}
+      {!user && (
+        <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white">
+          <div className="max-w-6xl mx-auto px-6 py-20 text-center">
+            <h1 className="text-6xl font-black mb-6 leading-tight">
+              Predict Cornell.<br />Win Reputation.
+            </h1>
+            <p className="text-2xl mb-8 opacity-95 max-w-3xl mx-auto">
+              Trade on campus events, compete with classmates, and prove you know what's coming next.
+            </p>
+            <div className="flex gap-4 justify-center">
               <Link
-                key={market.id}
-                href={`/market/${market.id}`}
-                className="block group"
+                href="/login"
+                className="bg-white text-indigo-600 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-xl hover:scale-105"
               >
-                <div className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-200 overflow-hidden h-full border">
-                  <div className="p-6">
-                    <h2 className="text-lg font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors mb-4">
-                      {market.question}
-                    </h2>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-500">Probability</span>
-                      <span className="text-2xl font-bold text-indigo-600">
-                        {typeof market.probability === 'number' 
-                          ? `${Math.round(market.probability * 100)}%` 
-                          : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="mt-4 text-sm text-gray-500">
-                      View details →
-                    </div>
-                  </div>
-                </div>
+                Get Started Free
               </Link>
-            );
-          })}
+              <button
+                onClick={() => document.getElementById('markets')?.scrollIntoView({ behavior: 'smooth' })}
+                className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-white hover:text-indigo-600 transition-all"
+              >
+                See Markets
+              </button>
+            </div>
+            <p className="text-sm mt-6 opacity-80">@cornell.edu email required</p>          </div>
+        </div>
+      )}
+
+      {/* Active Markets Section */}
+      <div id="markets" className="max-w-7xl mx-auto px-6 py-16">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-4xl font-bold text-gray-900 mb-2">
+              🔥 Active Markets
+            </h2>
+            <p className="text-gray-600 text-lg">
+              {activeMarkets.length} live markets • {user ? 'Trade now' : 'Sign in to trade'}
+            </p>
+          </div>
+          {user && (
+            <Link
+              href="/markets/active"
+              className="text-indigo-600 hover:text-indigo-700 font-semibold"
+            >
+              View all →
+            </Link>
+          )}
+        </div>
+
+        {activeMarkets.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-2xl border-2 border-gray-200">
+            <div className="text-6xl mb-4">📊</div>
+            <p className="text-xl text-gray-500 font-semibold">No active markets yet</p>
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {activeMarkets.slice(0, 6).map((market) => (
+              <MarketCard key={market.id} market={market} isActive={true} canTrade={!!user} />
+            ))}
+          </div>
+        )}
+
+        {!user && activeMarkets.length > 0 && (
+          <div className="text-center mt-12 p-8 bg-indigo-50 rounded-2xl border-2 border-indigo-200">
+            <p className="text-xl font-semibold text-gray-900 mb-4">
+              Ready to start trading?
+            </p>
+            <Link
+              href="/login"
+              className="inline-block bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-indigo-700 transition-all shadow-lg"
+            >
+              Create Account - It's Free
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Recently Resolved Markets */}
+      {resolvedMarkets.length > 0 && (
+        <div className="bg-white border-t-2 border-gray-200">
+          <div className="max-w-7xl mx-auto px-6 py-16">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-4xl font-bold text-gray-900 mb-2">
+                  ✅ Recently Resolved
+                </h2>
+                <p className="text-gray-600 text-lg">
+                  See how the markets played out
+                </p>
+              </div>
+              {user && (
+                <Link
+                  href="/markets/resolved"
+                  className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                >
+                  View all →
+                </Link>
+              )}
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {resolvedMarkets.map((market) => (
+                <MarketCard key={market.id} market={market} isActive={false} canTrade={!!user} />
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+function MarketCard({ market, isActive, canTrade }) {
+  const content = (
+    <div className={`bg-white rounded-xl border-2 transition-all duration-200 p-6 h-full ${
+      isActive 
+        ? 'border-gray-200 hover:border-indigo-500 hover:shadow-xl' 
+        : 'border-gray-300'
+    } ${!canTrade && isActive ? 'relative' : ''}`}>
+      {!canTrade && isActive && (
+        <div className="absolute top-4 right-4 bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">
+          Login to trade
+        </div>
+      )}
+
+      {!isActive && (
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-3xl">{market.resolution === 'YES' ? '✅' : '❌'}</span>
+          <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+            market.resolution === 'YES' 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-red-100 text-red-800'
+          }`}>
+            Resolved: {market.resolution}
+          </span>
+        </div>
+      )}
+      
+      <h3 className="text-lg font-bold text-gray-900 mb-4 min-h-[60px] leading-tight">
+        {market.question}
+      </h3>
+
+      {isActive && (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              Probability
+            </span>
+            <span className="text-4xl font-black text-indigo-600">
+              {typeof market.probability === 'number' 
+                ? `${Math.round(market.probability * 100)}%` 
+                : 'N/A'}
+            </span>
+          </div>
+
+          {typeof market.probability === 'number' && (
+            <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
+              <div 
+                className="bg-indigo-600 h-3 rounded-full transition-all duration-500"
+                style={{ width: `${market.probability * 100}%` }}
+              ></div>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="text-indigo-600 font-bold text-sm group-hover:underline">
+        {isActive ? 'Trade now →' : 'View details →'}
+      </div>
+    </div>
+  );
+
+  // Always make it clickable, regardless of login status
+  return (
+    <Link href={`/market/${market.id}`} className="block group">
+      {content}
+    </Link>
   );
 }

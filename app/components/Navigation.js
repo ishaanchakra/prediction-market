@@ -45,19 +45,19 @@ export default function Navigation() {
   };
 
   return (
-    <nav className="bg-white border-b border-gray-200">
+    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link href="/" className="text-xl font-bold text-indigo-600">
-              Prediction Markets
+            <Link href="/" className="text-xl font-bold text-indigo-600 hover:text-indigo-700 transition-colors">
+              Cornell Markets
             </Link>
           </div>
 
           <div className="flex items-center gap-4">
             {user ? (
               <>
-                {/* Markets Dropdown */}
+                {/* Logged In - Full Navigation */}
                 <div 
                   className="relative"
                   onMouseEnter={() => setShowMarketsDropdown(true)}
@@ -131,12 +131,29 @@ export default function Navigation() {
                 </button>
               </>
             ) : (
-              <Link
-                href="/login"
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
-              >
-                Login
-              </Link>
+              <>
+                {/* Logged Out - Limited Navigation */}
+                <Link
+                  href="/"
+                  className="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                >
+                  Markets
+                </Link>
+
+                <Link
+                  href="/leaderboard"
+                  className="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                >
+                  Leaderboard
+                </Link>
+
+                <Link
+                  href="/login"
+                  className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-md"
+                >
+                  Sign In
+                </Link>
+              </>
             )}
           </div>
         </div>
