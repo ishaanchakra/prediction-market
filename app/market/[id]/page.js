@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { doc, getDoc, updateDoc, addDoc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, addDoc, collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -16,6 +16,7 @@ export default function MarketPage() {
   const [preview, setPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [betHistory, setBetHistory] = useState([]);
+  const [trades, setTrades] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
@@ -43,6 +44,56 @@ export default function MarketPage() {
     }
     fetchMarket();
   }, [params.id]);
+
+  // Fetch recent trades for live feed
+  useEffect(() => {
+    async function fetchTrades() {
+      if (!params.id) return;
+      
+      try {
+        const q = query(
+          collection(db, 'bets'),
+          where('marketId', '==', params.id),
+          orderBy('timestamp', 'desc'),
+          limit(20)
+        );
+        const snapshot = await getDocs(q);
+        
+        const tradesData = await Promise.all(
+          snapshot.docs.map(async (betDoc) => {
+            const bet = betDoc.data();
+            // Fetch user email for netid
+            try {
+              const userDoc = await getDoc(doc(db, 'users', bet.userId));
+              const userEmail = userDoc.exists() ? userDoc.data().email : 'Unknown';
+              const netid = userEmail.split('@')[0]; // Extract netid from email
+              
+              return {
+                id: betDoc.id,
+                netid,
+                amount: bet.amount,
+                side: bet.side,
+                oldProbability: bet.oldProbability,
+                newProbability: bet.probability,
+                timestamp: bet.timestamp?.toDate?.() || new Date()
+              };
+            } catch (err) {
+              console.error('Error fetching user:', err);
+              return null;
+            }
+          })
+        );
+        
+        setTrades(tradesData.filter(t => t !== null));
+      } catch (error) {
+        console.error('Error fetching trades:', error);
+      }
+    }
+    
+    if (market) {
+      fetchTrades();
+    }
+  }, [market, params.id]);
 
   useEffect(() => {
     async function fetchBetHistory() {
@@ -123,32 +174,118 @@ export default function MarketPage() {
         return;
       }
 
+      const oldProbability = market.probability;
       const result = calculateBet(market.liquidityPool, amount, selectedSide);
+      const totalLiquidity = market.liquidityPool.yes + market.liquidityPool.no;
+      const isSignificantTrade = amount >= (totalLiquidity * 0.10); // 10% threshold
       
+      // Create the bet with old and new probability
       await addDoc(collection(db, 'bets'), {
         userId: currentUser.uid,
         marketId: params.id,
         side: selectedSide,
         amount: amount,
         shares: result.shares,
+        oldProbability: oldProbability,
         probability: result.newProbability,
         timestamp: new Date()
       });
 
+      // Update market
       await updateDoc(doc(db, 'markets', params.id), {
         liquidityPool: result.newPool,
         probability: result.newProbability
       });
 
+      // Update user rep
       await updateDoc(doc(db, 'users', currentUser.uid), {
         weeklyRep: userData.weeklyRep - amount
       });
 
+      // If significant trade, notify other users invested in this market
+      if (isSignificantTrade) {
+        try {
+          // Get all users who have bets on this market (excluding current user)
+          const betsQuery = query(
+            collection(db, 'bets'),
+            where('marketId', '==', params.id)
+          );
+          const betsSnapshot = await getDocs(betsQuery);
+          
+          // Get unique user IDs
+          const investedUserIds = new Set();
+          betsSnapshot.docs.forEach(doc => {
+            const betData = doc.data();
+            if (betData.userId !== currentUser.uid) {
+              investedUserIds.add(betData.userId);
+            }
+          });
+
+          // Create notifications for each invested user
+          const traderNetid = currentUser.email.split('@')[0];
+          const probChange = ((result.newProbability - oldProbability) * 100).toFixed(1);
+          const direction = probChange > 0 ? '+' : '';
+          
+          for (const userId of investedUserIds) {
+            await addDoc(collection(db, 'notifications'), {
+              userId: userId,
+              type: 'significant_trade',
+              marketId: params.id,
+              marketQuestion: market.question,
+              traderNetid: traderNetid,
+              tradeAmount: amount,
+              tradeSide: selectedSide,
+              probabilityChange: `${direction}${probChange}%`,
+              oldProbability: Math.round(oldProbability * 100),
+              newProbability: Math.round(result.newProbability * 100),
+              read: false,
+              createdAt: new Date()
+            });
+          }
+        } catch (notifError) {
+          console.error('Error creating notifications:', notifError);
+          // Don't fail the bet if notifications fail
+        }
+      }
+
+      // Refresh market data
       const docRef = doc(db, 'markets', params.id);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         setMarket({ id: docSnap.id, ...docSnap.data() });
       }
+
+      // Refresh trades feed
+      const tradesQuery = query(
+        collection(db, 'bets'),
+        where('marketId', '==', params.id),
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
+      const tradesSnapshot = await getDocs(tradesQuery);
+      const newTrades = await Promise.all(
+        tradesSnapshot.docs.map(async (betDoc) => {
+          const bet = betDoc.data();
+          try {
+            const userDocSnap = await getDoc(doc(db, 'users', bet.userId));
+            const userEmail = userDocSnap.exists() ? userDocSnap.data().email : 'Unknown';
+            const netid = userEmail.split('@')[0];
+            
+            return {
+              id: betDoc.id,
+              netid,
+              amount: bet.amount,
+              side: bet.side,
+              oldProbability: bet.oldProbability,
+              newProbability: bet.probability,
+              timestamp: bet.timestamp?.toDate?.() || new Date()
+            };
+          } catch (err) {
+            return null;
+          }
+        })
+      );
+      setTrades(newTrades.filter(t => t !== null));
 
       setBetAmount('');
       setPreview(null);
@@ -161,183 +298,238 @@ export default function MarketPage() {
     }
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (!market) return <div className="p-8">Market not found</div>;
+  if (loading) return <div className="p-8 bg-brand-red text-white min-h-screen">Loading...</div>;
+  if (!market) return <div className="p-8 bg-brand-red text-white min-h-screen">Market not found</div>;
 
   const isResolved = market.resolution !== null;
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <Link href="/" className="text-indigo-600 hover:underline mb-4 inline-block">
+    <div className="p-8 max-w-6xl mx-auto bg-brand-red min-h-screen">
+      <Link href="/" className="text-white hover:text-brand-lightpink mb-4 inline-block">
         ← Back to markets
       </Link>
       
-      <h1 className="text-3xl font-bold mb-4">{market.question}</h1>
-      
-      <div className="bg-indigo-50 rounded-lg p-6 mb-8">
-        <p className="text-5xl font-bold text-indigo-600 text-center">
-          {typeof market.probability === 'number'
-            ? `${Math.round(market.probability * 100)}%`
-            : 'N/A'}
-        </p>
-        <p className="text-center text-gray-600 mt-2">Current Probability</p>
-      </div>
-
-      {betHistory.length > 1 && (
-        <div className="bg-white border rounded-lg p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Probability History</h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={betHistory}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="timestamp" 
-                tickFormatter={(timestamp) => {
-                  const date = new Date(timestamp);
-                  return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
-                }}
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis 
-                domain={['dataMin - 0.1', 'dataMax + 0.1']}
-                tickFormatter={(value) => `${Math.round(value * 100)}%`}
-                tick={{ fontSize: 12 }}
-              />
-              <Tooltip 
-                formatter={(value) => `${Math.round(value * 100)}%`}
-                labelFormatter={(timestamp) => {
-                  const date = new Date(timestamp);
-                  return date.toLocaleString();
-                }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="probability" 
-                stroke="#4f46e5" 
-                strokeWidth={2}
-                dot={{ fill: '#4f46e5', r: 3 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      <div className="bg-white border rounded-lg p-6 mb-6">
-        {isResolved ? (
-          <div className="text-center py-8">
-            <div className="text-5xl mb-4">
-              {market.resolution === 'YES' ? '✅' : '❌'}
-            </div>
-            <h2 className="text-2xl font-bold mb-2">
-              Market Resolved: {market.resolution}
-            </h2>
-            <p className="text-gray-600">
-              This market is closed for betting.
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Main content - 2 columns */}
+        <div className="lg:col-span-2 space-y-6">
+          <h1 className="text-3xl font-bold text-white">{market.question}</h1>
+          
+          <div className="bg-white rounded-lg p-6">
+            <p className="text-5xl font-bold text-brand-red text-center">
+              {typeof market.probability === 'number'
+                ? `${Math.round(market.probability * 100)}%`
+                : 'N/A'}
             </p>
+            <p className="text-center text-gray-600 mt-2">Current Probability</p>
           </div>
-        ) : (
-          <>
-            <h2 className="text-xl font-semibold mb-4">Place a Bet</h2>
-            
-            {!currentUser && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-yellow-800">
-                  🔒 You must be signed in to place bets. <Link href="/login" className="underline font-semibold">Sign in here</Link>
+
+          {betHistory.length > 1 && (
+            <div className="bg-white rounded-lg p-6">
+              <h2 className="text-lg font-semibold mb-4">Probability History</h2>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={betHistory}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="timestamp" 
+                    tickFormatter={(timestamp) => {
+                      const date = new Date(timestamp);
+                      return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                    }}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis 
+                    domain={['dataMin - 0.1', 'dataMax + 0.1']}
+                    tickFormatter={(value) => `${Math.round(value * 100)}%`}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip 
+                    formatter={(value) => `${Math.round(value * 100)}%`}
+                    labelFormatter={(timestamp) => {
+                      const date = new Date(timestamp);
+                      return date.toLocaleString();
+                    }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="probability" 
+                    stroke="#DC2626" 
+                    strokeWidth={2}
+                    dot={{ fill: '#DC2626', r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="bg-white rounded-lg p-6">
+            {isResolved ? (
+              <div className="text-center py-8">
+                <div className="text-5xl mb-4">
+                  {market.resolution === 'YES' ? '✅' : '❌'}
+                </div>
+                <h2 className="text-2xl font-bold mb-2">
+                  Market Resolved: {market.resolution}
+                </h2>
+                <p className="text-gray-600">
+                  This market is closed for betting.
                 </p>
               </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold mb-4">Place a Bet</h2>
+                
+                {!currentUser && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-yellow-800">
+                      🔒 You must be signed in to place bets. <Link href="/login" className="underline font-semibold">Sign in here</Link>
+                    </p>
+                  </div>
+                )}
+                
+                <div className="flex gap-4 mb-4">
+                  <button
+                    onClick={() => {
+                      if (!currentUser) {
+                        if (confirm('You need to sign in to place bets. Go to login page?')) {
+                          window.location.href = '/login';
+                        }
+                        return;
+                      }
+                      setSelectedSide('YES');
+                    }}
+                    className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors ${
+                      selectedSide === 'YES'
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!currentUser) {
+                        if (confirm('You need to sign in to place bets. Go to login page?')) {
+                          window.location.href = '/login';
+                        }
+                        return;
+                      }
+                      setSelectedSide('NO');
+                    }}
+                    className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors ${
+                      selectedSide === 'NO'
+                        ? 'bg-red-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Bet Amount (rep)
+                  </label>
+                  <input
+                    type="number"
+                    value={betAmount}
+                    onChange={(e) => setBetAmount(e.target.value)}
+                    placeholder={currentUser ? "Enter amount" : "Sign in to place bets"}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                    min="1"
+                    disabled={!currentUser}
+                  />
+                </div>
+
+                {preview && currentUser && (
+                  <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-gray-600 mb-2">Preview:</p>
+                    <p className="font-semibold">You'll receive: {preview.shares.toFixed(2)} shares</p>
+                    <p className="text-sm text-gray-600">New probability: {Math.round(preview.newProbability * 100)}%</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    if (!currentUser) {
+                      if (confirm('You need to sign in to place bets. Create an account?')) {
+                        window.location.href = '/login';
+                      }
+                      return;
+                    }
+                    handlePlaceBet();
+                  }}
+                  disabled={currentUser && (!betAmount || submitting)}
+                  className={`w-full py-3 px-6 rounded-lg font-semibold transition-colors ${
+                    !currentUser
+                      ? 'bg-brand-red text-white hover:bg-brand-darkred cursor-pointer'
+                      : 'bg-brand-red text-white hover:bg-brand-darkred disabled:bg-gray-300 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  {!currentUser 
+                    ? 'Sign In to Place Bet' 
+                    : (submitting ? 'Placing Bet...' : 'Place Bet')
+                  }
+                </button>
+              </>
             )}
+          </div>
+
+          <div className="bg-white rounded-lg p-4">
+            <h3 className="font-semibold mb-2">Liquidity Pool</h3>
+            <p className="text-sm text-gray-600">YES: {market.liquidityPool?.yes?.toFixed(2) || 0}</p>
+            <p className="text-sm text-gray-600">NO: {market.liquidityPool?.no?.toFixed(2) || 0}</p>
+          </div>
+        </div>
+
+        {/* Live Trade Feed - 1 column */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-lg p-6 sticky top-8">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <span className="text-2xl">📊</span>
+              Live Feed
+            </h2>
             
-            <div className="flex gap-4 mb-4">
-              <button
-                onClick={() => {
-                  if (!currentUser) {
-                    if (confirm('You need to sign in to place bets. Go to login page?')) {
-                      window.location.href = '/login';
-                    }
-                    return;
-                  }
-                  setSelectedSide('YES');
-                }}
-                className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors ${
-                  selectedSide === 'YES'
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                YES
-              </button>
-              <button
-                onClick={() => {
-                  if (!currentUser) {
-                    if (confirm('You need to sign in to place bets. Go to login page?')) {
-                      window.location.href = '/login';
-                    }
-                    return;
-                  }
-                  setSelectedSide('NO');
-                }}
-                className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors ${
-                  selectedSide === 'NO'
-                    ? 'bg-red-500 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                NO
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Bet Amount (rep)
-              </label>
-              <input
-                type="number"
-                value={betAmount}
-                onChange={(e) => setBetAmount(e.target.value)}
-                placeholder={currentUser ? "Enter amount" : "Sign in to place bets"}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                min="1"
-                disabled={!currentUser}
-              />
-            </div>
-
-            {preview && currentUser && (
-              <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-600 mb-2">Preview:</p>
-                <p className="font-semibold">You'll receive: {preview.shares.toFixed(2)} shares</p>
-                <p className="text-sm text-gray-600">New probability: {Math.round(preview.newProbability * 100)}%</p>
+            {trades.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-8">No trades yet</p>
+            ) : (
+              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                {trades.map((trade) => {
+                  const probChange = trade.oldProbability 
+                    ? ((trade.newProbability - trade.oldProbability) * 100).toFixed(1)
+                    : '0.0';
+                  const isPositive = parseFloat(probChange) > 0;
+                  
+                  return (
+                    <div key={trade.id} className="border-l-4 border-gray-200 pl-3 py-2 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-start justify-between mb-1">
+                        <span className="font-semibold text-sm text-gray-900">{trade.netid}</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${
+                          trade.side === 'YES' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {trade.side}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 font-medium mb-1">
+                        {trade.amount} rep
+                      </p>
+                      {trade.oldProbability && (
+                        <p className="text-xs text-gray-600">
+                          {Math.round(trade.oldProbability * 100)}% → {Math.round(trade.newProbability * 100)}%
+                          <span className={`ml-1 font-semibold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                            ({isPositive ? '+' : ''}{probChange}%)
+                          </span>
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">
+                        {trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
-
-            <button
-              onClick={() => {
-                if (!currentUser) {
-                  if (confirm('You need to sign in to place bets. Create an account?')) {
-                    window.location.href = '/login';
-                  }
-                  return;
-                }
-                handlePlaceBet();
-              }}
-              disabled={currentUser && (!betAmount || submitting)}
-              className={`w-full py-3 px-6 rounded-lg font-semibold transition-colors ${
-                !currentUser
-                  ? 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed'
-              }`}
-            >
-              {!currentUser 
-                ? 'Sign In to Place Bet' 
-                : (submitting ? 'Placing Bet...' : 'Place Bet')
-              }
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="bg-gray-50 rounded-lg p-4">
-        <h3 className="font-semibold mb-2">Liquidity Pool</h3>
-        <p className="text-sm text-gray-600">YES: {market.liquidityPool?.yes?.toFixed(2) || 0}</p>
-        <p className="text-sm text-gray-600">NO: {market.liquidityPool?.no?.toFixed(2) || 0}</p>
+          </div>
+        </div>
       </div>
     </div>
   );
