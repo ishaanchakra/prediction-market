@@ -6,6 +6,11 @@ import { auth, db } from '@/lib/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
+// Utility function for rounding to 2 decimals
+function round2(num) {
+  return Math.round(num * 100) / 100;
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,11 +49,11 @@ export default function LoginPage() {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Create user document in Firestore
+      // Create user document in Firestore with rounded values
       await setDoc(doc(db, 'users', user.uid), {
         email: user.email,
-        weeklyRep: 500,
-        lifetimeRep: 500,
+        weeklyRep: round2(500), // 500.00
+        lifetimeRep: round2(0),  // 0.00 - changed from 500
         createdAt: new Date()
       });
 
@@ -82,80 +87,76 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
-        <div>
-          <h2 className="text-center text-3xl font-bold text-gray-900">
-            Welcome
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Sign in to your account or create a new one
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-brand-red px-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border-2 border-brand-pink">
+        <h1 className="text-4xl font-bold text-center mb-2 text-brand-red">Bear or Bull</h1>
+        <p className="text-center text-gray-600 mb-8">Campus Prediction Markets</p>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-4 text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleLogin} className="space-y-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              Cornell Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="netid@cornell.edu"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900 placeholder-gray-400"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900 placeholder-gray-400"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-brand-red text-white py-3 rounded-lg font-bold hover:bg-brand-darkred disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            {isLoading ? 'Signing In...' : 'Sign In'}
+          </button>
+        </form>
+
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-500">or</span>
+          </div>
         </div>
 
-        <form className="mt-8 space-y-6">
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                placeholder="you@example.com"
-              />
-            </div>
+        <button
+          onClick={handleSignUp}
+          disabled={isLoading}
+          className="w-full bg-white text-brand-red border-2 border-brand-red py-3 rounded-lg font-bold hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+        >
+          {isLoading ? 'Creating Account...' : 'Create Account'}
+        </button>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div className="rounded-lg bg-red-50 p-4">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              onClick={handleLogin}
-              disabled={isLoading}
-              className="flex-1 py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? 'Loading...' : 'Log In'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSignUp}
-              disabled={isLoading}
-              className="flex-1 py-2.5 px-4 border border-indigo-600 rounded-lg shadow-sm text-sm font-medium text-indigo-600 bg-white hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? 'Loading...' : 'Sign Up'}
-            </button>
-          </div>
-        </form>
+        <p className="text-xs text-center text-gray-500 mt-6">
+          Only @cornell.edu emails can sign up.<br />
+          You'll start with 500 rep to trade.
+        </p>
       </div>
     </div>
   );

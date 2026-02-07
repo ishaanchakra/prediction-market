@@ -7,6 +7,11 @@ import Link from 'next/link';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
+// Utility function for rounding to 2 decimals
+function round2(num) {
+  return Math.round(num * 100) / 100;
+}
+
 export default function AdminPage() {
   const [user, setUser] = useState(null);
   const [markets, setMarkets] = useState([]);
@@ -71,12 +76,12 @@ export default function AdminPage() {
     setCreating(true);
     try {
       const probDecimal = initialProbability / 100;
-      const yesPool = liquidityAmount * probDecimal / (1 - probDecimal);
-      const noPool = liquidityAmount;
+      const yesPool = round2(liquidityAmount * probDecimal / (1 - probDecimal));
+      const noPool = round2(liquidityAmount);
 
       await addDoc(collection(db, 'markets'), {
         question: newMarketQuestion.trim(),
-        probability: probDecimal,
+        probability: round2(probDecimal * 100) / 100, // Store as decimal
         liquidityPool: {
           yes: yesPool,
           no: noPool
@@ -118,11 +123,11 @@ export default function AdminPage() {
       betsSnapshot.docs.forEach(betDoc => {
         const bet = betDoc.data();
         if (bet.side === resolution) {
-          const payout = bet.shares;
+          const payout = round2(bet.shares); // Round shares to 2 decimals
           if (!userPayouts[bet.userId]) {
             userPayouts[bet.userId] = 0;
           }
-          userPayouts[bet.userId] += payout;
+          userPayouts[bet.userId] = round2(userPayouts[bet.userId] + payout);
         }
       });
 
@@ -135,9 +140,12 @@ export default function AdminPage() {
         
         if (userSnap.exists()) {
           const userData = userSnap.data();
+          const newWeeklyRep = round2(userData.weeklyRep + payout);
+          const newLifetimeRep = round2(userData.lifetimeRep + payout);
+          
           batch.update(userRef, {
-            weeklyRep: userData.weeklyRep + payout,
-            lifetimeRep: userData.lifetimeRep + payout
+            weeklyRep: newWeeklyRep,
+            lifetimeRep: newLifetimeRep
           });
 
           const notificationRef = doc(collection(db, 'notifications'));
@@ -146,7 +154,7 @@ export default function AdminPage() {
             type: 'payout',
             marketId: marketId,
             marketQuestion: marketQuestion,
-            amount: Math.round(payout),
+            amount: round2(payout),
             resolution: resolution,
             read: false,
             createdAt: new Date()
@@ -171,12 +179,12 @@ export default function AdminPage() {
     }
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (!user) return <div className="p-8">Access denied</div>;
+  if (loading) return <div className="p-8 bg-brand-red text-white min-h-screen">Loading...</div>;
+  if (!user) return <div className="p-8 bg-brand-red text-white min-h-screen">Access denied</div>;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">Admin Panel</h1>
+    <div className="p-8 max-w-4xl mx-auto bg-brand-red min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-white">Admin Panel</h1>
       
       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
         <p className="text-sm text-yellow-800">
@@ -184,34 +192,37 @@ export default function AdminPage() {
         </p>
       </div>
 
-      <div className="mb-8">
-        {!showCreateForm ? (
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-          >
-            + Create New Market
-          </button>
-        ) : (
-          <div className="bg-white border rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Create New Market</h2>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="bg-white border-2 border-brand-pink rounded-lg p-6 mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Create New Market</h2>
+          {!showCreateForm && (
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="bg-brand-red text-white px-4 py-2 rounded-lg font-semibold hover:bg-brand-darkred transition-colors"
+            >
+              + New Market
+            </button>
+          )}
+        </div>
+
+        {showCreateForm && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-900 mb-2">
                 Market Question
               </label>
               <input
                 type="text"
                 value={newMarketQuestion}
                 onChange={(e) => setNewMarketQuestion(e.target.value)}
-                placeholder="e.g., Will it snow in Ithaca this week?"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="Will it snow in Ithaca this week?"
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900 placeholder-gray-400"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-900 mb-2">
                   Initial Probability (%)
                 </label>
                 <input
@@ -220,15 +231,15 @@ export default function AdminPage() {
                   onChange={(e) => setInitialProbability(Number(e.target.value))}
                   min="1"
                   max="99"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Default: 50% (no opinion)
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-900 mb-2">
                   Liquidity Depth
                 </label>
                 <input
@@ -238,17 +249,17 @@ export default function AdminPage() {
                   min="100"
                   max="10000"
                   step="100"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Higher = less price impact
                 </p>
               </div>
             </div>
 
-            <p className="text-xs text-gray-500 mb-4">
-              Preview: YES pool ≈ {Math.round(liquidityAmount * (initialProbability/100) / (1 - initialProbability/100))}, 
-              NO pool = {liquidityAmount}
+            <p className="text-xs text-gray-600">
+              Preview: YES pool ≈ {round2(liquidityAmount * (initialProbability/100) / (1 - initialProbability/100))}, 
+              NO pool = {round2(liquidityAmount)}
             </p>
 
             <div className="flex gap-3">
@@ -277,14 +288,14 @@ export default function AdminPage() {
         )}
       </div>
 
-      <h2 className="text-xl font-semibold mb-4">Unresolved Markets ({markets.length})</h2>
+      <h2 className="text-xl font-semibold mb-4 text-white">Unresolved Markets ({markets.length})</h2>
 
       {markets.length === 0 ? (
-        <p className="text-gray-500">No unresolved markets. <Link href="/" className="text-indigo-600 hover:underline">View all markets</Link></p>
+        <p className="text-white">No unresolved markets. <Link href="/" className="text-brand-lightpink hover:underline">View all markets</Link></p>
       ) : (
         <div className="space-y-4">
           {markets.map(market => (
-            <div key={market.id} className="bg-white border rounded-lg p-6">
+            <div key={market.id} className="bg-white border-2 border-brand-pink rounded-lg p-6">
               <h3 className="text-lg font-semibold mb-2">{market.question}</h3>
               <p className="text-sm text-gray-600 mb-4">
                 Current probability: {Math.round(market.probability * 100)}%
@@ -310,7 +321,7 @@ export default function AdminPage() {
 
               <Link 
                 href={`/market/${market.id}`}
-                className="block mt-3 text-sm text-indigo-600 hover:underline text-center"
+                className="block mt-3 text-sm text-brand-red hover:underline text-center font-semibold"
               >
                 View market details →
               </Link>

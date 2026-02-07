@@ -3,6 +3,11 @@ import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 
+// Utility function for rounding to 2 decimals
+function round2(num) {
+  return Math.round(num * 100) / 100;
+}
+
 export default function LeaderboardPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,14 +35,14 @@ export default function LeaderboardPage() {
     fetchLeaderboard();
   }, []);
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 bg-brand-red text-white min-h-screen">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">Leaderboard</h1>
-      <p className="text-gray-600 mb-8">Top predictors ranked by lifetime rep</p>
+    <div className="p-8 max-w-4xl mx-auto bg-brand-red min-h-screen">
+      <h1 className="text-3xl font-bold mb-2 text-white">Leaderboard</h1>
+      <p className="text-white opacity-90 mb-8">Top predictors ranked by lifetime rep</p>
 
-      <div className="bg-white rounded-lg border overflow-hidden">
+      <div className="bg-white rounded-lg border-2 border-brand-pink overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -81,12 +86,12 @@ export default function LeaderboardPage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <span className="text-sm font-semibold text-gray-900">
-                    {Math.round(user.weeklyRep)}
+                    {round2(user.weeklyRep || 0)}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <span className="text-sm font-bold text-indigo-600">
-                    {Math.round(user.lifetimeRep)}
+                  <span className="text-sm font-bold text-brand-red">
+                    {round2(user.lifetimeRep || 0)}
                   </span>
                 </td>
               </tr>

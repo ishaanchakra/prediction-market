@@ -12,6 +12,11 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
+// Utility function for rounding to 2 decimals
+function round2(num) {
+  return Math.round(num * 100) / 100;
+}
+
 async function resetDatabase() {
   console.log('🔄 Starting database reset...\n');
 
@@ -52,8 +57,8 @@ async function resetDatabase() {
     const usersBatch = db.batch();
     usersSnapshot.docs.forEach(doc => {
       usersBatch.update(doc.ref, {
-        weeklyRep: 500,
-        lifetimeRep: 0
+        weeklyRep: round2(500),
+        lifetimeRep: round2(0)
       });
     });
     await usersBatch.commit();

@@ -7,6 +7,11 @@ import Link from 'next/link';
 import { calculateBet } from '@/utils/amm';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+// Utility function for rounding to 2 decimals
+function round2(num) {
+  return Math.round(num * 100) / 100;
+}
+
 export default function MarketPage() {
   const params = useParams();
   const [market, setMarket] = useState(null);
@@ -62,16 +67,15 @@ export default function MarketPage() {
         const tradesData = await Promise.all(
           snapshot.docs.map(async (betDoc) => {
             const bet = betDoc.data();
-            // Fetch user email for netid
             try {
               const userDoc = await getDoc(doc(db, 'users', bet.userId));
               const userEmail = userDoc.exists() ? userDoc.data().email : 'Unknown';
-              const netid = userEmail.split('@')[0]; // Extract netid from email
+              const netid = userEmail.split('@')[0];
               
               return {
                 id: betDoc.id,
                 netid,
-                amount: bet.amount,
+                amount: round2(bet.amount),
                 side: bet.side,
                 oldProbability: bet.oldProbability,
                 newProbability: bet.probability,
@@ -159,7 +163,7 @@ export default function MarketPage() {
 
     setSubmitting(true);
     try {
-      const amount = parseFloat(betAmount);
+      const amount = round2(parseFloat(betAmount));
       
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (!userDoc.exists()) {
@@ -169,50 +173,59 @@ export default function MarketPage() {
       
       const userData = userDoc.data();
       if (userData.weeklyRep < amount) {
-        alert(`Insufficient rep! You have ${userData.weeklyRep} rep available.`);
+        alert(`Insufficient rep! You have ${round2(userData.weeklyRep)} rep available.`);
         setSubmitting(false);
         return;
       }
 
       const oldProbability = market.probability;
       const result = calculateBet(market.liquidityPool, amount, selectedSide);
+      
+      // Round all values to 2 decimals
+      const roundedShares = round2(result.shares);
+      const roundedNewProbability = round2(result.newProbability * 100) / 100; // Keep probability as decimal
+      const roundedNewYes = round2(result.newPool.yes);
+      const roundedNewNo = round2(result.newPool.no);
+      const newWeeklyRep = round2(userData.weeklyRep - amount);
+      
       const totalLiquidity = market.liquidityPool.yes + market.liquidityPool.no;
       const isSignificantTrade = amount >= (totalLiquidity * 0.10); // 10% threshold
       
-      // Create the bet with old and new probability
+      // Create the bet with rounded values
       await addDoc(collection(db, 'bets'), {
         userId: currentUser.uid,
         marketId: params.id,
         side: selectedSide,
         amount: amount,
-        shares: result.shares,
+        shares: roundedShares,
         oldProbability: oldProbability,
-        probability: result.newProbability,
+        probability: roundedNewProbability,
         timestamp: new Date()
       });
 
-      // Update market
+      // Update market with rounded liquidity
       await updateDoc(doc(db, 'markets', params.id), {
-        liquidityPool: result.newPool,
-        probability: result.newProbability
+        liquidityPool: {
+          yes: roundedNewYes,
+          no: roundedNewNo
+        },
+        probability: roundedNewProbability
       });
 
-      // Update user rep
+      // Update user rep with rounded value
       await updateDoc(doc(db, 'users', currentUser.uid), {
-        weeklyRep: userData.weeklyRep - amount
+        weeklyRep: newWeeklyRep
       });
 
       // If significant trade, notify other users invested in this market
       if (isSignificantTrade) {
         try {
-          // Get all users who have bets on this market (excluding current user)
           const betsQuery = query(
             collection(db, 'bets'),
             where('marketId', '==', params.id)
           );
           const betsSnapshot = await getDocs(betsQuery);
           
-          // Get unique user IDs
           const investedUserIds = new Set();
           betsSnapshot.docs.forEach(doc => {
             const betData = doc.data();
@@ -221,9 +234,8 @@ export default function MarketPage() {
             }
           });
 
-          // Create notifications for each invested user
           const traderNetid = currentUser.email.split('@')[0];
-          const probChange = ((result.newProbability - oldProbability) * 100).toFixed(1);
+          const probChange = ((roundedNewProbability - oldProbability) * 100).toFixed(1);
           const direction = probChange > 0 ? '+' : '';
           
           for (const userId of investedUserIds) {
@@ -237,14 +249,13 @@ export default function MarketPage() {
               tradeSide: selectedSide,
               probabilityChange: `${direction}${probChange}%`,
               oldProbability: Math.round(oldProbability * 100),
-              newProbability: Math.round(result.newProbability * 100),
+              newProbability: Math.round(roundedNewProbability * 100),
               read: false,
               createdAt: new Date()
             });
           }
         } catch (notifError) {
           console.error('Error creating notifications:', notifError);
-          // Don't fail the bet if notifications fail
         }
       }
 
@@ -274,7 +285,7 @@ export default function MarketPage() {
             return {
               id: betDoc.id,
               netid,
-              amount: bet.amount,
+              amount: round2(bet.amount),
               side: bet.side,
               oldProbability: bet.oldProbability,
               newProbability: bet.probability,
@@ -289,7 +300,7 @@ export default function MarketPage() {
 
       setBetAmount('');
       setPreview(null);
-      alert(`Bet placed! You have ${userData.weeklyRep - amount} rep remaining.`);
+      alert(`Bet placed! You have ${newWeeklyRep} rep remaining.`);
     } catch (error) {
       console.error('Error placing bet:', error);
       alert('Error placing bet. Please try again.');
@@ -426,25 +437,26 @@ export default function MarketPage() {
                 </div>
 
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">
                     Bet Amount (rep)
                   </label>
                   <input
                     type="number"
+                    step="0.01"
                     value={betAmount}
                     onChange={(e) => setBetAmount(e.target.value)}
                     placeholder={currentUser ? "Enter amount" : "Sign in to place bets"}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                    min="1"
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900 placeholder-gray-400"
+                    min="0.01"
                     disabled={!currentUser}
                   />
                 </div>
 
                 {preview && currentUser && (
                   <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                    <p className="text-sm text-gray-600 mb-2">Preview:</p>
-                    <p className="font-semibold">You'll receive: {preview.shares.toFixed(2)} shares</p>
-                    <p className="text-sm text-gray-600">New probability: {Math.round(preview.newProbability * 100)}%</p>
+                    <p className="text-sm text-gray-700 mb-2">Preview:</p>
+                    <p className="font-semibold text-gray-900">You'll receive: {round2(preview.shares)} shares</p>
+                    <p className="text-sm text-gray-700">New probability: {Math.round(preview.newProbability * 100)}%</p>
                   </div>
                 )}
 
@@ -475,9 +487,9 @@ export default function MarketPage() {
           </div>
 
           <div className="bg-white rounded-lg p-4">
-            <h3 className="font-semibold mb-2">Liquidity Pool</h3>
-            <p className="text-sm text-gray-600">YES: {market.liquidityPool?.yes?.toFixed(2) || 0}</p>
-            <p className="text-sm text-gray-600">NO: {market.liquidityPool?.no?.toFixed(2) || 0}</p>
+            <h3 className="font-semibold mb-2 text-gray-900">Liquidity Pool</h3>
+            <p className="text-sm text-gray-700">YES: {round2(market.liquidityPool?.yes || 0)}</p>
+            <p className="text-sm text-gray-700">NO: {round2(market.liquidityPool?.no || 0)}</p>
           </div>
         </div>
 
