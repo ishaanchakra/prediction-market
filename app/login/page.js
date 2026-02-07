@@ -89,7 +89,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-brand-red px-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border-2 border-brand-pink">
-        <h1 className="text-4xl font-bold text-center mb-2 text-brand-red">Bear or Bull</h1>
+        <h1 className="text-4xl font-bold text-center mb-2 text-brand-red">Predict Cornell</h1>
         <p className="text-center text-gray-600 mb-8">Campus Prediction Markets</p>
 
         {error && (
