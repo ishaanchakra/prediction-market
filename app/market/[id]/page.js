@@ -455,7 +455,7 @@ export default function MarketPage() {
                 {preview && currentUser && (
                   <div className="bg-gray-50 rounded-lg p-4 mb-4">
                     <p className="text-sm text-gray-700 mb-2">Preview:</p>
-                    <p className="font-semibold text-gray-900">You'll receive: {round2(preview.shares)} shares</p>
+                    <p className="font-semibold text-gray-900">Payout: {round2(preview.shares)} Rep</p>
                     <p className="text-sm text-gray-700">New probability: {Math.round(preview.newProbability * 100)}%</p>
                   </div>
                 )}
