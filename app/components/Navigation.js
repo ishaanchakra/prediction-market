@@ -11,6 +11,7 @@ const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 export default function Navigation() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showMarketsDropdown, setShowMarketsDropdown] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -56,6 +57,37 @@ export default function Navigation() {
           <div className="flex items-center gap-4">
             {user ? (
               <>
+                {/* Markets Dropdown */}
+                <div 
+                  className="relative"
+                  onMouseEnter={() => setShowMarketsDropdown(true)}
+                  onMouseLeave={() => setShowMarketsDropdown(false)}
+                >
+                  <button className="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1">
+                    Markets
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {showMarketsDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+                      <Link
+                        href="/markets/active"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                      >
+                        Active Markets
+                      </Link>
+                      <Link
+                        href="/markets/resolved"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                      >
+                        Resolved Markets
+                      </Link>
+                    </div>
+                  )}
+                </div>
+
                 <Link
                   href="/leaderboard"
                   className="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
