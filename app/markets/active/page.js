@@ -30,15 +30,15 @@ export default function ActiveMarketsPage() {
     fetchMarkets();
   }, []);
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 bg-brand-red text-white">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">Active Markets</h1>
-      <p className="text-gray-600 mb-8">{markets.length} markets currently open for trading</p>
+    <div className="p-8 max-w-7xl mx-auto bg-brand-red min-h-screen">
+      <h1 className="text-3xl font-bold mb-2 text-white">Active Markets</h1>
+      <p className="text-white opacity-90 mb-8">{markets.length} markets currently open for trading</p>
 
       {markets.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
+        <div className="text-center py-12 bg-white rounded-lg">
           <p className="text-gray-500">No active markets right now.</p>
         </div>
       ) : (
@@ -49,14 +49,14 @@ export default function ActiveMarketsPage() {
               href={`/market/${market.id}`}
               className="block group"
             >
-              <div className="bg-white rounded-lg border border-gray-200 hover:border-indigo-500 hover:shadow-lg transition-all duration-200 p-6 h-full">
-                <h2 className="text-lg font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors mb-4 min-h-[60px]">
+              <div className="bg-white rounded-lg border border-gray-200 hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full">
+                <h2 className="text-lg font-semibold text-gray-900 group-hover:text-brand-red transition-colors mb-4 min-h-[60px]">
                   {market.question}
                 </h2>
 
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-500">Probability</span>
-                  <span className="text-3xl font-bold text-indigo-600">
+                  <span className="text-3xl font-bold text-brand-red">
                     {typeof market.probability === 'number' 
                       ? `${Math.round(market.probability * 100)}%` 
                       : 'N/A'}
@@ -66,13 +66,13 @@ export default function ActiveMarketsPage() {
                 {typeof market.probability === 'number' && (
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
-                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                      className="bg-brand-red h-2 rounded-full transition-all duration-300"
                       style={{ width: `${market.probability * 100}%` }}
                     ></div>
                   </div>
                 )}
 
-                <div className="mt-4 text-sm text-indigo-600 font-medium group-hover:underline">
+                <div className="mt-4 text-sm text-brand-red font-medium group-hover:underline">
                   View market →
                 </div>
               </div>

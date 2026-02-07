@@ -31,15 +31,15 @@ export default function ResolvedMarketsPage() {
     fetchMarkets();
   }, []);
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 bg-brand-red text-white">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">Resolved Markets</h1>
-      <p className="text-gray-600 mb-8">{markets.length} markets have been resolved</p>
+    <div className="p-8 max-w-7xl mx-auto bg-brand-red min-h-screen">
+      <h1 className="text-3xl font-bold mb-2 text-white">Resolved Markets</h1>
+      <p className="text-white opacity-90 mb-8">{markets.length} markets have been resolved</p>
 
       {markets.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
+        <div className="text-center py-12 bg-white rounded-lg">
           <p className="text-gray-500">No resolved markets yet.</p>
         </div>
       ) : (
@@ -50,7 +50,7 @@ export default function ResolvedMarketsPage() {
               href={`/market/${market.id}`}
               className="block group"
             >
-              <div className="bg-white rounded-lg border-2 border-gray-200 p-6 h-full">
+              <div className="bg-white rounded-lg border-2 border-gray-200 hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full">
                 <div className="flex items-start justify-between mb-3">
                   <h2 className="text-lg font-semibold text-gray-900 flex-1 min-h-[60px]">
                     {market.question}
@@ -72,7 +72,7 @@ export default function ResolvedMarketsPage() {
                   {market.resolvedAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
                 </p>
 
-                <div className="mt-4 text-sm text-indigo-600 font-medium group-hover:underline">
+                <div className="mt-4 text-sm text-brand-red font-medium group-hover:underline">
                   View details →
                 </div>
               </div>

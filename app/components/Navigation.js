@@ -79,7 +79,7 @@ export default function Navigation() {
                         Active Markets
                       </Link>
                       <Link
-                        href="/markets/resolved"
+                        href="/markets/inactive"
                         className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
                       >
                         Resolved Markets
