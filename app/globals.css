@@ -1,2 +1,20 @@
+<<<<<<< HEAD
 @import "tailwindcss";
 @source "./**/*.{js,jsx,ts,tsx,mdx}";
+=======
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --carnelian: #B31B1B;
+  --carnelian-dark: #8B1414;
+  --cream: #F7F4EF;
+  --eggshell: #FAF8F3;
+}
+
+body {
+  background-color: var(--eggshell);
+  color: #1a1a1a;
+}
+>>>>>>> df276324ebf5caac22ac815a1daa21df544addb7
