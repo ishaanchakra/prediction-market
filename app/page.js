@@ -56,20 +56,20 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-600 text-xl">Loading markets...</div>
+      <div className="min-h-screen flex items-center justify-center bg-brand-red">
+        <div className="text-white text-xl">Loading markets...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-brand-red">
       {/* Hero Section - Only for logged out users */}
       {!user && (
-        <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white">
+        <div className="bg-gradient-to-br from-brand-red via-brand-darkred to-brand-pink text-white">
           <div className="max-w-6xl mx-auto px-6 py-20 text-center">
             <h1 className="text-6xl font-black mb-6 leading-tight">
-              Predict Cornell.<br />Win Reputation.
+              Bear or Bull?<br />Make Your Call.
             </h1>
             <p className="text-2xl mb-8 opacity-95 max-w-3xl mx-auto">
               Trade on campus events, compete with classmates, and prove you know what's coming next.
@@ -77,18 +77,19 @@ export default function Home() {
             <div className="flex gap-4 justify-center">
               <Link
                 href="/login"
-                className="bg-white text-indigo-600 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-xl hover:scale-105"
+                className="bg-white text-brand-red px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-xl hover:scale-105"
               >
                 Get Started Free
               </Link>
               <button
                 onClick={() => document.getElementById('markets')?.scrollIntoView({ behavior: 'smooth' })}
-                className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-white hover:text-indigo-600 transition-all"
+                className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-white hover:text-brand-red transition-all"
               >
                 See Markets
               </button>
             </div>
-            <p className="text-sm mt-6 opacity-80">@cornell.edu email required</p>          </div>
+            <p className="text-sm mt-6 opacity-80">@cornell.edu email required</p>
+          </div>
         </div>
       )}
 
@@ -96,17 +97,17 @@ export default function Home() {
       <div id="markets" className="max-w-7xl mx-auto px-6 py-16">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-4xl font-bold text-gray-900 mb-2">
+            <h2 className="text-4xl font-bold text-white mb-2">
               🔥 Active Markets
             </h2>
-            <p className="text-gray-600 text-lg">
+            <p className="text-white opacity-90 text-lg">
               {activeMarkets.length} live markets • {user ? 'Trade now' : 'Sign in to trade'}
             </p>
           </div>
           {user && (
             <Link
               href="/markets/active"
-              className="text-indigo-600 hover:text-indigo-700 font-semibold"
+              className="text-brand-pink hover:text-brand-lightpink font-semibold"
             >
               View all →
             </Link>
@@ -127,13 +128,13 @@ export default function Home() {
         )}
 
         {!user && activeMarkets.length > 0 && (
-          <div className="text-center mt-12 p-8 bg-indigo-50 rounded-2xl border-2 border-indigo-200">
-            <p className="text-xl font-semibold text-gray-900 mb-4">
+          <div className="text-center mt-12 p-8 bg-brand-darkred rounded-2xl border-2 border-brand-pink">
+            <p className="text-xl font-semibold text-white mb-4">
               Ready to start trading?
             </p>
             <Link
               href="/login"
-              className="inline-block bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-indigo-700 transition-all shadow-lg"
+              className="inline-block bg-white text-brand-red px-8 py-3 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-lg"
             >
               Create Account - It's Free
             </Link>
@@ -143,7 +144,7 @@ export default function Home() {
 
       {/* Recently Resolved Markets */}
       {resolvedMarkets.length > 0 && (
-        <div className="bg-white border-t-2 border-gray-200">
+        <div className="bg-white border-t-2 border-brand-pink">
           <div className="max-w-7xl mx-auto px-6 py-16">
             <div className="flex items-center justify-between mb-8">
               <div>
@@ -157,7 +158,7 @@ export default function Home() {
               {user && (
                 <Link
                   href="/markets/resolved"
-                  className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                  className="text-brand-red hover:text-brand-darkred font-semibold"
                 >
                   View all →
                 </Link>
@@ -180,11 +181,11 @@ function MarketCard({ market, isActive, canTrade }) {
   const content = (
     <div className={`bg-white rounded-xl border-2 transition-all duration-200 p-6 h-full ${
       isActive 
-        ? 'border-gray-200 hover:border-indigo-500 hover:shadow-xl' 
+        ? 'border-gray-200 hover:border-brand-pink hover:shadow-xl' 
         : 'border-gray-300'
     } ${!canTrade && isActive ? 'relative' : ''}`}>
       {!canTrade && isActive && (
-        <div className="absolute top-4 right-4 bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">
+        <div className="absolute top-4 right-4 bg-brand-red text-white text-xs font-bold px-3 py-1 rounded-full">
           Login to trade
         </div>
       )}
@@ -212,7 +213,7 @@ function MarketCard({ market, isActive, canTrade }) {
             <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
               Probability
             </span>
-            <span className="text-4xl font-black text-indigo-600">
+            <span className="text-4xl font-black text-brand-red">
               {typeof market.probability === 'number' 
                 ? `${Math.round(market.probability * 100)}%` 
                 : 'N/A'}
@@ -222,7 +223,7 @@ function MarketCard({ market, isActive, canTrade }) {
           {typeof market.probability === 'number' && (
             <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
               <div 
-                className="bg-indigo-600 h-3 rounded-full transition-all duration-500"
+                className="bg-brand-red h-3 rounded-full transition-all duration-500"
                 style={{ width: `${market.probability * 100}%` }}
               ></div>
             </div>
@@ -230,7 +231,7 @@ function MarketCard({ market, isActive, canTrade }) {
         </>
       )}
 
-      <div className="text-indigo-600 font-bold text-sm group-hover:underline">
+      <div className="text-brand-red font-bold text-sm group-hover:underline">
         {isActive ? 'Trade now →' : 'View details →'}
       </div>
     </div>

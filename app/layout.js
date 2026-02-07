@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Prediction Markets",
-  description: "Campus prediction markets",
+  title: "Bear or Bull - Campus Prediction Markets",
+  description: "Trade on campus events, compete with classmates, and prove you know what's coming next.",
 };
 
 export default function RootLayout({ children }) {
