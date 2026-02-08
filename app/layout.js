@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Predict Cornell - Campus Prediction Markets",
-  description: "Trade on campus events, compete with classmates, and prove you know what's coming next.",
+  title: "Cornell Prediction Market",
+  description: "Trade on Cornell predictions",
 };
 
 export default function RootLayout({ children }) {
