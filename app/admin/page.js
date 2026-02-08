@@ -194,8 +194,8 @@ export default function AdminPage() {
 
       <div className="bg-white border-2 border-brand-pink rounded-lg p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Create New Market</h2>
-          {!showCreateForm && (
+        <h2 className="text-xl font-semibold mb-4 text-gray-900">Create New Market</h2>
+        {!showCreateForm && (
             <button
               onClick={() => setShowCreateForm(true)}
               className="bg-brand-red text-white px-4 py-2 rounded-lg font-semibold hover:bg-brand-darkred transition-colors"
@@ -288,7 +288,7 @@ export default function AdminPage() {
         )}
       </div>
 
-      <h2 className="text-xl font-semibold mb-4 text-white">Unresolved Markets ({markets.length})</h2>
+      <h2 className="text-xl font-semibold mb-4 text-gray-900">Unresolved Markets ({markets.length})</h2>
 
       {markets.length === 0 ? (
         <p className="text-white">No unresolved markets. <Link href="/" className="text-brand-lightpink hover:underline">View all markets</Link></p>
@@ -296,8 +296,8 @@ export default function AdminPage() {
         <div className="space-y-4">
           {markets.map(market => (
             <div key={market.id} className="bg-white border-2 border-brand-pink rounded-lg p-6">
-              <h3 className="text-lg font-semibold mb-2">{market.question}</h3>
-              <p className="text-sm text-gray-600 mb-4">
+<h3 className="text-lg font-semibold mb-2 text-gray-900">{market.question}</h3>
+<p className="text-sm text-gray-600 mb-4">
                 Current probability: {Math.round(market.probability * 100)}%
               </p>
               

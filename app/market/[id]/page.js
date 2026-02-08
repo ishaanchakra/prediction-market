@@ -134,7 +134,7 @@ export default function MarketPage() {
         // Build raw history from trades
         const rawHistory = [{
           timestamp: market?.createdAt?.toDate?.() || new Date(),
-          probability: market?.probability || 0.5
+          probability: market?.initialProbability || 0.5  // Use initial probability if available
         }];
         
         snapshot.docs.forEach(doc => {
@@ -144,7 +144,7 @@ export default function MarketPage() {
             probability: bet.probability
           });
         });
-
+  
         // Normalize to hourly intervals for cleaner chart
         if (rawHistory.length > 0) {
           const startTime = rawHistory[0].timestamp.getTime();
@@ -189,9 +189,22 @@ export default function MarketPage() {
             currentTime += intervalMs;
           }
           
+          // IMPORTANT: Add current market probability as the final point to ensure sync
+          if (market?.probability !== undefined) {
+            // Replace the last point with current market state
+            normalizedHistory[normalizedHistory.length - 1] = {
+              timestamp: new Date(),
+              probability: market.probability
+            };
+          }
+          
           setBetHistory(normalizedHistory);
         } else {
-          setBetHistory(rawHistory);
+          // No trades yet - show just current state
+          setBetHistory([{
+            timestamp: new Date(),
+            probability: market?.probability || 0.5
+          }]);
         }
       } catch (error) {
         console.error('Error fetching bet history:', error);
@@ -202,7 +215,7 @@ export default function MarketPage() {
       fetchBetHistory();
     }
   }, [market, params.id]);
-
+  
   useEffect(() => {
     async function fetchRecentTrades() {
       if (!params.id) return;
@@ -739,14 +752,14 @@ export default function MarketPage() {
                       Amount (rep)
                     </label>
                     <input
-                      type="number"
-                      value={betAmount}
-                      onChange={(e) => setBetAmount(e.target.value)}
-                      placeholder={currentUser ? "Enter amount" : "Sign in to trade"}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-                      min="1"
-                      disabled={!currentUser}
-                    />
+                    type="number"
+                    value={betAmount}
+                    onChange={(e) => setBetAmount(e.target.value)}
+                    placeholder={currentUser ? "Enter amount" : "Sign in to trade"}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-gray-900"
+                    min="1"
+                    disabled={!currentUser}
+                  />
                   </div>
 
                   {preview && currentUser && (
@@ -785,51 +798,70 @@ export default function MarketPage() {
           </div>
 
           {/* Recent Activity Feed */}
-          {recentTrades.length > 0 && (
-            <div className="bg-white border rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold mb-3 text-gray-900 uppercase tracking-wide">Recent Activity</h3>
-              <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {recentTrades.map((trade) => (
-                  <div key={trade.id} className="flex items-start justify-between py-2 border-b border-gray-100 last:border-0">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                          trade.type === 'SELL' 
-                            ? 'bg-orange-100 text-orange-700'
-                            : trade.side === 'YES' 
-                              ? 'bg-green-100 text-green-700' 
-                              : 'bg-red-100 text-red-700'
-                        }`}>
-                          {trade.type === 'SELL' ? `SOLD ${trade.side}` : trade.side}
-                        </span>
-                        <span className="text-xs font-medium text-gray-900 truncate">{trade.userName}</span>
-                      </div>
-                      <p className="text-xs text-gray-600">
-                        {trade.type === 'SELL' 
-                          ? `${Math.abs(trade.shares).toFixed(1)} shares → ${Math.abs(trade.amount).toFixed(1)} rep`
-                          : `${trade.amount.toFixed(1)} rep → ${trade.shares.toFixed(1)} shares`
-                        }
-                      </p>
-                    </div>
-                    <div className="text-right ml-2">
-                      <p className="text-xs text-gray-400">
-                        {(() => {
-                          const date = trade.timestamp?.toDate?.();
-                          if (!date) return 'now';
-                          const hours = date.getHours();
-                          const minutes = date.getMinutes();
-                          const ampm = hours >= 12 ? 'PM' : 'AM';
-                          const displayHours = hours % 12 || 12;
-                          return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
-                        })()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+{/* Recent Activity Feed */}
+{recentTrades.length > 0 && (
+  <div className="bg-white border rounded-xl p-5 shadow-sm">
+    <h3 className="text-sm font-semibold mb-3 text-gray-900 uppercase tracking-wide">Recent Activity</h3>
+    <div className="space-y-2 max-h-[500px] overflow-y-auto">
+      {recentTrades.map((trade, index) => {
+        // Get probability before this trade (from the trade that happened right before it)
+        // Remember: trades are sorted newest first, so index+1 is the previous trade chronologically
+        const beforeProbability = recentTrades[index + 1]?.probability || market?.createdAt?.probability || 0.5;
+        const afterProbability = trade.probability;
+        
+        return (
+          <div key={trade.id} className="flex items-start justify-between py-2 border-b border-gray-100 last:border-0">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                  trade.type === 'SELL' 
+                    ? 'bg-orange-100 text-orange-700'
+                    : trade.side === 'YES' 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-red-100 text-red-700'
+                }`}>
+                  {trade.type === 'SELL' ? `SOLD ${trade.side}` : trade.side}
+                </span>
+                <span className="text-xs font-medium text-gray-900 truncate">{trade.userName}</span>
+              </div>
+              <p className="text-xs text-gray-600 mb-1">
+                {trade.type === 'SELL' 
+                  ? `${Math.abs(trade.shares).toFixed(1)} shares → ${Math.abs(trade.amount).toFixed(1)} rep`
+                  : `${trade.amount.toFixed(1)} rep → ${trade.shares.toFixed(1)} shares`
+                }
+              </p>
+              {/* Show probability change: before → after */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-gray-500">{Math.round(beforeProbability * 100)}%</span>
+                <span className="text-gray-400">→</span>
+                <span className="font-semibold text-gray-900">{Math.round(afterProbability * 100)}%</span>
+                <span className={`font-semibold ml-1 ${
+                  afterProbability > beforeProbability ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  ({afterProbability > beforeProbability ? '+' : ''}
+                  {((afterProbability - beforeProbability) * 100).toFixed(1)}%)
+                </span>
               </div>
             </div>
-          )}
-
+            <div className="text-right ml-2">
+              <p className="text-xs text-gray-400">
+                {(() => {
+                  const date = trade.timestamp?.toDate?.();
+                  if (!date) return 'now';
+                  const hours = date.getHours();
+                  const minutes = date.getMinutes();
+                  const ampm = hours >= 12 ? 'PM' : 'AM';
+                  const displayHours = hours % 12 || 12;
+                  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+                })()}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
         </div>
       </div>
 
