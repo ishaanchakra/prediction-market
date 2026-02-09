@@ -77,12 +77,19 @@ export default function MarketPage() {
         
         snapshot.docs.forEach(doc => {
           const bet = doc.data();
+          
           if (bet.side === 'YES') {
-            yesShares += bet.shares;
-            yesInvested += bet.amount;
+            yesShares += bet.shares; // Shares can be negative for sells
+            // Only count positive amounts as invested (buys), ignore negative amounts (sells)
+            if (bet.amount > 0) {
+              yesInvested += bet.amount;
+            }
           } else {
-            noShares += bet.shares;
-            noInvested += bet.amount;
+            noShares += bet.shares; // Shares can be negative for sells
+            // Only count positive amounts as invested (buys), ignore negative amounts (sells)
+            if (bet.amount > 0) {
+              noInvested += bet.amount;
+            }
           }
         });
         
