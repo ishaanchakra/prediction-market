@@ -21,7 +21,7 @@ export default function AdminPage() {
   const [newMarketQuestion, setNewMarketQuestion] = useState('');
   const [creating, setCreating] = useState(false);
   const [initialProbability, setInitialProbability] = useState(50);
-  const [liquidityAmount, setLiquidityAmount] = useState(1000);
+  const [bValue, setBValue] = useState(100);
   const router = useRouter();
 
   useEffect(() => {
@@ -76,16 +76,22 @@ export default function AdminPage() {
     setCreating(true);
     try {
       const probDecimal = initialProbability / 100;
-      const yesPool = round2(liquidityAmount * probDecimal / (1 - probDecimal));
-      const noPool = round2(liquidityAmount);
+      // For LMSR, set initial outstanding shares so that
+      // price = e^(qYes/b) / (e^(qYes/b) + e^(qNo/b)) = probDecimal
+      // With qNo = 0: price = e^(qYes/b) / (e^(qYes/b) + 1)
+      // Solving: qYes = b * ln(probDecimal / (1 - probDecimal))
+      const b = bValue;
+      const qYes = round2(b * Math.log(probDecimal / (1 - probDecimal)));
+      const qNo = 0;
 
       await addDoc(collection(db, 'markets'), {
         question: newMarketQuestion.trim(),
         probability: round2(probDecimal * 100) / 100, // Store as decimal
-        liquidityPool: {
-          yes: yesPool,
-          no: noPool
+        outstandingShares: {
+          yes: qYes,
+          no: qNo
         },
+        b: b,
         resolution: null,
         createdAt: new Date()
       });
@@ -93,7 +99,7 @@ export default function AdminPage() {
       alert('Market created successfully!');
       setNewMarketQuestion('');
       setInitialProbability(50);
-      setLiquidityAmount(1000);
+      setBValue(100);
       setShowCreateForm(false);
       await fetchUnresolvedMarkets();
     } catch (error) {
@@ -240,26 +246,25 @@ export default function AdminPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-2">
-                  Liquidity Depth
+                  Liquidity (b)
                 </label>
                 <input
                   type="number"
-                  value={liquidityAmount}
-                  onChange={(e) => setLiquidityAmount(Number(e.target.value))}
-                  min="100"
-                  max="10000"
-                  step="100"
+                  value={bValue}
+                  onChange={(e) => setBValue(Number(e.target.value))}
+                  min="10"
+                  max="1000"
+                  step="10"
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900"
                 />
                 <p className="text-xs text-gray-600 mt-1">
-                  Higher = less price impact
+                  LMSR parameter. Higher = less price impact per trade
                 </p>
               </div>
             </div>
 
             <p className="text-xs text-gray-600">
-              Preview: YES pool ≈ {round2(liquidityAmount * (initialProbability/100) / (1 - initialProbability/100))}, 
-              NO pool = {round2(liquidityAmount)}
+              Preview: LMSR b={bValue}, initial YES shares = {round2(bValue * Math.log((initialProbability/100) / (1 - initialProbability/100)))}, NO shares = 0
             </p>
 
             <div className="flex gap-3">

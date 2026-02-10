@@ -4,7 +4,7 @@ import { doc, getDoc, updateDoc, addDoc, collection, query, where, orderBy, getD
 import { db, auth } from '@/lib/firebase';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { calculateBet, calculateSell } from '@/utils/amm';
+import { calculateBet, calculateSell } from '@/utils/lmsr';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart, ReferenceLine } from 'recharts';
 
 export default function MarketPage() {
@@ -103,19 +103,19 @@ export default function MarketPage() {
   }, [currentUser, params.id, market]);
 
   useEffect(() => {
-    if (!market || !market.liquidityPool) return;
+    if (!market || !market.outstandingShares) return;
     
     let yesExit = 0;
     let noExit = 0;
     
     try {
       if (userPosition.yesShares > 0) {
-        const yesResult = calculateSell(market.liquidityPool, userPosition.yesShares, 'YES');
+        const yesResult = calculateSell(market.outstandingShares, userPosition.yesShares, 'YES', market.b);
         yesExit = yesResult.payout;
       }
-      
+
       if (userPosition.noShares > 0) {
-        const noResult = calculateSell(market.liquidityPool, userPosition.noShares, 'NO');
+        const noResult = calculateSell(market.outstandingShares, userPosition.noShares, 'NO', market.b);
         noExit = noResult.payout;
       }
       
@@ -180,38 +180,55 @@ export default function MarketPage() {
           let currentTime = startTime;
           let lastKnownProb = rawHistory[0].probability;
           let rawIndex = 0;
-          
+
           while (currentTime <= endTime) {
             // Update lastKnownProb with all trades that happened before this time point
             while (rawIndex < rawHistory.length && rawHistory[rawIndex].timestamp.getTime() <= currentTime) {
               lastKnownProb = rawHistory[rawIndex].probability;
               rawIndex++;
             }
-            
+
             normalizedHistory.push({
-              timestamp: new Date(currentTime),
+              timestamp: currentTime,
               probability: lastKnownProb
             });
-            
+
             currentTime += intervalMs;
           }
-          
+
           // IMPORTANT: Add current market probability as the final point to ensure sync
           if (market?.probability !== undefined) {
-            // Replace the last point with current market state
-            normalizedHistory[normalizedHistory.length - 1] = {
-              timestamp: new Date(),
-              probability: market.probability
-            };
+            const now = Date.now();
+            // If the last point is already close to now, replace it; otherwise add a new one
+            if (normalizedHistory.length > 0) {
+              normalizedHistory[normalizedHistory.length - 1] = {
+                timestamp: now,
+                probability: market.probability
+              };
+            }
+            // Ensure we always have at least 2 points
+            if (normalizedHistory.length < 2) {
+              normalizedHistory.unshift({
+                timestamp: startTime,
+                probability: rawHistory[0].probability
+              });
+            }
           }
-          
+
           setBetHistory(normalizedHistory);
         } else {
-          // No trades yet - show just current state
-          setBetHistory([{
-            timestamp: new Date(),
-            probability: market?.probability || 0.5
-          }]);
+          // No trades yet - show two points so the chart renders a flat line
+          const createdAt = market?.createdAt?.toDate?.() || new Date();
+          setBetHistory([
+            {
+              timestamp: createdAt.getTime(),
+              probability: market?.probability || 0.5
+            },
+            {
+              timestamp: Date.now(),
+              probability: market?.probability || 0.5
+            }
+          ]);
         }
       } catch (error) {
         console.error('Error fetching bet history:', error);
@@ -270,7 +287,7 @@ export default function MarketPage() {
   useEffect(() => {
     if (market && betAmount && parseFloat(betAmount) > 0 && currentUser) {
       try {
-        const result = calculateBet(market.liquidityPool, parseFloat(betAmount), selectedSide);
+        const result = calculateBet(market.outstandingShares, parseFloat(betAmount), selectedSide, market.b);
         setPreview(result);
       } catch (error) {
         setPreview(null);
@@ -283,7 +300,7 @@ export default function MarketPage() {
   useEffect(() => {
     if (market && sellAmount && parseFloat(sellAmount) > 0) {
       try {
-        const result = calculateSell(market.liquidityPool, parseFloat(sellAmount), sellSide);
+        const result = calculateSell(market.outstandingShares, parseFloat(sellAmount), sellSide, market.b);
         setSellPreview(result);
       } catch (error) {
         setSellPreview(null);
@@ -323,7 +340,7 @@ export default function MarketPage() {
         return;
       }
 
-      const result = calculateBet(market.liquidityPool, amount, selectedSide);
+      const result = calculateBet(market.outstandingShares, amount, selectedSide, market.b);
       
       await addDoc(collection(db, 'bets'), {
         userId: currentUser.uid,
@@ -337,7 +354,7 @@ export default function MarketPage() {
       });
 
       await updateDoc(doc(db, 'markets', params.id), {
-        liquidityPool: result.newPool,
+        outstandingShares: result.newPool,
         probability: result.newProbability
       });
 
@@ -380,7 +397,7 @@ export default function MarketPage() {
     
     setSelling(true);
     try {
-      const result = calculateSell(market.liquidityPool, sharesToSell, sellSide);
+      const result = calculateSell(market.outstandingShares, sharesToSell, sellSide, market.b);
       
       await addDoc(collection(db, 'bets'), {
         userId: currentUser.uid,
@@ -394,10 +411,10 @@ export default function MarketPage() {
       });
       
       await updateDoc(doc(db, 'markets', params.id), {
-        liquidityPool: result.newPool,
+        outstandingShares: result.newPool,
         probability: result.newProbability
       });
-      
+
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       const userData = userDoc.data();
       await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -422,15 +439,15 @@ export default function MarketPage() {
     }
   }
 
-  // Custom tooltip for liquidity pie chart
+  // Custom tooltip for outstanding shares pie chart
   const LiquidityTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-white border-2 border-gray-300 rounded-lg p-3 shadow-lg">
-          <p className="font-semibold text-gray-900 mb-1">{payload[0].name} Pool</p>
-          <p className="text-sm text-gray-600 mb-2">{payload[0].value.toFixed(2)} rep</p>
+          <p className="font-semibold text-gray-900 mb-1">{payload[0].name} Shares</p>
+          <p className="text-sm text-gray-600 mb-2">{payload[0].value.toFixed(2)} outstanding</p>
           <p className="text-xs text-gray-500 max-w-xs">
-            The liquidity pool determines pricing. When you buy {payload[0].name}, you add rep to the opposite pool and receive shares proportional to this pool&apos;s size.
+            Outstanding shares determine pricing via LMSR. Price adjusts based on the balance between YES and NO shares.
           </p>
         </div>
       );
@@ -468,8 +485,8 @@ export default function MarketPage() {
 
   // Prepare pie chart data
   const pieData = [
-    { name: 'YES', value: market.liquidityPool?.yes || 0, color: '#10b981' },
-    { name: 'NO', value: market.liquidityPool?.no || 0, color: '#ef4444' }
+    { name: 'YES', value: market.outstandingShares?.yes || 0, color: '#10b981' },
+    { name: 'NO', value: market.outstandingShares?.no || 0, color: '#ef4444' }
   ];
 
   return (
@@ -560,9 +577,9 @@ export default function MarketPage() {
             </div>
           )}
 
-          {/* Liquidity Pool Pie Chart */}
+          {/* Outstanding Shares Pie Chart */}
           <div className="bg-white border rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-semibold mb-4 text-gray-900">Liquidity Pool</h2>
+            <h2 className="text-lg font-semibold mb-4 text-gray-900">Outstanding Shares</h2>
               <div className="flex items-center justify-center">
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
@@ -586,11 +603,11 @@ export default function MarketPage() {
             <div className="flex justify-center gap-6 mt-4">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded-full bg-green-500"></div>
-                <span className="text-sm text-gray-600">YES: {market.liquidityPool?.yes?.toFixed(1) || 0} rep</span>
+                <span className="text-sm text-gray-600">YES: {market.outstandingShares?.yes?.toFixed(1) || 0} shares</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded-full bg-red-500"></div>
-                <span className="text-sm text-gray-600">NO: {market.liquidityPool?.no?.toFixed(1) || 0} rep</span>
+                <span className="text-sm text-gray-600">NO: {market.outstandingShares?.no?.toFixed(1) || 0} shares</span>
               </div>
             </div>
           </div>
