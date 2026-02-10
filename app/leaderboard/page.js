@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 // Utility function for rounding to 2 decimals
 function round2(num) {
@@ -10,6 +10,7 @@ function round2(num) {
 }
 
 export default function LeaderboardPage() {
+  const router = useRouter();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -63,10 +64,10 @@ export default function LeaderboardPage() {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {users.map((user, index) => (
-              <Link
+              <tr
                 key={user.id}
-                href={`/user/${user.id}`}
-                className={`table-row cursor-pointer ${index < 3 ? 'bg-yellow-50' : 'hover:bg-gray-50'}`}
+                onClick={() => router.push(`/user/${user.id}`)}
+                className={`cursor-pointer ${index < 3 ? 'bg-yellow-50' : 'hover:bg-gray-50'}`}
               >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
@@ -96,7 +97,7 @@ export default function LeaderboardPage() {
                     ${round2(user.lifetimeRep || 0)}
                   </span>
                 </td>
-              </Link>
+              </tr>
             ))}
           </tbody>
         </table>

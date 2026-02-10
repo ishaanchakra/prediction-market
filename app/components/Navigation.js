@@ -55,46 +55,46 @@ export default function Navigation() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Markets dropdown - visible to all users */}
+            <div
+              className="relative"
+              onMouseEnter={() => setShowMarketsDropdown(true)}
+              onMouseLeave={() => setShowMarketsDropdown(false)}
+            >
+              <button className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1">
+                Markets
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showMarketsDropdown && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+                  <Link
+                    href="/markets/active"
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
+                  >
+                    Active Markets
+                  </Link>
+                  <Link
+                    href="/markets/inactive"
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
+                  >
+                    Resolved Markets
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <Link
+              href="/leaderboard"
+              className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              Leaderboard
+            </Link>
+
             {user ? (
               <>
-                {/* Logged In - Full Navigation */}
-                <div 
-                  className="relative"
-                  onMouseEnter={() => setShowMarketsDropdown(true)}
-                  onMouseLeave={() => setShowMarketsDropdown(false)}
-                >
-                  <button className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1">
-                    Markets
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  
-                  {showMarketsDropdown && (
-                    <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
-                      <Link
-                        href="/markets/active"
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
-                      >
-                        Active Markets
-                      </Link>
-                      <Link
-                        href="/markets/inactive"
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
-                      >
-                        Resolved Markets
-                      </Link>
-                    </div>
-                  )}
-                </div>
-
-                <Link
-                  href="/leaderboard"
-                  className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
-                  Leaderboard
-                </Link>
-
                 <Link
                   href="/notifications"
                   className="relative text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
@@ -131,29 +131,12 @@ export default function Navigation() {
                 </button>
               </>
             ) : (
-              <>
-                {/* Logged Out - Limited Navigation */}
-                <Link
-                  href="/"
-                  className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
-                  Markets
-                </Link>
-
-                <Link
-                  href="/leaderboard"
-                  className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
-                  Leaderboard
-                </Link>
-
-                <Link
-                  href="/login"
-                  className="bg-brand-red text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-brand-darkred transition-colors shadow-md"
-                >
-                  Sign In
-                </Link>
-              </>
+              <Link
+                href="/login"
+                className="bg-brand-red text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-brand-darkred transition-colors shadow-md"
+              >
+                Sign In
+              </Link>
             )}
           </div>
         </div>

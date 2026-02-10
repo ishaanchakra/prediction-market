@@ -104,14 +104,12 @@ export default function Home() {
               {activeMarkets.length} live markets • {user ? 'Trade now' : 'Sign in to trade'}
             </p>
           </div>
-          {user && (
-            <Link
-              href="/markets/active"
-              className="text-brand-pink hover:text-brand-lightpink font-semibold"
-            >
-              View all →
-            </Link>
-          )}
+          <Link
+            href="/markets/active"
+            className="text-brand-pink hover:text-brand-lightpink font-semibold"
+          >
+            View all →
+          </Link>
         </div>
 
         {activeMarkets.length === 0 ? (
@@ -155,14 +153,12 @@ export default function Home() {
                   See how the markets played out
                 </p>
               </div>
-              {user && (
-                <Link
-                  href="/markets/resolved"
-                  className="text-brand-red hover:text-brand-darkred font-semibold"
-                >
-                  View all →
-                </Link>
-              )}
+              <Link
+                href="/markets/inactive"
+                className="text-brand-red hover:text-brand-darkred font-semibold"
+              >
+                View all →
+              </Link>
             </div>
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
