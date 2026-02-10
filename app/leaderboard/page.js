@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import Link from 'next/link';
 
 // Utility function for rounding to 2 decimals
 function round2(num) {
@@ -62,9 +63,10 @@ export default function LeaderboardPage() {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {users.map((user, index) => (
-              <tr 
+              <Link
                 key={user.id}
-                className={index < 3 ? 'bg-yellow-50' : 'hover:bg-gray-50'}
+                href={`/user/${user.id}`}
+                className={`table-row cursor-pointer ${index < 3 ? 'bg-yellow-50' : 'hover:bg-gray-50'}`}
               >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
@@ -94,7 +96,7 @@ export default function LeaderboardPage() {
                     {round2(user.lifetimeRep || 0)}
                   </span>
                 </td>
-              </tr>
+              </Link>
             ))}
           </tbody>
         </table>
