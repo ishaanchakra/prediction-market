@@ -136,7 +136,7 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center">
           <p className="text-xs text-gray-500">
-            By signing in, you agree to follow Cornell's code of conduct
+            By signing in, you agree to follow Cornell&apos;s code of conduct
           </p>
         </div>
       </div>

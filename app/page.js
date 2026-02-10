@@ -72,7 +72,7 @@ export default function Home() {
               Bear or Bull?<br />Make Your Call.
             </h1>
             <p className="text-2xl mb-8 opacity-95 max-w-3xl mx-auto">
-              Trade on campus events, compete with classmates, and prove you know what's coming next.
+              Trade on campus events, compete with classmates, and prove you know what&apos;s coming next.
             </p>
             <div className="flex gap-4 justify-center">
               <Link
@@ -136,7 +136,7 @@ export default function Home() {
               href="/login"
               className="inline-block bg-white text-brand-red px-8 py-3 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-lg"
             >
-              Create Account - It's Free
+              Create Account - It&apos;s Free
             </Link>
           </div>
         )}

@@ -430,7 +430,7 @@ export default function MarketPage() {
           <p className="font-semibold text-gray-900 mb-1">{payload[0].name} Pool</p>
           <p className="text-sm text-gray-600 mb-2">{payload[0].value.toFixed(2)} rep</p>
           <p className="text-xs text-gray-500 max-w-xs">
-            The liquidity pool determines pricing. When you buy {payload[0].name}, you add rep to the opposite pool and receive shares proportional to this pool's size.
+            The liquidity pool determines pricing. When you buy {payload[0].name}, you add rep to the opposite pool and receive shares proportional to this pool&apos;s size.
           </p>
         </div>
       );
