@@ -124,47 +124,73 @@ export default function AdminPage() {
       const betsSnapshot = await getDocs(betsQuery);
       
       const batch = writeBatch(db);
-      const userPayouts = {};
+      // Track per-user: winning payout and losing investment
+      const userAdjustments = {};
 
       betsSnapshot.docs.forEach(betDoc => {
         const bet = betDoc.data();
+        if (!userAdjustments[bet.userId]) {
+          userAdjustments[bet.userId] = { payout: 0, lostInvestment: 0 };
+        }
         if (bet.side === resolution) {
-          const payout = round2(bet.shares); // Round shares to 2 decimals
-          if (!userPayouts[bet.userId]) {
-            userPayouts[bet.userId] = 0;
+          // Winner: shares are the payout
+          userAdjustments[bet.userId].payout = round2(userAdjustments[bet.userId].payout + round2(bet.shares));
+        } else {
+          // Loser: they lose what they invested (only count buys, not sells)
+          if (bet.amount > 0) {
+            userAdjustments[bet.userId].lostInvestment = round2(userAdjustments[bet.userId].lostInvestment + round2(bet.amount));
           }
-          userPayouts[bet.userId] = round2(userPayouts[bet.userId] + payout);
         }
       });
 
       const marketDoc = await getDoc(doc(db, 'markets', marketId));
       const marketQuestion = marketDoc.data().question;
 
-      for (const [userId, payout] of Object.entries(userPayouts)) {
+      for (const [userId, adj] of Object.entries(userAdjustments)) {
         const userRef = doc(db, 'users', userId);
         const userSnap = await getDoc(userRef);
-        
+
         if (userSnap.exists()) {
           const userData = userSnap.data();
-          const newWeeklyRep = round2(userData.weeklyRep + payout);
-          const newLifetimeRep = round2(userData.lifetimeRep + payout);
-          
+          // Winners get payout added to both weekly and lifetime
+          // Losers get investment deducted from lifetime only (weekly was already deducted at bet time)
+          const newWeeklyRep = round2(userData.weeklyRep + adj.payout);
+          const newLifetimeRep = round2(userData.lifetimeRep + adj.payout - adj.lostInvestment);
+
           batch.update(userRef, {
             weeklyRep: newWeeklyRep,
             lifetimeRep: newLifetimeRep
           });
 
-          const notificationRef = doc(collection(db, 'notifications'));
-          batch.set(notificationRef, {
-            userId: userId,
-            type: 'payout',
-            marketId: marketId,
-            marketQuestion: marketQuestion,
-            amount: round2(payout),
-            resolution: resolution,
-            read: false,
-            createdAt: new Date()
-          });
+          // Create payout notification for winners
+          if (adj.payout > 0) {
+            const payoutNotifRef = doc(collection(db, 'notifications'));
+            batch.set(payoutNotifRef, {
+              userId: userId,
+              type: 'payout',
+              marketId: marketId,
+              marketQuestion: marketQuestion,
+              amount: round2(adj.payout),
+              resolution: resolution,
+              read: false,
+              createdAt: new Date()
+            });
+          }
+
+          // Create loss notification for losers
+          if (adj.lostInvestment > 0) {
+            const lossNotifRef = doc(collection(db, 'notifications'));
+            batch.set(lossNotifRef, {
+              userId: userId,
+              type: 'loss',
+              marketId: marketId,
+              marketQuestion: marketQuestion,
+              amount: round2(adj.lostInvestment),
+              resolution: resolution,
+              read: false,
+              createdAt: new Date()
+            });
+          }
         }
       }
 
@@ -293,7 +319,7 @@ export default function AdminPage() {
         )}
       </div>
 
-      <h2 className="text-xl font-semibold mb-4 text-gray-900">Unresolved Markets ({markets.length})</h2>
+      <h2 className="text-xl font-semibold mb-4 text-white">Unresolved Markets ({markets.length})</h2>
 
       {markets.length === 0 ? (
         <p className="text-white">No unresolved markets. <Link href="/" className="text-brand-lightpink hover:underline">View all markets</Link></p>

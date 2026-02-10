@@ -152,84 +152,30 @@ export default function MarketPage() {
           });
         });
   
-        // Normalize to hourly intervals for cleaner chart
-        if (rawHistory.length > 0) {
-          const startTime = rawHistory[0].timestamp.getTime();
-          const endTime = new Date().getTime();
-          const normalizedHistory = [];
-          
-          // Determine interval based on market age
-          const ageInHours = (endTime - startTime) / (1000 * 60 * 60);
-          let intervalMs;
-          
-          if (ageInHours < 6) {
-            // Less than 6 hours: 15-minute intervals
-            intervalMs = 15 * 60 * 1000;
-          } else if (ageInHours < 24) {
-            // Less than 24 hours: 30-minute intervals
-            intervalMs = 30 * 60 * 1000;
-          } else if (ageInHours < 72) {
-            // Less than 3 days: 1-hour intervals
-            intervalMs = 60 * 60 * 1000;
-          } else {
-            // More than 3 days: 3-hour intervals
-            intervalMs = 3 * 60 * 60 * 1000;
-          }
-          
-          // Create normalized time series
-          let currentTime = startTime;
-          let lastKnownProb = rawHistory[0].probability;
-          let rawIndex = 0;
+        // Use raw trade data directly — each bet is one data point
+        const chartData = rawHistory.map(point => ({
+          timestamp: point.timestamp.getTime(),
+          probability: point.probability
+        }));
 
-          while (currentTime <= endTime) {
-            // Update lastKnownProb with all trades that happened before this time point
-            while (rawIndex < rawHistory.length && rawHistory[rawIndex].timestamp.getTime() <= currentTime) {
-              lastKnownProb = rawHistory[rawIndex].probability;
-              rawIndex++;
-            }
-
-            normalizedHistory.push({
-              timestamp: currentTime,
-              probability: lastKnownProb
-            });
-
-            currentTime += intervalMs;
-          }
-
-          // IMPORTANT: Add current market probability as the final point to ensure sync
-          if (market?.probability !== undefined) {
-            const now = Date.now();
-            // If the last point is already close to now, replace it; otherwise add a new one
-            if (normalizedHistory.length > 0) {
-              normalizedHistory[normalizedHistory.length - 1] = {
-                timestamp: now,
-                probability: market.probability
-              };
-            }
-            // Ensure we always have at least 2 points
-            if (normalizedHistory.length < 2) {
-              normalizedHistory.unshift({
-                timestamp: startTime,
-                probability: rawHistory[0].probability
-              });
-            }
-          }
-
-          setBetHistory(normalizedHistory);
-        } else {
-          // No trades yet - show two points so the chart renders a flat line
-          const createdAt = market?.createdAt?.toDate?.() || new Date();
-          setBetHistory([
-            {
-              timestamp: createdAt.getTime(),
-              probability: market?.probability || 0.5
-            },
-            {
-              timestamp: Date.now(),
-              probability: market?.probability || 0.5
-            }
-          ]);
+        // Add a final "now" point synced to current probability
+        if (market?.probability !== undefined) {
+          chartData.push({
+            timestamp: Date.now(),
+            probability: market.probability
+          });
         }
+
+        // Ensure at least 2 points so the chart renders
+        if (chartData.length < 2) {
+          const createdAt = market?.createdAt?.toDate?.() || new Date();
+          chartData.unshift({
+            timestamp: createdAt.getTime(),
+            probability: market?.probability || 0.5
+          });
+        }
+
+        setBetHistory(chartData);
       } catch (error) {
         console.error('Error fetching bet history:', error);
       }
@@ -335,7 +281,7 @@ export default function MarketPage() {
       
       const userData = userDoc.data();
       if (userData.weeklyRep < amount) {
-        alert(`Insufficient rep! You have ${userData.weeklyRep} rep available.`);
+        alert(`Insufficient balance! You have $${userData.weeklyRep.toFixed(2)} available.`);
         setSubmitting(false);
         return;
       }
@@ -370,7 +316,7 @@ export default function MarketPage() {
 
       setBetAmount('');
       setPreview(null);
-      alert(`Bet placed! You have ${userData.weeklyRep - amount} rep remaining.`);
+      alert(`Bet placed! You have $${(userData.weeklyRep - amount).toFixed(2)} remaining.`);
     } catch (error) {
       console.error('Error placing bet:', error);
       alert('Error placing bet. Please try again.');
@@ -430,7 +376,7 @@ export default function MarketPage() {
       setSellAmount('');
       setSellPreview(null);
       setShowSellModal(false);
-      alert(`Sold ${sharesToSell.toFixed(2)} ${sellSide} shares for ${result.payout.toFixed(2)} rep!`);
+      alert(`Sold ${sharesToSell.toFixed(2)} ${sellSide} shares for $${result.payout.toFixed(2)}!`);
     } catch (error) {
       console.error('Error selling shares:', error);
       alert('Error selling shares. Please try again.');
@@ -495,7 +441,7 @@ export default function MarketPage() {
         ← Back to markets
       </Link>
       
-      <h1 className="text-3xl font-bold mb-2">{market.question}</h1>
+      <h1 className="text-3xl font-bold mb-2 text-gray-900">{market.question}</h1>
       
       <div className="mb-6 inline-flex items-center gap-3">
         <div className="bg-indigo-100 rounded-lg px-6 py-3">
@@ -532,13 +478,19 @@ export default function MarketPage() {
                     strokeOpacity={0.3}
                     vertical={false}
                   />
-                  <XAxis 
-                    dataKey="timestamp" 
+                  <XAxis
+                    dataKey="timestamp"
                     tickFormatter={(timestamp) => {
                       const date = new Date(timestamp);
                       const hours = date.getHours();
                       const ampm = hours >= 12 ? 'PM' : 'AM';
                       const displayHours = hours % 12 || 12;
+                      // Show date if market spans multiple days
+                      const start = betHistory.length > 0 ? new Date(betHistory[0].timestamp) : date;
+                      const spansDays = date.toDateString() !== start.toDateString();
+                      if (spansDays) {
+                        return `${date.getMonth() + 1}/${date.getDate()} ${displayHours}${ampm}`;
+                      }
                       return `${displayHours} ${ampm}`;
                     }}
                     tick={{ fontSize: 11, fill: '#6b7280' }}
@@ -564,7 +516,7 @@ export default function MarketPage() {
                     strokeOpacity={0.5}
                   />
                   <Area
-                    type="monotone"
+                    type="stepAfter"
                     dataKey="probability"
                     stroke="#6366f1"
                     strokeWidth={2}
@@ -634,19 +586,19 @@ export default function MarketPage() {
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between text-gray-600">
                           <span>Invested:</span>
-                          <span className="font-semibold">{userPosition.yesInvested.toFixed(1)} rep</span>
+                          <span className="font-semibold">${userPosition.yesInvested.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Exit value:</span>
-                          <span className="font-bold text-green-600">{exitValues.yesExit.toFixed(1)} rep</span>
+                          <span className="font-bold text-green-600">${exitValues.yesExit.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">P/L:</span>
                           <span className={`font-semibold ${
                             exitValues.yesExit - userPosition.yesInvested >= 0 ? 'text-green-600' : 'text-red-600'
                           }`}>
-                            {exitValues.yesExit - userPosition.yesInvested >= 0 ? '+' : ''}
-                            {(exitValues.yesExit - userPosition.yesInvested).toFixed(1)}
+                            {exitValues.yesExit - userPosition.yesInvested >= 0 ? '+$' : '-$'}
+                            {Math.abs(exitValues.yesExit - userPosition.yesInvested).toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -673,19 +625,19 @@ export default function MarketPage() {
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between text-gray-600">
                           <span>Invested:</span>
-                          <span className="font-semibold">{userPosition.noInvested.toFixed(1)} rep</span>
+                          <span className="font-semibold">${userPosition.noInvested.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Exit value:</span>
-                          <span className="font-bold text-green-600">{exitValues.noExit.toFixed(1)} rep</span>
+                          <span className="font-bold text-green-600">${exitValues.noExit.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">P/L:</span>
                           <span className={`font-semibold ${
                             exitValues.noExit - userPosition.noInvested >= 0 ? 'text-green-600' : 'text-red-600'
                           }`}>
-                            {exitValues.noExit - userPosition.noInvested >= 0 ? '+' : ''}
-                            {(exitValues.noExit - userPosition.noInvested).toFixed(1)}
+                            {exitValues.noExit - userPosition.noInvested >= 0 ? '+$' : '-$'}
+                            {Math.abs(exitValues.noExit - userPosition.noInvested).toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -713,7 +665,7 @@ export default function MarketPage() {
                   <div className="text-4xl mb-3">
                     {market.resolution === 'YES' ? '✅' : '❌'}
                   </div>
-                  <h2 className="text-xl font-bold mb-1">
+                  <h2 className="text-xl font-bold mb-1 text-gray-900">
                     Resolved: {market.resolution}
                   </h2>
                   <p className="text-sm text-gray-600">
@@ -773,7 +725,7 @@ export default function MarketPage() {
 
                   <div className="mb-4">
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                      Amount (rep)
+                      Amount ($)
                     </label>
                     <input
                     type="number"
@@ -849,9 +801,9 @@ export default function MarketPage() {
                 <span className="text-xs font-medium text-gray-900 truncate">{trade.userName}</span>
               </div>
               <p className="text-xs text-gray-600 mb-1">
-                {trade.type === 'SELL' 
-                  ? `${Math.abs(trade.shares).toFixed(1)} shares → ${Math.abs(trade.amount).toFixed(1)} rep`
-                  : `${trade.amount.toFixed(1)} rep → ${trade.shares.toFixed(1)} shares`
+                {trade.type === 'SELL'
+                  ? `${Math.abs(trade.shares).toFixed(1)} shares → $${Math.abs(trade.amount).toFixed(2)}`
+                  : `$${trade.amount.toFixed(2)} → ${trade.shares.toFixed(1)} shares`
                 }
               </p>
               {/* Show probability change: before → after */}
@@ -893,7 +845,7 @@ export default function MarketPage() {
       {showSellModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
-            <h2 className="text-2xl font-bold mb-4">Sell {sellSide} Shares</h2>
+            <h2 className="text-2xl font-bold mb-4 text-gray-900">Sell {sellSide} Shares</h2>
             
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
               <div className="flex justify-between text-sm mb-1">
@@ -902,7 +854,7 @@ export default function MarketPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Exit all now:</span>
-                <span className="font-bold text-green-600">{(sellSide === 'YES' ? exitValues.yesExit : exitValues.noExit).toFixed(2)} rep</span>
+                <span className="font-bold text-green-600">${(sellSide === 'YES' ? exitValues.yesExit : exitValues.noExit).toFixed(2)}</span>
               </div>
             </div>
             
@@ -916,7 +868,7 @@ export default function MarketPage() {
                   value={sellAmount}
                   onChange={(e) => setSellAmount(e.target.value)}
                   placeholder="Enter amount"
-                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                   min="0.01"
                   step="0.01"
                   max={sellSide === 'YES' ? userPosition.yesShares : userPosition.noShares}
@@ -934,7 +886,7 @@ export default function MarketPage() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                 <p className="text-sm text-gray-600 mb-2">You will receive:</p>
                 <p className="font-bold text-2xl text-green-600">
-                  {sellPreview.payout.toFixed(2)} rep
+                  ${sellPreview.payout.toFixed(2)}
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
                   New market probability: {Math.round(sellPreview.newProbability * 100)}%

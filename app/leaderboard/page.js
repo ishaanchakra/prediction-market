@@ -41,7 +41,7 @@ export default function LeaderboardPage() {
   return (
     <div className="p-8 max-w-4xl mx-auto bg-brand-red min-h-screen">
       <h1 className="text-3xl font-bold mb-2 text-white">Leaderboard</h1>
-      <p className="text-white opacity-90 mb-8">Top predictors ranked by lifetime rep</p>
+      <p className="text-white opacity-90 mb-8">Top predictors ranked by lifetime earnings</p>
 
       <div className="bg-white rounded-lg border-2 border-brand-pink overflow-hidden">
         <table className="w-full">
@@ -54,10 +54,10 @@ export default function LeaderboardPage() {
                 User
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Weekly Rep
+                Balance
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Lifetime Rep
+                Lifetime Earnings
               </th>
             </tr>
           </thead>
@@ -88,12 +88,12 @@ export default function LeaderboardPage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <span className="text-sm font-semibold text-gray-900">
-                    {round2(user.weeklyRep || 0)}
+                    ${round2(user.weeklyRep || 0)}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <span className="text-sm font-bold text-brand-red">
-                    {round2(user.lifetimeRep || 0)}
+                    ${round2(user.lifetimeRep || 0)}
                   </span>
                 </td>
               </Link>

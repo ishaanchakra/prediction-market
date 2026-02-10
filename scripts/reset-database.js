@@ -62,7 +62,7 @@ async function resetDatabase() {
       });
     });
     await usersBatch.commit();
-    console.log(`✅ Reset ${usersSnapshot.size} users to 500 rep\n`);
+    console.log(`✅ Reset ${usersSnapshot.size} users to $500\n`);
 
     console.log('✨ Database reset complete!');
     process.exit(0);
@@ -73,7 +73,7 @@ async function resetDatabase() {
 }
 
 // Confirmation prompt
-console.log('⚠️  WARNING: This will DELETE ALL data and reset user rep to 500!');
+console.log('⚠️  WARNING: This will DELETE ALL data and reset user balance to $500!');
 console.log('This action cannot be undone.\n');
 console.log('Type "RESET" to confirm: ');
 

@@ -130,7 +130,38 @@ export default function NotificationsPage() {
                       {notif.resolution}
                     </span>
                     <span className="text-green-600 font-bold">
-                      +{notif.amount} rep earned
+                      +${notif.amount.toFixed(2)} earned
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {notif.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                  </p>
+                </>
+              )}
+
+              {/* Loss notification */}
+              {notif.type === 'loss' && (
+                <>
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-2xl">📉</span>
+                    {!notif.read && (
+                      <span className="bg-brand-red text-white text-xs font-bold px-2 py-1 rounded-full">
+                        NEW
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-semibold text-gray-900 mb-1">Market Resolved</p>
+                  <p className="text-sm text-gray-700 mb-2">{notif.marketQuestion}</p>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className={`px-2 py-1 rounded font-semibold ${
+                      notif.resolution === 'YES'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {notif.resolution}
+                    </span>
+                    <span className="text-red-600 font-bold">
+                      -${notif.amount.toFixed(2)} lost
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-2">
@@ -158,7 +189,7 @@ export default function NotificationsPage() {
                       <span className={`font-bold ${
                         notif.tradeSide === 'YES' ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {notif.tradeAmount} rep {notif.tradeSide}
+                        ${notif.tradeAmount} {notif.tradeSide}
                       </span> bet
                     </p>
                     <p className="flex items-center gap-2">
