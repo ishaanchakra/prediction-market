@@ -295,13 +295,13 @@ export default function ProfilePage() {
       <div className="grid md:grid-cols-2 gap-6 mb-8">
         <div className="bg-gradient-to-br from-brand-red to-brand-darkred rounded-lg p-6 text-white border-2 border-white">
           <p className="text-sm opacity-90 mb-1">Balance</p>
-          <p className="text-4xl font-bold">${round2(user.weeklyRep || 0)}</p>
+          <p className="text-4xl font-bold">${Number(user.weeklyRep || 0).toFixed(2)}</p>
           <p className="text-sm opacity-75 mt-2">Resets every Monday</p>
         </div>
 
         <div className="bg-gradient-to-br from-brand-pink to-brand-red rounded-lg p-6 text-white border-2 border-white">
           <p className="text-sm opacity-90 mb-1">Lifetime Earnings</p>
-          <p className="text-4xl font-bold">${round2(user.lifetimeRep || 0)}</p>
+          <p className="text-4xl font-bold">${Number(user.lifetimeRep || 0).toFixed(2)}</p>
           <p className="text-sm opacity-75 mt-2">Net winnings over all time</p>
         </div>
       </div>

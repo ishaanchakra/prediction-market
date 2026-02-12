@@ -52,12 +52,28 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if signedIn();
+      allow read: if true;
       allow create: if signedIn() && request.auth.uid == userId;
-      allow update: if signedIn() && (
-        request.auth.uid == userId || isAdmin()
-      );
+      allow update: if signedIn() && (request.auth.uid == userId || isAdmin());
       allow delete: if false;
+    }
+
+    match /displayNames/{nameKey} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if signedIn() && (
+        request.auth.uid == resource.data.userId || isAdmin()
+      ) && request.resource.data.userId == resource.data.userId;
+      allow delete: if signedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+    }
+
+    match /marketRequests/{requestId} {
+      allow create: if signedIn()
+        && request.resource.data.submittedBy == request.auth.uid
+        && request.resource.data.status == 'PENDING';
+      allow read: if isAdmin() || (signedIn() && resource.data.submittedBy == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /notifications/{notificationId} {

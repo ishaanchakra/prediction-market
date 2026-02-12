@@ -21,13 +21,9 @@ import { MARKET_STATUS, getMarketStatus, isTradeableMarket } from '@/utils/marke
 import InfoTooltip from '@/app/components/InfoTooltip';
 import {
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
+  LineChart,
+  Line,
   Tooltip,
-  Area,
-  AreaChart,
-  ReferenceLine,
   CartesianGrid,
   XAxis,
   YAxis
@@ -491,11 +487,6 @@ export default function MarketPage() {
     }
   }
 
-  const pieData = [
-    { name: 'YES', value: market?.outstandingShares?.yes || 0, color: '#10b981' },
-    { name: 'NO', value: market?.outstandingShares?.no || 0, color: '#ef4444' }
-  ];
-
   if (loading) return <div className="p-8">Loading...</div>;
   if (!market) return <div className="p-8">Market not found</div>;
 
@@ -544,15 +535,9 @@ export default function MarketPage() {
         <div className="lg:col-span-2 space-y-6">
           {betHistory.length > 1 && (
             <div className="bg-white border rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4 text-gray-900">Probability History</h2>
+              <h2 className="text-lg font-semibold mb-4 text-gray-900">Market Chart</h2>
               <ResponsiveContainer width="100%" height={320}>
-                <AreaChart data={betHistory}>
-                  <defs>
-                    <linearGradient id="colorProb" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
+                <LineChart data={betHistory}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} vertical={false} />
                   <XAxis
                     dataKey="timestamp"
@@ -587,51 +572,18 @@ export default function MarketPage() {
                       );
                     }}
                   />
-                  <ReferenceLine y={0.5} stroke="#9ca3af" strokeDasharray="3 3" strokeWidth={1} strokeOpacity={0.5} />
-                  <Area
-                    type="stepAfter"
+                  <Line
+                    type="monotone"
                     dataKey="probability"
-                    stroke="#6366f1"
-                    strokeWidth={2}
-                    fill="url(#colorProb)"
+                    stroke="#10b981"
+                    strokeWidth={3}
                     dot={false}
-                    activeDot={{ r: 4, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }}
+                    activeDot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           )}
-
-          <div className="bg-white border rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-semibold mb-4 text-gray-900 flex items-center gap-2">
-              Outstanding Shares
-              <InfoTooltip
-                label="What are shares?"
-                text="Shares are your position size. If your side wins, your shares become payout."
-              />
-            </h2>
-            <div className="flex items-center justify-center">
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex justify-center gap-6 mt-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-green-500" />
-                <span className="text-gray-700">YES: {market.outstandingShares?.yes?.toFixed(1) || 0}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-red-500" />
-                <span className="text-gray-700">NO: {market.outstandingShares?.no?.toFixed(1) || 0}</span>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="space-y-6">

@@ -13,3 +13,27 @@ body {
   background-color: #DC2626;
   color: #ffffff;
 }
+
+.dark body {
+  background-color: #020617;
+  color: #e2e8f0;
+}
+
+.carousel-track {
+  display: flex;
+  width: max-content;
+  animation: market-scroll 45s linear infinite;
+}
+
+.carousel-wrap:hover .carousel-track {
+  animation-play-state: paused;
+}
+
+@keyframes market-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
