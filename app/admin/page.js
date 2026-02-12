@@ -17,6 +17,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import { calculateRefundsByUser, round2 } from '@/utils/refunds';
+import ToastStack from '@/app/components/ToastStack';
+import useToastQueue from '@/app/hooks/useToastQueue';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
@@ -36,6 +38,8 @@ export default function AdminPage() {
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [requestEdits, setRequestEdits] = useState({});
   const [processingRequestId, setProcessingRequestId] = useState(null);
+  const [newsDrafts, setNewsDrafts] = useState({});
+  const { toasts, notifySuccess, notifyError, confirmToast, removeToast, resolveConfirm } = useToastQueue();
   const router = useRouter();
 
   function isPastDateString(dateString) {
@@ -53,7 +57,7 @@ export default function AdminPage() {
       }
 
       if (!ADMIN_EMAILS.includes(currentUser.email)) {
-        alert('Access denied. Admin only.');
+        notifyError('Access denied. Admin only.');
         router.push('/');
         return;
       }
@@ -64,7 +68,7 @@ export default function AdminPage() {
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [router, notifyError]);
 
   async function fetchUnresolvedMarkets() {
     try {
@@ -123,12 +127,12 @@ export default function AdminPage() {
 
   async function handleCreateMarket() {
     if (!newMarketQuestion.trim()) {
-      alert('Please enter a question');
+      notifyError('Please enter a question');
       return;
     }
 
     if (initialProbability < 1 || initialProbability > 99) {
-      alert('Probability must be between 1% and 99%');
+      notifyError('Probability must be between 1% and 99%');
       return;
     }
 
@@ -136,7 +140,7 @@ export default function AdminPage() {
     try {
       await createMarket({ question: newMarketQuestion, probabilityPercent: initialProbability, liquidityB: bValue });
 
-      alert('Market created successfully!');
+      notifySuccess('Market created successfully.');
       setNewMarketQuestion('');
       setInitialProbability(50);
       setBValue(100);
@@ -144,7 +148,7 @@ export default function AdminPage() {
       await fetchUnresolvedMarkets();
     } catch (error) {
       console.error('Error creating market:', error);
-      alert('Error creating market. Check console.');
+      notifyError('Error creating market. Check console.');
     } finally {
       setCreating(false);
     }
@@ -171,17 +175,17 @@ export default function AdminPage() {
     if (!edit) return;
 
     if (!edit.question.trim() || !edit.resolutionRules.trim() || !edit.resolutionDate) {
-      alert('Please keep required request fields filled.');
+      notifyError('Please keep required request fields filled.');
       return;
     }
 
     if (edit.initialProbability < 1 || edit.initialProbability > 99) {
-      alert('Initial probability must be between 1% and 99%.');
+      notifyError('Initial probability must be between 1% and 99%.');
       return;
     }
 
     if (isPastDateString(edit.resolutionDate)) {
-      alert('Resolution date cannot be in the past.');
+      notifyError('Resolution date cannot be in the past.');
       return;
     }
 
@@ -200,7 +204,7 @@ export default function AdminPage() {
       await fetchPendingRequests();
     } catch (error) {
       console.error('Error saving request edit:', error);
-      alert('Could not save edits.');
+      notifyError('Could not save edits.');
     } finally {
       setProcessingRequestId(null);
     }
@@ -218,12 +222,12 @@ export default function AdminPage() {
     };
 
     if (!edit.question?.trim() || !edit.resolutionRules?.trim() || !edit.resolutionDate) {
-      alert('Request must include question, rules, and resolution date before approval.');
+      notifyError('Request must include question, rules, and resolution date before approval.');
       return;
     }
 
     if (isPastDateString(edit.resolutionDate)) {
-      alert('Resolution date cannot be in the past.');
+      notifyError('Resolution date cannot be in the past.');
       return;
     }
 
@@ -252,16 +256,16 @@ export default function AdminPage() {
       await Promise.all([fetchUnresolvedMarkets(), fetchPendingRequests()]);
     } catch (error) {
       console.error('Error approving request:', error);
-      alert('Error approving request.');
+      notifyError('Error approving request.');
     } finally {
       setProcessingRequestId(null);
     }
   }
 
   async function handleRejectRequest(requestId) {
-    const reason = prompt('Reason for rejection (required):');
+    const reason = window.prompt('Reason for rejection (required):');
     if (!reason || !reason.trim()) {
-      alert('A rejection reason is required.');
+      notifyError('A rejection reason is required.');
       return;
     }
 
@@ -278,7 +282,7 @@ export default function AdminPage() {
       await fetchPendingRequests();
     } catch (error) {
       console.error('Error rejecting request:', error);
-      alert('Error rejecting request.');
+      notifyError('Error rejecting request.');
     } finally {
       setProcessingRequestId(null);
     }
@@ -298,14 +302,14 @@ export default function AdminPage() {
       await fetchUnresolvedMarkets();
     } catch (error) {
       console.error('Error locking market:', error);
-      alert('Error updating lock state.');
+      notifyError('Error updating lock state.');
     } finally {
       setLocking(null);
     }
   }
 
   async function handleResolve(marketId, resolution) {
-    if (!confirm(`Are you sure you want to resolve this market as ${resolution}?`)) {
+    if (!(await confirmToast(`Resolve this market as ${resolution}?`))) {
       return;
     }
 
@@ -385,19 +389,19 @@ export default function AdminPage() {
 
       await batch.commit();
 
-      alert(`Market resolved as ${resolution}. Payouts distributed.`);
+      notifySuccess(`Market resolved as ${resolution}. Payouts distributed.`);
       await fetchUnresolvedMarkets();
     } catch (error) {
       console.error('Error resolving market:', error);
-      alert('Error resolving market. Check console.');
+      notifyError('Error resolving market. Check console.');
     } finally {
       setResolving(null);
     }
   }
 
   async function handleCancelAndRefund(marketId) {
-    const reason = prompt('Optional cancellation reason (leave blank to skip):') || '';
-    if (!confirm('Cancel this market and issue full refunds of net invested amounts?')) {
+    const reason = window.prompt('Optional cancellation reason (leave blank to skip):') || '';
+    if (!(await confirmToast('Cancel this market and issue full refunds of net invested amounts?'))) {
       return;
     }
 
@@ -442,36 +446,60 @@ export default function AdminPage() {
       });
 
       await batch.commit();
-      alert('Market cancelled. Refunds distributed.');
+      notifySuccess('Market cancelled. Refunds distributed.');
       await fetchUnresolvedMarkets();
     } catch (error) {
       console.error('Error cancelling market:', error);
-      alert('Error cancelling market. Check console.');
+      notifyError('Error cancelling market. Check console.');
     } finally {
       setCancelling(null);
     }
   }
 
-  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
-  if (!user) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Access denied</div>;
+  async function handlePostNews(market) {
+    const draft = newsDrafts[market.id] || {};
+    if (!draft.headline?.trim() || !draft.url?.trim() || !draft.source?.trim()) {
+      notifyError('News post requires headline, URL, and source.');
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'newsItems'), {
+        marketId: market.id,
+        adminId: user.uid,
+        headline: draft.headline.trim(),
+        url: draft.url.trim(),
+        source: draft.source.trim(),
+        timestamp: new Date(),
+        probabilityAtPost: Number(market.probability || 0)
+      });
+      setNewsDrafts((prev) => ({ ...prev, [market.id]: { headline: '', url: '', source: '' } }));
+      notifySuccess('News item posted.');
+    } catch (error) {
+      console.error('Error posting news:', error);
+      notifyError('Could not post news item.');
+    }
+  }
+
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
+  if (!user) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Access denied</div>;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
+    <div className="p-8 max-w-5xl mx-auto bg-[var(--bg)] min-h-screen">
       <h1 className="text-3xl font-bold mb-6 text-white">Admin Panel</h1>
 
-      <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-lg p-4 mb-6">
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
         <p className="text-sm text-yellow-800">
           <strong>Admin mode:</strong> Resolve, lock, unlock, or cancel markets. Resolving and cancelling are permanent.
         </p>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 border-2 border-brand-pink dark:border-slate-700 rounded-lg p-6 mb-6">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Create New Market</h2>
+          <h2 className="text-xl font-semibold text-[var(--text)]">Create New Market</h2>
           {!showCreateForm && (
             <button
               onClick={() => setShowCreateForm(true)}
-              className="bg-brand-red text-white px-4 py-2 rounded-lg font-semibold hover:bg-brand-darkred transition-colors"
+              className="bg-[var(--bg)] text-white px-4 py-2 rounded-lg font-semibold hover:bg-brand-darkred transition-colors"
             >
               + New Market
             </button>
@@ -481,31 +509,31 @@ export default function AdminPage() {
         {showCreateForm && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Market Question</label>
+              <label className="block text-sm font-medium text-[var(--text)] mb-2">Market Question</label>
               <input
                 type="text"
                 value={newMarketQuestion}
                 onChange={(e) => setNewMarketQuestion(e.target.value)}
                 placeholder="Will Cornell have a snow day this month?"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900"
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-[var(--text)]"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Initial Probability (%)</label>
+                <label className="block text-sm font-medium text-[var(--text)] mb-2">Initial Probability (%)</label>
                 <input
                   type="number"
                   value={initialProbability}
                   onChange={(e) => setInitialProbability(Number(e.target.value))}
                   min="1"
                   max="99"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900"
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-[var(--text)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Liquidity (b)</label>
+                <label className="block text-sm font-medium text-[var(--text)] mb-2">Liquidity (b)</label>
                 <input
                   type="number"
                   value={bValue}
@@ -513,18 +541,18 @@ export default function AdminPage() {
                   min="10"
                   max="1000"
                   step="10"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-gray-900"
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-[var(--text)]"
                 />
               </div>
             </div>
 
-            <p className="text-xs text-gray-600 dark:text-gray-300">This market will open at {initialProbability}% and start in status OPEN.</p>
+            <p className="text-xs text-[var(--text-dim)]">This market will open at {initialProbability}% and start in status OPEN.</p>
 
             <div className="flex gap-3">
               <button
                 onClick={handleCreateMarket}
                 disabled={creating || !newMarketQuestion.trim()}
-                className="flex-1 bg-green-500 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300"
+                className="flex-1 bg-green-500 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-600 disabled:bg-[var(--surface3)]"
               >
                 {creating ? 'Creating...' : 'Create Market'}
               </button>
@@ -537,7 +565,7 @@ export default function AdminPage() {
                   setBValue(100);
                 }}
                 disabled={creating}
-                className="flex-1 bg-gray-200 text-gray-700 py-2 px-4 rounded-lg font-semibold hover:bg-gray-300"
+                className="flex-1 bg-[var(--surface3)] text-[var(--text-dim)] py-2 px-4 rounded-lg font-semibold hover:bg-[var(--surface3)]"
               >
                 Cancel
               </button>
@@ -546,24 +574,24 @@ export default function AdminPage() {
         )}
       </div>
 
-      <div className="bg-white dark:bg-slate-900 border-2 border-yellow-300 dark:border-slate-700 rounded-lg p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Incoming Requests ({requests.length})</h2>
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4 text-[var(--text)]">Incoming Requests ({requests.length})</h2>
 
         {requests.length === 0 ? (
-          <p className="text-gray-600 dark:text-gray-300">No pending requests.</p>
+          <p className="text-[var(--text-dim)]">No pending requests.</p>
         ) : (
           <div className="space-y-4">
             {requests.map((request) => {
               const edit = requestEdits[request.id] || request;
               const isEditing = editingRequestId === request.id;
               return (
-                <div key={request.id} className="rounded-lg border border-gray-200 dark:border-slate-700 p-4">
+                <div key={request.id} className="rounded-lg border border-[var(--border)] p-4">
                   {isEditing ? (
                     <div className="space-y-3">
                       <input
                         value={edit.question || ''}
                         onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, question: e.target.value } }))}
-                        className="w-full rounded border px-3 py-2 text-gray-900"
+                        className="w-full rounded border px-3 py-2 text-[var(--text)]"
                       />
                       <div className="grid md:grid-cols-2 gap-3">
                         <input
@@ -572,7 +600,7 @@ export default function AdminPage() {
                           max="99"
                           value={edit.initialProbability || 50}
                           onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, initialProbability: Number(e.target.value) } }))}
-                          className="w-full rounded border px-3 py-2 text-gray-900"
+                          className="w-full rounded border px-3 py-2 text-[var(--text)]"
                         />
                         <input
                           type="number"
@@ -581,33 +609,33 @@ export default function AdminPage() {
                           step="10"
                           value={edit.liquidityB || 100}
                           onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, liquidityB: Number(e.target.value) } }))}
-                          className="w-full rounded border px-3 py-2 text-gray-900"
+                          className="w-full rounded border px-3 py-2 text-[var(--text)]"
                         />
                       </div>
                       <textarea
                         value={edit.resolutionRules || ''}
                         onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, resolutionRules: e.target.value } }))}
-                        className="w-full rounded border px-3 py-2 text-gray-900"
+                        className="w-full rounded border px-3 py-2 text-[var(--text)]"
                         rows={3}
                       />
                       <input
                         type="date"
                         value={edit.resolutionDate || ''}
                         onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, resolutionDate: e.target.value } }))}
-                        className="w-full rounded border px-3 py-2 text-gray-900"
+                        className="w-full rounded border px-3 py-2 text-[var(--text)]"
                       />
                     </div>
                   ) : (
                     <>
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="font-semibold text-gray-900 dark:text-gray-100">{request.question}</p>
+                        <p className="font-semibold text-[var(--text)]">{request.question}</p>
                         <span className="px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">PENDING</span>
                       </div>
-                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Requested by: {request.submitterDisplayName || request.submittedBy}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Initial probability: {request.initialProbability}%</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Liquidity b: {request.liquidityB}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Resolution date: {request.resolutionDate?.toDate?.()?.toLocaleDateString() || 'N/A'}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-200"><span className="font-semibold">Rules:</span> {request.resolutionRules}</p>
+                      <p className="text-sm text-[var(--text-dim)] mb-1">Requested by: {request.submitterDisplayName || request.submittedBy}</p>
+                      <p className="text-sm text-[var(--text-dim)] mb-1">Initial probability: {request.initialProbability}%</p>
+                      <p className="text-sm text-[var(--text-dim)] mb-1">Liquidity b: {request.liquidityB}</p>
+                      <p className="text-sm text-[var(--text-dim)] mb-1">Resolution date: {request.resolutionDate?.toDate?.()?.toLocaleDateString() || 'N/A'}</p>
+                      <p className="text-sm text-[var(--text-dim)]"><span className="font-semibold">Rules:</span> {request.resolutionRules}</p>
                     </>
                   )}
 
@@ -615,7 +643,7 @@ export default function AdminPage() {
                     {!isEditing ? (
                       <button
                         onClick={() => startEditingRequest(request)}
-                        className="bg-gray-200 text-gray-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300"
+                        className="bg-[var(--surface3)] text-[var(--text)] px-3 py-2 rounded-lg text-sm font-semibold hover:bg-[var(--surface3)]"
                       >
                         Edit
                       </button>
@@ -623,7 +651,7 @@ export default function AdminPage() {
                       <button
                         onClick={() => saveRequestEdits(request.id)}
                         disabled={processingRequestId === request.id}
-                        className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300"
+                        className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-[var(--surface3)]"
                       >
                         Save edits
                       </button>
@@ -632,7 +660,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => handleApproveRequest(request)}
                       disabled={processingRequestId === request.id}
-                      className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:bg-gray-300"
+                      className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:bg-[var(--surface3)]"
                     >
                       {processingRequestId === request.id ? 'Working...' : 'Approve + Create'}
                     </button>
@@ -640,7 +668,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => handleRejectRequest(request.id)}
                       disabled={processingRequestId === request.id}
-                      className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-red-700 disabled:bg-gray-300"
+                      className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-red-700 disabled:bg-[var(--surface3)]"
                     >
                       Reject
                     </button>
@@ -663,21 +691,21 @@ export default function AdminPage() {
             const isLocked = status === MARKET_STATUS.LOCKED;
 
             return (
-              <div key={market.id} className="bg-white dark:bg-slate-900 border-2 border-brand-pink dark:border-slate-700 rounded-lg p-6">
+              <div key={market.id} className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6">
                 <div className="flex items-start justify-between gap-3 mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{market.question}</h3>
+                  <h3 className="text-lg font-semibold text-[var(--text)]">{market.question}</h3>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${isLocked ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
                     {status}
                   </span>
                 </div>
 
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">Current probability: {Math.round((market.probability || 0) * 100)}%</p>
+                <p className="text-sm text-[var(--text-dim)] mb-4">Current probability: {Math.round((market.probability || 0) * 100)}%</p>
 
                 <div className="grid gap-2 md:grid-cols-4">
                   <button
                     onClick={() => handleResolve(market.id, 'YES')}
                     disabled={resolving === market.id || cancelling === market.id}
-                    className="bg-green-500 text-white py-2 px-3 rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300"
+                    className="bg-green-500 text-white py-2 px-3 rounded-lg font-semibold hover:bg-green-600 disabled:bg-[var(--surface3)]"
                   >
                     {resolving === market.id ? 'Resolving...' : 'Resolve YES'}
                   </button>
@@ -685,7 +713,7 @@ export default function AdminPage() {
                   <button
                     onClick={() => handleResolve(market.id, 'NO')}
                     disabled={resolving === market.id || cancelling === market.id}
-                    className="bg-red-500 text-white py-2 px-3 rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300"
+                    className="bg-red-500 text-white py-2 px-3 rounded-lg font-semibold hover:bg-red-600 disabled:bg-[var(--surface3)]"
                   >
                     {resolving === market.id ? 'Resolving...' : 'Resolve NO'}
                   </button>
@@ -693,7 +721,7 @@ export default function AdminPage() {
                   <button
                     onClick={() => handleToggleLock(market, isLocked ? MARKET_STATUS.OPEN : MARKET_STATUS.LOCKED)}
                     disabled={locking === market.id || resolving === market.id || cancelling === market.id}
-                    className="bg-yellow-500 text-white py-2 px-3 rounded-lg font-semibold hover:bg-yellow-600 disabled:bg-gray-300"
+                    className="bg-yellow-500 text-white py-2 px-3 rounded-lg font-semibold hover:bg-yellow-600 disabled:bg-[var(--surface3)]"
                   >
                     {locking === market.id ? 'Saving...' : isLocked ? 'Unlock Market' : 'Lock Market'}
                   </button>
@@ -701,9 +729,48 @@ export default function AdminPage() {
                   <button
                     onClick={() => handleCancelAndRefund(market.id)}
                     disabled={cancelling === market.id || resolving === market.id}
-                    className="bg-gray-700 text-white py-2 px-3 rounded-lg font-semibold hover:bg-gray-800 disabled:bg-gray-300"
+                    className="bg-gray-700 text-white py-2 px-3 rounded-lg font-semibold hover:bg-gray-800 disabled:bg-[var(--surface3)]"
                   >
                     {cancelling === market.id ? 'Cancelling...' : 'Cancel + Refund'}
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-[var(--border)] p-3">
+                  <p className="mb-2 font-mono text-xs uppercase tracking-[0.05em] text-[var(--text-muted)]">Post market news</p>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <input
+                      type="text"
+                      placeholder="Headline"
+                      value={newsDrafts[market.id]?.headline || ''}
+                      onChange={(e) =>
+                        setNewsDrafts((prev) => ({ ...prev, [market.id]: { ...(prev[market.id] || {}), headline: e.target.value } }))
+                      }
+                      className="rounded px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="url"
+                      placeholder="URL"
+                      value={newsDrafts[market.id]?.url || ''}
+                      onChange={(e) =>
+                        setNewsDrafts((prev) => ({ ...prev, [market.id]: { ...(prev[market.id] || {}), url: e.target.value } }))
+                      }
+                      className="rounded px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Source"
+                      value={newsDrafts[market.id]?.source || ''}
+                      onChange={(e) =>
+                        setNewsDrafts((prev) => ({ ...prev, [market.id]: { ...(prev[market.id] || {}), source: e.target.value } }))
+                      }
+                      className="rounded px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handlePostNews(market)}
+                    className="mt-2 rounded bg-amber-500 px-3 py-2 text-xs font-bold text-black hover:bg-amber-400"
+                  >
+                    Publish News Item
                   </button>
                 </div>
 
@@ -715,6 +782,7 @@ export default function AdminPage() {
           })}
         </div>
       )}
+      <ToastStack toasts={toasts} onDismiss={removeToast} onConfirm={resolveConfirm} />
     </div>
   );
 }

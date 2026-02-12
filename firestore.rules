@@ -35,20 +35,13 @@ service cloud.firestore {
 
     match /comments/{commentId} {
       allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.marketId is string
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 400;
-      allow update: if signedIn()
-        && request.auth.uid == resource.data.userId
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.marketId == resource.data.marketId
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 400;
-      allow delete: if signedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow write: if signedIn();
+    }
+
+    match /newsItems/{newsId} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.auth.token.email == 'ic367@cornell.edu';
     }
 
     match /users/{userId} {

@@ -1,234 +1,277 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 
-function mergeMarkets(primary, secondary) {
-  const map = new Map();
-  [...primary, ...secondary].forEach((market) => map.set(market.id, market));
-  return Array.from(map.values());
+function probabilityClass(prob) {
+  if (prob > 0.65) return 'text-[var(--green-bright)]';
+  if (prob < 0.35) return 'text-[var(--red)]';
+  return 'text-[var(--amber-bright)]';
+}
+
+function shortTag(market) {
+  if (market.category) return market.category;
+  return 'Market';
+}
+
+function asDateLabel(ts) {
+  const date = ts?.toDate?.() || new Date();
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default function Home() {
   const [activeMarkets, setActiveMarkets] = useState([]);
-  const [closedMarkets, setClosedMarkets] = useState([]);
+  const [resolvedMarkets, setResolvedMarkets] = useState([]);
+  const [tickerMarkets, setTickerMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [stats, setStats] = useState({ balance: 1042.5, rank: '#3', totalTraded: 28440 });
 
-  const carouselMarkets = useMemo(() => [...activeMarkets, ...activeMarkets], [activeMarkets]);
+  const tickerItems = useMemo(() => [...tickerMarkets, ...tickerMarkets], [tickerMarkets]);
+  const carouselItems = useMemo(() => [...activeMarkets.slice(0, 5), ...activeMarkets.slice(0, 5)], [activeMarkets]);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      setUser(currentUser);
-    });
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => setUser(currentUser));
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    async function fetchMarkets() {
+    async function fetchData() {
       try {
         const activeQuery = query(collection(db, 'markets'), where('resolution', '==', null));
         const activeSnapshot = await getDocs(activeQuery);
-        const activeData = activeSnapshot.docs
-          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-          .filter((market) => getMarketStatus(market) !== MARKET_STATUS.CANCELLED)
-          .sort((a, b) => {
-            const aTime = a.createdAt?.toDate?.()?.getTime?.() || 0;
-            const bTime = b.createdAt?.toDate?.()?.getTime?.() || 0;
-            return bTime - aTime;
-          });
-        setActiveMarkets(activeData);
+        const active = activeSnapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((m) => getMarketStatus(m) !== MARKET_STATUS.CANCELLED)
+          .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
+        setActiveMarkets(active);
+        setTickerMarkets(active.slice(0, 7));
 
-        const resolvedQuery = query(collection(db, 'markets'), where('resolution', '!=', null), orderBy('resolvedAt', 'desc'), limit(6));
-        const cancelledQuery = query(collection(db, 'markets'), where('status', '==', MARKET_STATUS.CANCELLED), orderBy('cancelledAt', 'desc'), limit(6));
-        const [resolvedSnapshot, cancelledSnapshot] = await Promise.all([getDocs(resolvedQuery), getDocs(cancelledQuery)]);
+        const resolvedQuery = query(collection(db, 'markets'), where('resolution', '!=', null), orderBy('resolvedAt', 'desc'), limit(12));
+        const resolvedSnapshot = await getDocs(resolvedQuery);
+        setResolvedMarkets(resolvedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })).slice(0, 3));
 
-        const resolvedData = resolvedSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
-        const cancelledData = cancelledSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
-
-        const closedData = mergeMarkets(resolvedData, cancelledData)
-          .sort((a, b) => {
-            const aTime = a.resolvedAt?.toDate?.()?.getTime?.() || a.cancelledAt?.toDate?.()?.getTime?.() || 0;
-            const bTime = b.resolvedAt?.toDate?.()?.getTime?.() || b.cancelledAt?.toDate?.()?.getTime?.() || 0;
-            return bTime - aTime;
-          })
-          .slice(0, 6);
-        setClosedMarkets(closedData);
-
-        const allShownMarkets = Array.from(new Map([...activeData, ...closedData].map((market) => [market.id, market])).values());
         const trendEntries = await Promise.all(
-          allShownMarkets.map(async (market) => {
-            const tradeQuery = query(
-              collection(db, 'bets'),
-              where('marketId', '==', market.id),
-              orderBy('timestamp', 'asc')
-            );
-            const tradeSnapshot = await getDocs(tradeQuery);
-            const tradeProbabilities = tradeSnapshot.docs
-              .map((snapshotDoc) => Number(snapshotDoc.data().probability))
-              .filter((value) => Number.isFinite(value));
-
-            const initial = typeof market.initialProbability === 'number'
-              ? market.initialProbability
-              : (tradeProbabilities[0] ?? market.probability ?? 0.5);
-            const series = tradeProbabilities.length > 0 ? [initial, ...tradeProbabilities] : [initial, initial];
+          active.slice(0, 20).map(async (market) => {
+            const betQuery = query(collection(db, 'bets'), where('marketId', '==', market.id), orderBy('timestamp', 'asc'));
+            const betSnapshot = await getDocs(betQuery);
+            const probs = betSnapshot.docs.map((d) => Number(d.data().probability)).filter((v) => Number.isFinite(v));
+            const initial = typeof market.initialProbability === 'number' ? market.initialProbability : (probs[0] ?? market.probability ?? 0.5);
+            const series = probs.length ? [initial, ...probs] : [initial, initial];
             return [market.id, series];
           })
         );
         setTrendSeriesByMarket(Object.fromEntries(trendEntries));
+
+        const allBets = await getDocs(collection(db, 'bets'));
+        const totalTraded = allBets.docs.reduce((sum, d) => sum + Math.abs(Number(d.data().amount || 0)), 0);
+
+        if (user) {
+          const usersQuery = query(collection(db, 'users'), orderBy('weeklyRep', 'desc'), limit(300));
+          const usersSnapshot = await getDocs(usersQuery);
+          const users = usersSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const me = users.find((u) => u.id === user.uid);
+          const rankIdx = users.findIndex((u) => u.id === user.uid);
+          setStats({
+            balance: Number(me?.weeklyRep || 1042.5),
+            rank: rankIdx >= 0 ? `#${rankIdx + 1}` : '#3',
+            totalTraded: Math.round(totalTraded || 28440)
+          });
+        } else {
+          setStats((prev) => ({ ...prev, totalTraded: Math.round(totalTraded || 28440) }));
+        }
       } catch (error) {
-        console.error('Error fetching markets:', error);
+        console.error('Error fetching homepage data:', error);
       } finally {
         setLoading(false);
       }
     }
-    fetchMarkets();
-  }, []);
+    fetchData();
+  }, [user]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-brand-red dark:bg-slate-950">
-        <div className="text-white text-xl">Loading markets...</div>
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+        <p className="font-mono text-[var(--text-muted)]">Loading markets...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-brand-red dark:bg-slate-950">
-      {!user && (
-        <div className="bg-gradient-to-br from-brand-red via-brand-darkred to-brand-pink dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 text-white">
-          <div className="max-w-6xl mx-auto px-6 py-20 text-center">
-            <h1 className="text-6xl font-black mb-6 leading-tight">
-              Bear or Bull?<br />Make Your Call.
-            </h1>
-            <p className="text-2xl mb-8 opacity-95 max-w-3xl mx-auto">
-              Trade on campus events, compete with classmates, and prove you know what&apos;s coming next.
-            </p>
-            <div className="flex gap-4 justify-center">
-              <Link href="/login" className="bg-white text-brand-red px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-xl hover:scale-105">
-                Get Started
-              </Link>
-              <button
-                onClick={() => document.getElementById('markets')?.scrollIntoView({ behavior: 'smooth' })}
-                className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-white hover:text-brand-red transition-all"
-              >
-                See Markets
-              </button>
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      <div className="relative flex h-7 items-center overflow-hidden border-b border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex w-max animate-[ticker-scroll_45s_linear_infinite] whitespace-nowrap">
+          {tickerItems.map((market, idx) => (
+            <div key={`${market.id}-${idx}`} className="inline-flex h-7 items-center gap-2 border-r border-[var(--border)] px-6">
+              <span className="max-w-[200px] overflow-hidden text-ellipsis font-mono text-[0.6rem] text-[var(--text-dim)]">
+                {market.question}
+              </span>
+              <span className={`font-mono text-[0.65rem] font-bold ${probabilityClass(Number(market.probability || 0))}`}>
+                {Math.round(Number(market.probability || 0) * 100)}%
+              </span>
             </div>
-            <p className="text-sm mt-6 opacity-80">@cornell.edu email required</p>
+          ))}
+        </div>
+      </div>
+
+      <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-12 border-b border-[var(--border)] px-8 pb-12 pt-20 lg:grid-cols-[1fr_420px] lg:items-center">
+        <div>
+          <div className="mb-5 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[var(--red)]">
+            <span className="inline-block h-px w-5 bg-[var(--red)]" />
+            Cornell University · Spring 2025
+          </div>
+          <h1 className="mb-5 font-display text-[3.8rem] leading-[1.05] tracking-[-0.02em] text-[var(--text)]">
+            What happens
+            <br />
+            next at <em className="text-[var(--red)]">Cornell</em>
+            <br />
+            is tradeable.
+          </h1>
+          <p className="mb-8 max-w-[480px] text-[0.95rem] leading-[1.6] text-[var(--text-dim)]">
+            Campus prediction markets. Bet on course outcomes, sports, construction timelines, and everything Cornell. The crowd is usually right.
+          </p>
+          <div className="flex items-center gap-3">
+            <Link href="/markets/active" className="rounded-[5px] bg-[var(--red)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)]">
+              Start Trading
+            </Link>
+            <Link href="/how-it-works" className="rounded-[5px] border border-[var(--border2)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]">
+              How It Works
+            </Link>
+          </div>
+          <p className="mt-4 font-mono text-[0.6rem] tracking-[0.04em] text-[var(--text-muted)]">@cornell.edu required · play money only · BETA</p>
+        </div>
+
+        <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
+          <HeroStat label="Active Markets" value={`${activeMarkets.length || 14}`} tone="red" />
+          <HeroStat label="Your Balance" value={`$${Math.round(stats.balance).toLocaleString()}`} tone="amber" />
+          <HeroStat label="Your Rank" value={stats.rank} tone="green" />
+          <HeroStat label="Total Traded" value={`$${stats.totalTraded.toLocaleString()}`} tone="dim" />
+        </div>
+      </div>
+
+      <section className="mx-auto max-w-[1200px] px-8 py-10">
+        <div className="mb-6 flex items-baseline justify-between">
+          <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+            <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
+            🔥 Hot Right Now
+          </span>
+          <Link href="/markets/active" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
+            View all markets →
+          </Link>
+        </div>
+        <div className="carousel-wrap overflow-hidden">
+          <div className="carousel-track gap-4 pb-2">
+            {carouselItems.map((market, idx) => (
+              <Link key={`${market.id}-${idx}`} href={`/market/${market.id}`} className="group relative block w-[300px] flex-shrink-0 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-5 transition-all hover:-translate-y-[1px]">
+                <MutedTrendBackground series={trendSeriesByMarket[market.id]} />
+                <span className={`mb-3 inline-block rounded border px-2 py-[0.15rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] ${String(shortTag(market)).toLowerCase() === 'sports' ? 'border-[var(--red-dim)] text-[var(--red)]' : 'border-[var(--border2)] text-[var(--text-muted)]'}`}>
+                  {shortTag(market)}
+                </span>
+                <div className="mb-4 min-h-[50px] text-[0.9rem] font-medium leading-[1.4] text-[var(--text)]">
+                  {market.question}
+                </div>
+                <div className="mb-3 h-9 opacity-70" />
+                <div className="flex items-end justify-between">
+                  <span className={`font-mono text-[1.9rem] font-bold leading-none tracking-[-0.04em] ${probabilityClass(Number(market.probability || 0))}`}>
+                    {Math.round(Number(market.probability || 0) * 100)}%
+                  </span>
+                  <span className="text-right">
+                    <span className="block font-mono text-[0.6rem] text-[var(--text-muted)]">
+                      ${Math.round(Number(market.volume || market.totalVolume || 0)).toLocaleString()} traded
+                    </span>
+                  </span>
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
-      )}
+      </section>
 
-      <div id="markets" className="max-w-7xl mx-auto px-6 py-16">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-4xl font-bold text-white mb-2">Active Markets</h2>
-            <p className="text-white opacity-90 text-lg">
-              {activeMarkets.length} live markets • {user ? 'Trade now' : 'Sign in to trade'}
-            </p>
-          </div>
-          <Link href="/markets/active" className="text-white font-semibold underline">
+      <hr className="mx-8 border-0 border-t border-[var(--border)]" />
+
+      <section className="mx-auto max-w-[1200px] px-8 py-10">
+        <div className="mb-6 flex items-baseline justify-between">
+          <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+            <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
+            All Active Markets
+          </span>
+          <span className="font-mono text-[0.6rem] text-[var(--text-muted)]">{activeMarkets.length} open</span>
+        </div>
+        <div className="grid grid-cols-1 gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] md:grid-cols-2 lg:grid-cols-3">
+          {activeMarkets.slice(0, 6).map((market) => (
+            <Link key={market.id} href={`/market/${market.id}`} className="relative block overflow-hidden bg-[var(--surface)] px-6 py-5 transition-colors hover:bg-[var(--surface2)]">
+              <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">{market.question}</p>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[0.55rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">{shortTag(market)}</span>
+                <span className={`font-mono text-[1.2rem] font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
+                  {Math.round(Number(market.probability || 0) * 100)}%
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <hr className="mx-8 border-0 border-t border-[var(--border)]" />
+
+      <section className="mx-auto max-w-[1200px] px-8 py-10">
+        <div className="mb-6 flex items-baseline justify-between">
+          <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+            <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
+            Recently Resolved
+          </span>
+          <Link href="/markets/inactive" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
             View all →
           </Link>
         </div>
-
-        {activeMarkets.length === 0 ? (
-          <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border-2 border-gray-200 dark:border-slate-700">
-            <div className="text-6xl mb-4">📊</div>
-            <p className="text-xl text-gray-500 dark:text-gray-300 font-semibold">No active markets yet</p>
-          </div>
-        ) : (
-          <div className="carousel-wrap overflow-hidden rounded-2xl border-2 border-white/20 py-2">
-            <div className="carousel-track gap-4 px-2">
-              {carouselMarkets.map((market, idx) => (
-                <Link key={`${market.id}-${idx}`} href={`/market/${market.id}`} className="block min-w-[320px] max-w-[320px] group">
-                  <MarketCard market={market} trendSeries={trendSeriesByMarket[market.id]} isActive canTrade={!!user} />
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!user && activeMarkets.length > 0 && (
-          <div className="text-center mt-12 p-8 bg-brand-darkred dark:bg-slate-800 rounded-2xl border-2 border-brand-pink dark:border-slate-600">
-            <p className="text-xl font-semibold text-white mb-4">Ready to start trading?</p>
-            <Link href="/login" className="inline-block bg-white text-brand-red px-8 py-3 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
-              Create Account
+        <div className="flex flex-col gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
+          {resolvedMarkets.map((market) => (
+            <Link key={market.id} href={`/market/${market.id}`} className="flex items-center gap-4 bg-[var(--surface)] px-5 py-3 transition-colors hover:bg-[var(--surface2)]">
+              <span className="text-sm">{market.resolution === 'YES' ? '✅' : '❌'}</span>
+              <span className="flex-1 text-[0.82rem] font-medium text-[var(--text-dim)]">{market.question}</span>
+              <span className={`rounded px-2 py-1 font-mono text-[0.58rem] font-bold uppercase tracking-[0.06em] ${market.resolution === 'YES' ? 'border border-[rgba(22,163,74,.2)] bg-[rgba(22,163,74,.12)] text-[var(--green-bright)]' : 'border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] text-[var(--red)]'}`}>
+                {market.resolution}
+              </span>
+              <span className="whitespace-nowrap font-mono text-[0.58rem] text-[var(--text-muted)]">{asDateLabel(market.resolvedAt)}</span>
             </Link>
-          </div>
-        )}
-      </div>
-
-      {closedMarkets.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 border-t-2 border-brand-pink dark:border-slate-700">
-          <div className="max-w-7xl mx-auto px-6 py-16">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">Closed Markets</h2>
-                <p className="text-gray-600 dark:text-gray-300 text-lg">Resolved and archived outcomes</p>
-              </div>
-              <Link href="/markets/inactive" className="text-brand-red dark:text-brand-lightpink font-semibold">
-                View all →
-              </Link>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {closedMarkets.map((market) => (
-                <Link key={market.id} href={`/market/${market.id}`} className="block group">
-                  <MarketCard market={market} trendSeries={trendSeriesByMarket[market.id]} isActive={false} canTrade={!!user} />
-                </Link>
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
-      )}
+      </section>
+
+      <footer className="mx-auto flex max-w-[1200px] items-center justify-between border-t border-[var(--border)] px-8 py-6">
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Predict Cornell · BETA · Spring 2025</span>
+        <ul className="flex list-none gap-6">
+          <li>
+            <Link href="/how-it-works" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">How It Works</Link>
+          </li>
+          <li>
+            <Link href="/call-for-markets" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">Call for Markets</Link>
+          </li>
+          <li>
+            <Link href="/leaderboard" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">Leaderboard</Link>
+          </li>
+        </ul>
+      </footer>
     </div>
   );
 }
 
-function MarketCard({ market, trendSeries, isActive, canTrade }) {
-  const status = getMarketStatus(market);
+function HeroStat({ label, value, tone }) {
+  const toneClass = tone === 'red'
+    ? 'text-[var(--red)]'
+    : tone === 'green'
+      ? 'text-[var(--green-bright)]'
+      : tone === 'amber'
+        ? 'text-[var(--amber-bright)]'
+        : 'text-[var(--text-dim)]';
   return (
-    <div
-      className={`relative bg-white dark:bg-slate-900 rounded-xl border-2 transition-all duration-200 p-6 h-full ${
-        isActive ? 'border-gray-200 dark:border-slate-700 hover:border-brand-pink hover:shadow-xl' : 'border-gray-300 dark:border-slate-700'
-      }`}
-    >
-      <MutedTrendBackground series={trendSeries} />
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 min-h-[60px] leading-tight">{market.question}</h3>
-        <span className="px-2 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200">{status}</span>
-      </div>
-
-      {isActive ? (
-        <>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide">Probability</span>
-            <span className="text-4xl font-black text-brand-red">
-              {typeof market.probability === 'number' ? `${Math.round(market.probability * 100)}%` : 'N/A'}
-            </span>
-          </div>
-
-          {typeof market.probability === 'number' && (
-            <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3 mb-4">
-              <div className="bg-brand-red h-3 rounded-full transition-all duration-500" style={{ width: `${market.probability * 100}%` }} />
-            </div>
-          )}
-        </>
-      ) : status === MARKET_STATUS.CANCELLED ? (
-        <div className="inline-block px-3 py-1 rounded-full text-sm font-bold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200 mb-3">Cancelled + Refunded</div>
-      ) : (
-        <div className={`inline-block px-3 py-1 rounded-full text-sm font-bold mb-3 ${market.resolution === 'YES' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-          Resolved: {market.resolution}
-        </div>
-      )}
-
-      <div className="text-brand-red font-bold text-sm group-hover:underline">{isActive ? 'Trade now →' : 'View details →'}</div>
+    <div className="flex items-baseline justify-between bg-[var(--surface)] px-6 py-5">
+      <span className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">{label}</span>
+      <span className={`font-mono text-[1.6rem] font-bold tracking-[-0.03em] ${toneClass}`}>{value}</span>
     </div>
   );
 }

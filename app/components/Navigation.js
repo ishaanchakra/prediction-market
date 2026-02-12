@@ -1,27 +1,28 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
+
+function initialsFor(user) {
+  if (!user?.email) return 'PC';
+  const prefix = user.email.split('@')[0];
+  const parts = prefix.split(/[._-]/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return prefix.slice(0, 2).toUpperCase();
+}
 
 export default function Navigation() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [showMarketsDropdown, setShowMarketsDropdown] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('theme') === 'dark';
-  });
-  const closeTimerRef = useRef(null);
+  const [balance, setBalance] = useState(0);
   const router = useRouter();
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
+  const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -29,149 +30,105 @@ export default function Navigation() {
 
       if (currentUser) {
         try {
-          const q = query(
+          const unreadQuery = query(
             collection(db, 'notifications'),
             where('userId', '==', currentUser.uid),
             where('read', '==', false)
           );
-          const snapshot = await getDocs(q);
-          setUnreadCount(snapshot.size);
+          const unreadSnapshot = await getDocs(unreadQuery);
+          setUnreadCount(unreadSnapshot.size);
+
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          setBalance(userDoc.exists() ? Number(userDoc.data().weeklyRep || 0) : 0);
         } catch (error) {
-          console.error('Error fetching notifications:', error);
+          console.error('Error fetching nav state:', error);
         }
+      } else {
+        setUnreadCount(0);
+        setBalance(0);
       }
     });
+
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    };
-  }, []);
-
-  function toggleTheme() {
-    const next = !darkMode;
-    setDarkMode(next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
-    document.documentElement.classList.toggle('dark', next);
-  }
-
-  function openMarketsMenu() {
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    setShowMarketsDropdown(true);
-  }
-
-  function closeMarketsMenuWithDelay() {
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = setTimeout(() => {
-      setShowMarketsDropdown(false);
-    }, 120);
-  }
-
-  const handleLogout = async () => {
+  async function handleLogout() {
     try {
       await signOut(auth);
       router.push('/login');
     } catch (error) {
       console.error('Error signing out:', error);
     }
-  };
+  }
 
   return (
-    <>
-      <nav className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 sticky top-0 z-50 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center gap-2">
-            <Link href="/" className="text-xl font-bold text-brand-red hover:text-brand-darkred transition-colors">
-              Predict Cornell
-            </Link>
-            <span className="inline-flex items-center rounded-full bg-yellow-400 text-yellow-900 text-[10px] font-extrabold px-2 py-0.5 tracking-wide">
-              BETA
-            </span>
-          </div>
+    <nav className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgba(8,8,8,0.92)] px-8 backdrop-blur-[16px]">
+      <Link href="/" className="flex items-center gap-2 no-underline">
+        <span className="dot-pulse h-[7px] w-[7px] rounded-full bg-[var(--red)] shadow-[0_0_6px_var(--red)]" />
+        <span className="font-sans text-base font-extrabold tracking-[-0.025em] text-[var(--text)]">
+          Predict <em className="not-italic text-[var(--red)]">Cornell</em>
+        </span>
+      </Link>
 
-          <div className="flex items-center gap-4">
-            <Link href="/call-for-markets" className="text-yellow-700 hover:text-yellow-800 px-3 py-2 rounded-md text-sm font-semibold transition-colors">
-              Call for Markets
-            </Link>
+      <ul className="flex list-none items-center gap-[0.15rem]">
+        <li>
+          <Link href="/markets/active" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+            Markets
+          </Link>
+        </li>
+        <li>
+          <Link href="/leaderboard" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+            Leaderboard
+          </Link>
+        </li>
+        <li>
+          <Link href="/call-for-markets" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+            Call for Markets
+          </Link>
+        </li>
+        <li>
+          <Link href="/how-it-works" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+            How It Works
+          </Link>
+        </li>
+      </ul>
 
-            <div
-              className="relative"
-              onMouseEnter={openMarketsMenu}
-              onMouseLeave={closeMarketsMenuWithDelay}
-              onFocus={openMarketsMenu}
-              onBlur={closeMarketsMenuWithDelay}
-            >
-              <button className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1">
-                Markets
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {showMarketsDropdown && (
-                <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg py-1 z-50">
-                  <Link href="/markets/active" className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-red-50 dark:hover:bg-slate-800 hover:text-brand-red transition-colors">
-                    Active Markets
-                  </Link>
-                  <Link href="/markets/inactive" className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-red-50 dark:hover:bg-slate-800 hover:text-brand-red transition-colors">
-                    Closed Markets
-                  </Link>
-                </div>
-              )}
+      <div className="flex items-center gap-3">
+        {user && (
+          <>
+            <div className="flex items-center gap-2 rounded border border-[var(--border2)] px-3 py-[0.3rem] font-mono text-[0.7rem] text-[var(--text-dim)]">
+              balance
+              <strong className="text-[0.8rem] text-[var(--amber-bright)]">
+                ${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </strong>
             </div>
-
-            <Link href="/leaderboard" className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Leaderboard
+            <Link href="/notifications" className="rounded border border-[var(--border)] px-2 py-1 font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
+              N{unreadCount > 0 ? `:${unreadCount}` : ''}
             </Link>
-
-            <Link href="/how-it-works" className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              How It Works
+            <Link href="/profile" className="relative flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--red-glow)] font-mono text-[0.6rem] font-bold text-[var(--red)]">
+              {initialsFor(user)}
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--red)] px-1 text-[9px] font-bold text-white">
+                  {unreadCount}
+                </span>
+              )}
             </Link>
-
-            {user ? (
-              <>
-                <Link href="/notifications" className="relative text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                  Notifications
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-brand-pink text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Link>
-
-                <Link href="/profile" className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                  Profile
-                </Link>
-
-                {ADMIN_EMAILS.includes(user.email) && (
-                  <Link href="/admin" className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                    Admin
-                  </Link>
-                )}
-
-                <button onClick={handleLogout} className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                  Logout
-                </button>
-              </>
-            ) : (
-              <Link href="/login" className="bg-brand-red text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-brand-darkred transition-colors shadow-md">
-                Sign In
+            {isAdmin && (
+              <Link href="/admin" className="rounded px-[0.5rem] py-[0.25rem] font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+                Admin
               </Link>
             )}
-          </div>
-        </div>
+            <button onClick={handleLogout} className="rounded px-[0.5rem] py-[0.25rem] font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+              Logout
+            </button>
+          </>
+        )}
+        {!user && (
+          <Link href="/login" className="rounded border border-[var(--border2)] px-3 py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+            Sign In
+          </Link>
+        )}
       </div>
-      </nav>
-      <button
-        onClick={toggleTheme}
-        aria-label="Toggle dark mode"
-        className="fixed bottom-5 right-5 z-[60] h-11 w-11 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 shadow-lg text-xl"
-      >
-        <span suppressHydrationWarning>{darkMode ? '☀️' : '🌙'}</span>
-      </button>
-    </>
+    </nav>
   );
 }

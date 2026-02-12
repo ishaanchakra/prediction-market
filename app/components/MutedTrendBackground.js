@@ -45,14 +45,14 @@ function buildPath(series) {
 
 export default function MutedTrendBackground({ series }) {
   return (
-    <div className="pointer-events-none absolute inset-0 opacity-20 dark:opacity-25">
+    <div className="pointer-events-none absolute inset-0 opacity-20">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
         <path
           d={buildPath(series)}
           fill="none"
           stroke="currentColor"
           strokeWidth="1.8"
-          className="text-brand-red dark:text-red-400"
+          className="text-brand-red"
           strokeLinecap="round"
           strokeLinejoin="round"
         />

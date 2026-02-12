@@ -68,18 +68,20 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] p-4">
       <div className="max-w-md w-full">
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        <div className="bg-[var(--surface)] rounded-2xl shadow-xl p-8 border border-[var(--border)]">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Cornell Prediction Market</h1>
-            <p className="text-gray-600">Sign in with your Cornell email</p>
+            <h1 className="font-display text-4xl font-bold text-[var(--text)] mb-2">
+              Predict <span className="text-[var(--red)]">Cornell</span>
+            </h1>
+            <p className="text-[var(--text-dim)]">Sign in with your Cornell email</p>
             <p className="text-xs text-yellow-700 font-semibold mt-2">BETA</p>
           </div>
 
           {error && (
-            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="mb-6 bg-[var(--surface2)] border border-[var(--red)] rounded-lg p-4">
+              <p className="text-sm text-red-300">{error}</p>
             </div>
           )}
 
@@ -104,18 +106,18 @@ export default function LoginPage() {
           </button>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">Must use @cornell.edu email</p>
+            <p className="text-sm text-[var(--text-dim)]">Must use @cornell.edu email</p>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <Link href="/" className="text-sm text-indigo-600 hover:text-indigo-700 font-medium block text-center">
+          <div className="mt-8 pt-6 border-t border-[var(--border)]">
+            <Link href="/" className="text-sm text-brand-red hover:text-brand-lightpink font-medium block text-center">
               ← Back to markets
             </Link>
           </div>
         </div>
 
         <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500">By signing in, you agree to follow Cornell&apos;s code of conduct</p>
+          <p className="text-xs text-[var(--text-muted)]">By signing in, you agree to follow Cornell&apos;s code of conduct</p>
         </div>
       </div>
     </div>

@@ -95,10 +95,10 @@ export default function UserProfilePage() {
     [bets]
   );
 
-  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-white min-h-screen">Loading...</div>;
   if (notFound) {
     return (
-      <div className="p-8 max-w-4xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
+      <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
         <h1 className="text-3xl font-bold mb-2 text-white">User Not Found</h1>
         <p className="text-white opacity-90">This user does not exist.</p>
         <Link href="/leaderboard" className="text-white underline mt-4 inline-block">Back to Leaderboard</Link>
@@ -111,7 +111,7 @@ export default function UserProfilePage() {
   const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
+    <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2 text-white">{username}&apos;s Profile</h1>
         {viewerIsAdmin && user.email && <p className="text-white opacity-90">{user.email}</p>}
@@ -142,31 +142,31 @@ export default function UserProfilePage() {
 
 function PositionSection({ title, bets, emptyLabel }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border-2 border-brand-pink dark:border-slate-700 p-6">
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">{title}</h2>
+    <div className="bg-[var(--surface)] rounded-lg border-2 border-brand-pink p-6">
+      <h2 className="text-xl font-semibold mb-4 text-[var(--text)]">{title}</h2>
 
       {bets.length === 0 ? (
-        <p className="text-gray-500 dark:text-gray-300">{emptyLabel}</p>
+        <p className="text-[var(--text-muted)]">{emptyLabel}</p>
       ) : (
         <div className="space-y-3">
           {bets.map((bet) => (
-            <Link key={bet.id} href={`/market/${bet.marketId}`} className="block border-2 border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-brand-pink transition-colors">
+            <Link key={bet.id} href={`/market/${bet.marketId}`} className="block border-2 border-[var(--border)] rounded-lg p-4 hover:bg-[var(--surface2)] hover:border-brand-pink transition-colors">
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold ${bet.side === 'YES' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                     {bet.side}
                   </span>
-                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200">
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-[var(--surface2)] text-[var(--text-dim)]">
                     {bet.marketStatus}
                   </span>
                 </div>
-                <span className="text-sm text-gray-500 dark:text-gray-300">
+                <span className="text-sm text-[var(--text-muted)]">
                   {bet.timestamp?.toDate?.()?.toLocaleDateString() || 'Recently'}
                 </span>
               </div>
-              <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">{bet.marketQuestion || 'Loading...'}</p>
-              <p className="text-gray-900 dark:text-gray-100 mb-1">Amount: <span className="font-semibold">${fmtMoney(Math.abs(bet.amount || 0))}</span></p>
-              <p className="text-sm text-gray-600 dark:text-gray-300">Shares: {round2(Math.abs(bet.shares || 0))}</p>
+              <p className="font-medium text-[var(--text)] mb-2">{bet.marketQuestion || 'Loading...'}</p>
+              <p className="text-[var(--text)] mb-1">Amount: <span className="font-semibold">${fmtMoney(Math.abs(bet.amount || 0))}</span></p>
+              <p className="text-sm text-[var(--text-dim)]">Shares: {round2(Math.abs(bet.shares || 0))}</p>
             </Link>
           ))}
         </div>

@@ -1,22 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Instrument+Serif:ital@0;1&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --brand-red: #DC2626;
-  --brand-darkred: #991B1B;
-  --brand-pink: #EC4899;
-  --brand-lightpink: #F9A8D4;
+  --bg: #080808;
+  --surface: #111111;
+  --surface2: #181818;
+  --surface3: #202020;
+  --border: #252525;
+  --border2: #333333;
+  --red: #DC2626;
+  --red-dim: #991B1B;
+  --red-glow: rgba(220,38,38,0.1);
+  --text: #F0EDE8;
+  --text-dim: #7A7772;
+  --text-muted: #3D3B38;
+  --green: #16a34a;
+  --green-bright: #22c55e;
+  --amber: #d97706;
+  --amber-bright: #f59e0b;
+  --mono: 'Space Mono', monospace;
+  --display: 'Instrument Serif', serif;
+  --sans: 'Syne', sans-serif;
 }
 
 body {
-  background-color: #DC2626;
-  color: #ffffff;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
 }
 
-.dark body {
-  background-color: #020617;
-  color: #e2e8f0;
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .carousel-track {
@@ -36,4 +59,59 @@ body {
   100% {
     transform: translateX(-50%);
   }
+}
+
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 6px var(--red);
+  }
+  50% {
+    opacity: .3;
+    box-shadow: none;
+  }
+}
+
+.dot-pulse {
+  animation: dot-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes toast-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  10%, 85% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.toast-fade {
+  animation: toast-fade 3s ease-in-out forwards;
+}
+
+input,
+textarea,
+select {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--red);
 }

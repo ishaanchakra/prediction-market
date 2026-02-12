@@ -19,6 +19,9 @@ import Link from 'next/link';
 import { calculateBet, calculateSell } from '@/utils/lmsr';
 import { MARKET_STATUS, getMarketStatus, isTradeableMarket } from '@/utils/marketStatus';
 import InfoTooltip from '@/app/components/InfoTooltip';
+import ToastStack from '@/app/components/ToastStack';
+import useToastQueue from '@/app/hooks/useToastQueue';
+import { getPublicDisplayName } from '@/utils/displayName';
 import {
   ResponsiveContainer,
   LineChart,
@@ -59,19 +62,80 @@ export default function MarketPage() {
   const [postingComment, setPostingComment] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingText, setEditingText] = useState('');
+  const [currentDisplayName, setCurrentDisplayName] = useState('user');
+  const [newsItems, setNewsItems] = useState([]);
+  const [marketStats, setMarketStats] = useState({ totalTraded: 0, bettors: 0 });
+  const [topBettors, setTopBettors] = useState([]);
+  const [relatedMarkets, setRelatedMarkets] = useState([]);
+  const { toasts, notifyError, notifySuccess, confirmToast, removeToast, resolveConfirm } = useToastQueue();
 
   const marketStatus = getMarketStatus(market);
   const canTrade = currentUser && isTradeableMarket(market);
   const isLocked = marketStatus === MARKET_STATUS.LOCKED;
   const isResolved = marketStatus === MARKET_STATUS.RESOLVED;
   const isCancelled = marketStatus === MARKET_STATUS.CANCELLED;
+  const userSide = userPosition.yesShares > 0 ? 'YES' : userPosition.noShares > 0 ? 'NO' : null;
 
   const isAdminUser = useMemo(() => {
     return !!(currentUser?.email && ADMIN_EMAILS.includes(currentUser.email));
   }, [currentUser]);
 
+  const timelineItems = useMemo(() => {
+    const commentItems = comments.map((comment) => ({
+      id: `comment-${comment.id}`,
+      type: 'COMMENT',
+      timestamp: comment.timestamp?.toDate?.() || comment.createdAt?.toDate?.() || new Date(),
+      data: comment
+    }));
+
+    const news = newsItems.map((newsItem) => ({
+      id: `news-${newsItem.id}`,
+      type: 'NEWS',
+      timestamp: newsItem.timestamp?.toDate?.() || new Date(),
+      data: newsItem
+    }));
+
+    const events = [];
+    for (let i = 1; i < betHistory.length; i += 1) {
+      const prev = betHistory[i - 1];
+      const next = betHistory[i];
+      const delta = (next.probability || 0) - (prev.probability || 0);
+      if (Math.abs(delta) >= 0.05) {
+        events.push({
+          id: `event-${i}`,
+          type: 'EVENT',
+          timestamp: new Date(next.timestamp),
+          data: {
+            before: prev.probability,
+            after: next.probability,
+            delta
+          }
+        });
+      }
+    }
+
+    return [...commentItems, ...news, ...events].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }, [comments, newsItems, betHistory]);
+
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => setCurrentUser(user));
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      setCurrentUser(user);
+      if (!user) {
+        setCurrentDisplayName('user');
+        return;
+      }
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setCurrentDisplayName(getPublicDisplayName({ id: user.uid, ...userDoc.data() }));
+        } else {
+          setCurrentDisplayName(user.email?.split('@')[0] || 'user');
+        }
+      } catch (error) {
+        console.error('Error fetching display name:', error);
+        setCurrentDisplayName(user.email?.split('@')[0] || 'user');
+      }
+    });
     return () => unsubscribe();
   }, []);
 
@@ -158,6 +222,9 @@ export default function MarketPage() {
         );
         const snapshot = await getDocs(betsQuery);
         const trades = snapshot.docs.map((snapshotDoc) => snapshotDoc.data());
+        const totalTraded = trades.reduce((sum, trade) => sum + Math.abs(Number(trade.amount || 0)), 0);
+        const bettors = new Set(trades.map((trade) => trade.userId)).size;
+        setMarketStats({ totalTraded, bettors });
 
         const seededProbability =
           typeof market.initialProbability === 'number'
@@ -243,6 +310,51 @@ export default function MarketPage() {
   }, [params.id, market?.probability]);
 
   useEffect(() => {
+    async function fetchSidebarData() {
+      if (!params.id) return;
+      try {
+        const betsQ = query(
+          collection(db, 'bets'),
+          where('marketId', '==', params.id),
+          orderBy('amount', 'desc'),
+          limit(20)
+        );
+        const betsSnap = await getDocs(betsQ);
+        const top = betsSnap.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((bet) => Number(bet.amount || 0) > 0)
+          .slice(0, 5);
+        const bettorRows = await Promise.all(
+          top.map(async (bet) => {
+            const userId = bet.userId;
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userData = userDoc.exists() ? userDoc.data() : {};
+            return {
+              userId,
+              total: Number(bet.amount || 0),
+              side: bet.side,
+              name: getPublicDisplayName({ id: userId, ...userData })
+            };
+          })
+        );
+        setTopBettors(bettorRows);
+
+        const relatedQ = query(collection(db, 'markets'), where('resolution', '==', null), orderBy('createdAt', 'desc'), limit(6));
+        const relatedSnap = await getDocs(relatedQ);
+        setRelatedMarkets(
+          relatedSnap.docs
+            .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+            .filter((entry) => entry.id !== params.id)
+            .slice(0, 3)
+        );
+      } catch (error) {
+        console.error('Error fetching sidebar data:', error);
+      }
+    }
+    fetchSidebarData();
+  }, [params.id, market?.probability]);
+
+  useEffect(() => {
     async function fetchComments() {
       if (!params.id) return;
       setCommentsLoading(true);
@@ -250,7 +362,7 @@ export default function MarketPage() {
         const commentsQuery = query(
           collection(db, 'comments'),
           where('marketId', '==', params.id),
-          orderBy('createdAt', 'desc')
+          orderBy('timestamp', 'desc')
         );
         const snapshot = await getDocs(commentsQuery);
         setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
@@ -262,6 +374,24 @@ export default function MarketPage() {
     }
 
     fetchComments();
+  }, [params.id]);
+
+  useEffect(() => {
+    async function fetchNewsItems() {
+      if (!params.id) return;
+      try {
+        const newsQuery = query(
+          collection(db, 'newsItems'),
+          where('marketId', '==', params.id),
+          orderBy('timestamp', 'desc')
+        );
+        const snapshot = await getDocs(newsQuery);
+        setNewsItems(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+      } catch (error) {
+        console.error('Error loading news items:', error);
+      }
+    }
+    fetchNewsItems();
   }, [params.id]);
 
   useEffect(() => {
@@ -299,19 +429,19 @@ export default function MarketPage() {
 
   async function handlePlaceBet() {
     if (!currentUser) {
-      if (confirm('You need to sign in to place bets. Go to login page?')) {
+      if (await confirmToast('You need to sign in to place bets. Go to login page?')) {
         window.location.href = '/login';
       }
       return;
     }
 
     if (!isTradeableMarket(market)) {
-      alert('Trading is currently locked for this market.');
+      notifyError('Trading is currently locked for this market.');
       return;
     }
 
     if (!betAmount || parseFloat(betAmount) <= 0) {
-      alert('Please enter a valid amount');
+      notifyError('Please enter a valid amount');
       return;
     }
 
@@ -321,13 +451,13 @@ export default function MarketPage() {
 
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (!userDoc.exists()) {
-        alert('User profile not found. Please log out and log back in.');
+        notifyError('User profile not found. Please log out and log back in.');
         return;
       }
 
       const userData = userDoc.data();
       if (userData.weeklyRep < amount) {
-        alert(`Insufficient balance. You have $${userData.weeklyRep.toFixed(2)} available.`);
+        notifyError(`Insufficient balance. You have $${userData.weeklyRep.toFixed(2)} available.`);
         return;
       }
 
@@ -358,7 +488,7 @@ export default function MarketPage() {
       setPreview(null);
     } catch (error) {
       console.error('Error placing bet:', error);
-      alert('Error placing bet. Please try again.');
+      notifyError('Error placing bet. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -366,7 +496,7 @@ export default function MarketPage() {
 
   async function handleSell() {
     if (!currentUser || !isTradeableMarket(market)) {
-      alert('Selling is unavailable while this market is locked or closed.');
+      notifyError('Selling is unavailable while this market is locked or closed.');
       return;
     }
 
@@ -374,12 +504,12 @@ export default function MarketPage() {
     const availableShares = sellSide === 'YES' ? userPosition.yesShares : userPosition.noShares;
 
     if (!sellAmount || sharesToSell <= 0) {
-      alert('Please enter a valid amount');
+      notifyError('Please enter a valid amount');
       return;
     }
 
     if (sharesToSell > availableShares) {
-      alert(`Insufficient shares. You have ${availableShares.toFixed(2)} ${sellSide} shares.`);
+      notifyError(`Insufficient shares. You have ${availableShares.toFixed(2)} ${sellSide} shares.`);
       return;
     }
 
@@ -415,7 +545,7 @@ export default function MarketPage() {
       setShowSellModal(false);
     } catch (error) {
       console.error('Error selling shares:', error);
-      alert('Error selling shares. Please try again.');
+      notifyError('Error selling shares. Please try again.');
     } finally {
       setSelling(false);
     }
@@ -427,25 +557,33 @@ export default function MarketPage() {
 
     setPostingComment(true);
     try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      const displayName = userDoc.exists() ? getPublicDisplayName({ id: currentUser.uid, ...userDoc.data() }) : (currentUser.email?.split('@')[0] || 'user');
       await addDoc(collection(db, 'comments'), {
         marketId: params.id,
         userId: currentUser.uid,
-        userName: currentUser.email?.split('@')[0] || 'user',
+        username: displayName,
+        userName: displayName,
         text: newComment.trim(),
-        createdAt: new Date()
+        createdAt: new Date(),
+        timestamp: new Date(),
+        likes: 0,
+        replyTo: null,
+        userSide
       });
       setNewComment('');
+      notifySuccess('Comment posted.');
 
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        orderBy('createdAt', 'desc')
+        orderBy('timestamp', 'desc')
       );
       const snapshot = await getDocs(commentsQuery);
       setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
     } catch (error) {
       console.error('Error posting comment:', error);
-      alert('Unable to post comment right now.');
+      notifyError('Unable to post comment right now.');
     } finally {
       setPostingComment(false);
     }
@@ -465,45 +603,65 @@ export default function MarketPage() {
       );
       setEditingCommentId(null);
       setEditingText('');
+      notifySuccess('Comment updated.');
     } catch (error) {
       console.error('Error updating comment:', error);
-      alert('Unable to update comment.');
+      notifyError('Unable to update comment.');
     }
   }
 
   async function handleDeleteComment(comment) {
     const isOwner = currentUser?.uid === comment.userId;
     if (!isOwner && !isAdminUser) {
-      alert('Only the owner or an admin can delete this comment.');
+      notifyError('Only the owner or an admin can delete this comment.');
       return;
     }
 
     try {
       await deleteDoc(doc(db, 'comments', comment.id));
       setComments((prev) => prev.filter((item) => item.id !== comment.id));
+      notifySuccess('Comment deleted.');
     } catch (error) {
       console.error('Error deleting comment:', error);
-      alert('Unable to delete comment.');
+      notifyError('Unable to delete comment.');
     }
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (!market) return <div className="p-8">Market not found</div>;
+  async function handleLikeComment(comment) {
+    try {
+      const nextLikes = Number(comment.likes || 0) + 1;
+      await updateDoc(doc(db, 'comments', comment.id), { likes: nextLikes });
+      setComments((prev) => prev.map((item) => (item.id === comment.id ? { ...item, likes: nextLikes } : item)));
+    } catch (error) {
+      console.error('Error liking comment:', error);
+      notifyError('Unable to like comment.');
+    }
+  }
+
+  const openProbability = typeof market?.initialProbability === 'number' ? market.initialProbability : betHistory[0]?.probability ?? market?.probability ?? 0.5;
+  const currentProbability = typeof market?.probability === 'number' ? market.probability : openProbability;
+  const probabilityDelta = currentProbability - openProbability;
+  const probabilityColor = currentProbability > 0.65 ? 'text-[var(--green)]' : currentProbability < 0.35 ? 'text-[var(--red)]' : 'text-[var(--amber)]';
+
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
+  if (!market) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Market not found</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <Link href="/" className="text-indigo-600 hover:underline mb-4 inline-block">
+    <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
+      <Link href="/" className="text-brand-red hover:underline mb-4 inline-block font-mono text-xs uppercase tracking-[0.06em]">
         ← Back to markets
       </Link>
 
-      <h1 className="text-3xl font-bold mb-2 text-gray-900">{market.question}</h1>
+      <h1 className="text-3xl font-bold mb-2 text-[var(--text)]">{market.question}</h1>
 
       <div className="mb-6 inline-flex items-center gap-3">
-        <div className="bg-indigo-100 rounded-lg px-6 py-3">
-          <span className="text-4xl font-bold text-indigo-600">
+        <div className="bg-[var(--surface)] rounded-lg px-6 py-3 border border-[var(--border)]">
+          <span className={`font-mono text-6xl font-bold ${probabilityColor}`}>
             {typeof market.probability === 'number' ? `${Math.round(market.probability * 100)}%` : 'N/A'}
           </span>
-          <span className="text-sm text-indigo-800 ml-2">chance</span>
+          <span className="ml-3 font-mono text-xs text-[var(--text-dim)]">
+            Δ {probabilityDelta >= 0 ? '+' : ''}{Math.round(probabilityDelta * 100)}% from open
+          </span>
         </div>
         <span
           className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -512,12 +670,31 @@ export default function MarketPage() {
               : isResolved
                 ? 'bg-green-100 text-green-800'
                 : isCancelled
-                  ? 'bg-gray-200 text-gray-700'
+                  ? 'bg-[var(--surface3)] text-[var(--text-dim)]'
                   : 'bg-blue-100 text-blue-800'
           }`}
         >
           {marketStatus}
         </span>
+      </div>
+
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Total Traded</p>
+          <p className="font-mono text-lg text-[var(--text)]">${marketStats.totalTraded.toFixed(2)}</p>
+        </div>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Bettors</p>
+          <p className="font-mono text-lg text-[var(--text)]">{marketStats.bettors}</p>
+        </div>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Days Remaining</p>
+          <p className="font-mono text-lg text-[var(--text)]">
+            {market?.resolutionDate?.toDate
+              ? Math.max(0, Math.ceil((market.resolutionDate.toDate().getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+              : 'N/A'}
+          </p>
+        </div>
       </div>
 
       {isLocked && (
@@ -526,19 +703,19 @@ export default function MarketPage() {
         </div>
       )}
       {isCancelled && (
-        <div className="mb-6 rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
+        <div className="mb-6 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] p-3 text-sm text-[var(--text-dim)]">
           This market was cancelled. Refunds were issued based on each user&apos;s net invested amount.
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="lg:col-span-2 space-y-6">
           {betHistory.length > 1 && (
-            <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Market Chart</h2>
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold mb-4 text-[var(--text)]">Market Chart</h2>
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={betHistory}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#222" strokeOpacity={0.6} vertical={false} />
                   <XAxis
                     dataKey="timestamp"
                     tickFormatter={(timestamp) => {
@@ -550,22 +727,22 @@ export default function MarketPage() {
                       const spansDays = date.toDateString() !== start.toDateString();
                       return spansDays ? `${date.getMonth() + 1}/${date.getDate()} ${displayHours}${ampm}` : `${displayHours} ${ampm}`;
                     }}
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    stroke="#e5e7eb"
+                    tick={{ fontSize: 11, fill: '#777' }}
+                    stroke="#222"
                   />
                   <YAxis
                     domain={[0, 1]}
                     ticks={[0, 0.25, 0.5, 0.75, 1]}
                     tickFormatter={(value) => `${Math.round(value * 100)}%`}
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    stroke="#e5e7eb"
+                    tick={{ fontSize: 11, fill: '#777' }}
+                    stroke="#222"
                   />
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null;
                       const date = new Date(label);
                       return (
-                        <div className="bg-gray-900 text-white rounded-lg p-3 shadow-xl border border-gray-700">
+                        <div className="bg-gray-900 text-white rounded-lg p-3 shadow-xl border border-[var(--border2)]">
                           <p className="text-xs text-gray-300 mb-1">{date.toLocaleString()}</p>
                           <p className="text-lg font-bold">{Math.round(payload[0].value * 100)}%</p>
                         </div>
@@ -575,10 +752,10 @@ export default function MarketPage() {
                   <Line
                     type="monotone"
                     dataKey="probability"
-                    stroke="#10b981"
+                    stroke="var(--red)"
                     strokeWidth={3}
                     dot={false}
-                    activeDot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
+                    activeDot={{ r: 4, fill: 'var(--red)', strokeWidth: 2, stroke: '#fff' }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -587,7 +764,7 @@ export default function MarketPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm overflow-hidden">
             {currentUser && !isResolved && !isCancelled && (userPosition.yesShares > 0 || userPosition.noShares > 0) && (
               <div className="bg-blue-50 border-b-2 border-blue-200 p-5">
                 <h3 className="text-sm font-semibold mb-3 text-blue-900 uppercase tracking-wide">Your Position</h3>
@@ -630,17 +807,17 @@ export default function MarketPage() {
               {isResolved ? (
                 <div className="text-center py-6">
                   <div className="text-4xl mb-3">{market.resolution === 'YES' ? 'YES' : 'NO'}</div>
-                  <h2 className="text-xl font-bold mb-1 text-gray-900 dark:text-gray-100">Resolved: {market.resolution}</h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Winning side pays out one point per share.</p>
+                  <h2 className="text-xl font-bold mb-1 text-[var(--text)]">Resolved: {market.resolution}</h2>
+                  <p className="text-sm text-[var(--text-dim)]">Winning side pays out one point per share.</p>
                 </div>
               ) : isCancelled ? (
                 <div className="text-center py-6">
-                  <h2 className="text-xl font-bold mb-1 text-gray-900 dark:text-gray-100">Market Cancelled</h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">This market no longer accepts trades.</p>
+                  <h2 className="text-xl font-bold mb-1 text-[var(--text)]">Market Cancelled</h2>
+                  <p className="text-sm text-[var(--text-dim)]">This market no longer accepts trades.</p>
                 </div>
               ) : (
                 <>
-                  <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Place Bet</h3>
+                  <h3 className="text-sm font-semibold mb-3 text-[var(--text)] uppercase tracking-wide">Place Bet</h3>
 
                   {!currentUser && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
@@ -651,34 +828,44 @@ export default function MarketPage() {
                   )}
 
                   <div className="flex gap-2 mb-4">
+                    {(() => {
+                      const yesProb = Number(market?.probability || 0.5);
+                      const noProb = 1 - yesProb;
+                      const yesReturn = yesProb > 0 ? ((1 / yesProb) - 1) * 100 : 0;
+                      const noReturn = noProb > 0 ? ((1 / noProb) - 1) * 100 : 0;
+                      return (
+                        <>
                     <button
                       onClick={() => setSelectedSide('YES')}
                       disabled={!canTrade}
                       className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-colors ${
-                        selectedSide === 'YES' ? 'bg-green-500 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        selectedSide === 'YES' ? 'bg-green-500 text-white shadow-md' : 'bg-[var(--surface2)] text-[var(--text-dim)] hover:bg-[var(--surface3)]'
                       } disabled:opacity-50`}
                     >
-                      YES
+                      YES {Math.round(yesProb * 100)}% · +{Math.max(0, Math.round(yesReturn))}%
                     </button>
                     <button
                       onClick={() => setSelectedSide('NO')}
                       disabled={!canTrade}
                       className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-colors ${
-                        selectedSide === 'NO' ? 'bg-red-500 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        selectedSide === 'NO' ? 'bg-red-500 text-white shadow-md' : 'bg-[var(--surface2)] text-[var(--text-dim)] hover:bg-[var(--surface3)]'
                       } disabled:opacity-50`}
                     >
-                      NO
+                      NO {Math.round(noProb * 100)}% · +{Math.max(0, Math.round(noReturn))}%
                     </button>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="mb-4">
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Amount ($)</label>
+                    <label className="block text-xs font-medium text-[var(--text-dim)] mb-1.5">Amount ($)</label>
                     <input
                       type="number"
                       value={betAmount}
                       onChange={(e) => setBetAmount(e.target.value)}
                       placeholder={currentUser ? 'Enter amount' : 'Sign in to trade'}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-gray-900"
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-[var(--text)]"
                       min="1"
                       disabled={!canTrade}
                     />
@@ -701,14 +888,14 @@ export default function MarketPage() {
                     </div>
                   )}
 
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700 p-3 mb-4 text-xs text-gray-700 dark:text-gray-200">
+                  <div className="bg-[var(--surface2)] rounded-lg border p-3 mb-4 text-xs text-[var(--text-dim)]">
                     If resolved YES, each YES share pays out. If resolved NO, each NO share pays out.
                   </div>
 
                   <button
                     onClick={handlePlaceBet}
                     disabled={!currentUser || !betAmount || submitting || !isTradeableMarket(market)}
-                    className="w-full py-3 px-4 rounded-lg font-bold text-sm transition-colors bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    className="w-full py-3 px-4 rounded-lg font-bold text-sm transition-colors bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
                   >
                     {submitting ? 'Placing...' : isLocked ? 'Market Locked' : 'Place Bet'}
                   </button>
@@ -718,8 +905,8 @@ export default function MarketPage() {
           </div>
 
           {recentTrades.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide flex items-center gap-2">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
+              <h3 className="text-sm font-semibold mb-3 text-[var(--text)] uppercase tracking-wide flex items-center gap-2">
                 Recent Activity
                 <InfoTooltip
                   label="Shares help"
@@ -745,17 +932,17 @@ export default function MarketPage() {
                           >
                             {trade.type === 'SELL' ? `SOLD ${trade.side}` : trade.side}
                           </span>
-                          <span className="text-xs font-medium text-gray-900 truncate">{trade.userName}</span>
+                          <span className="text-xs font-medium text-[var(--text)] truncate">{trade.userName}</span>
                         </div>
-                        <p className="text-xs text-gray-600 mb-1">
+                        <p className="text-xs text-[var(--text-dim)] mb-1">
                           {trade.type === 'SELL'
                             ? `${Math.abs(trade.shares).toFixed(1)} shares to $${Math.abs(trade.amount).toFixed(2)}`
                             : `$${Math.abs(trade.amount).toFixed(2)} to ${Math.abs(trade.shares).toFixed(1)} shares`}
                         </p>
                         <div className="flex items-center gap-1.5 text-xs">
-                          <span className="text-gray-500">{Math.round(beforeProbability * 100)}%</span>
-                          <span className="text-gray-400">to</span>
-                          <span className="font-semibold text-gray-900">{Math.round(afterProbability * 100)}%</span>
+                          <span className="text-[var(--text-muted)]">{Math.round(beforeProbability * 100)}%</span>
+                          <span className="text-[var(--text-muted)]">to</span>
+                          <span className="font-semibold text-[var(--text)]">{Math.round(afterProbability * 100)}%</span>
                         </div>
                       </div>
                     </div>
@@ -765,8 +952,8 @@ export default function MarketPage() {
             </div>
           )}
 
-            <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-5 shadow-sm">
-            <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Comments</h3>
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
+            <h3 className="text-sm font-semibold mb-3 text-[var(--text)] uppercase tracking-wide">Timeline</h3>
             {currentUser ? (
               <div className="mb-4 space-y-2">
                 <textarea
@@ -774,41 +961,95 @@ export default function MarketPage() {
                   onChange={(e) => setNewComment(e.target.value)}
                   placeholder="Share your reasoning for YES or NO"
                   maxLength={400}
-                  className="w-full rounded-lg border p-2 text-sm text-gray-900"
+                  className="w-full rounded-lg border p-2 text-sm text-[var(--text)]"
                   rows={3}
                 />
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500">{newComment.length}/400</span>
+                  <span className="text-xs text-[var(--text-muted)]">{newComment.length}/400</span>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    posting as {currentDisplayName} {userSide ? `· ${userSide} bettor` : '· no position'}
+                  </span>
                   <button
                     onClick={handlePostComment}
                     disabled={!newComment.trim() || postingComment}
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:bg-gray-300"
+                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:bg-[var(--surface3)]"
                   >
                     {postingComment ? 'Posting...' : 'Post Comment'}
                   </button>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-gray-600 mb-4">
+              <p className="text-xs text-[var(--text-dim)] mb-4">
                 <Link href="/login" className="underline">Sign in</Link> to join the discussion.
               </p>
             )}
 
             {commentsLoading ? (
-              <p className="text-sm text-gray-500">Loading comments...</p>
-            ) : comments.length === 0 ? (
-              <p className="text-sm text-gray-500">No comments yet.</p>
+              <p className="text-sm text-[var(--text-muted)]">Loading timeline...</p>
+            ) : timelineItems.length === 0 ? (
+              <p className="text-sm text-[var(--text-muted)]">No timeline items yet.</p>
             ) : (
-              <div className="space-y-3 max-h-[360px] overflow-y-auto">
-                {comments.map((comment) => {
+              <div className="relative space-y-3 max-h-[420px] overflow-y-auto pl-8">
+                <div className="pointer-events-none absolute left-4 top-0 bottom-0 w-px bg-[var(--border)]" />
+                {timelineItems.map((item) => {
+                  if (item.type === 'NEWS') {
+                    const news = item.data;
+                    const before = Number(news.probabilityAtPost || 0);
+                    const after = Number(market?.probability || before);
+                    const delta = after - before;
+                    return (
+                      <div key={item.id} className="relative rounded-lg border border-amber-700/40 bg-[var(--surface2)] p-3">
+                        <span className="absolute -left-6 top-4 h-2 w-2 rounded-full bg-amber-500" />
+                        <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-[0.05em] text-amber-400">News · {news.source}</p>
+                        <a href={news.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[var(--text)] hover:text-amber-300">
+                          {news.headline}
+                        </a>
+                        <div className="mt-2 flex items-center gap-2 rounded border border-[var(--border)] bg-[var(--surface3)] px-2 py-1">
+                          <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-[var(--text-muted)]">Snapshot</span>
+                          <span className="font-mono text-xs text-[var(--text-dim)]">{Math.round(before * 100)}%</span>
+                          <span className="font-mono text-xs text-[var(--text-muted)]">to</span>
+                          <span className="font-mono text-xs text-[var(--text)]">{Math.round(after * 100)}%</span>
+                          <span className={`ml-auto font-mono text-xs ${delta >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+                            {delta >= 0 ? '+' : ''}{Math.round(delta * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (item.type === 'EVENT') {
+                    const event = item.data;
+                    const up = event.delta >= 0;
+                    return (
+                      <div key={item.id} className="relative rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2">
+                        <span className={`absolute -left-6 top-3 h-2 w-2 rounded-full ${up ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <p className="font-mono text-xs">
+                          Move: {Math.round((event.before || 0) * 100)}% to {Math.round((event.after || 0) * 100)}%{' '}
+                          <span className={up ? 'text-green-400' : 'text-red-400'}>
+                            ({up ? '+' : ''}{Math.round((event.delta || 0) * 100)}%)
+                          </span>
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  const comment = item.data;
                   const isOwner = currentUser?.uid === comment.userId;
                   const canDelete = isOwner || isAdminUser;
 
                   return (
-                    <div key={comment.id} className="rounded-lg border p-3">
+                    <div key={item.id} className="relative rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
+                      <span className="absolute -left-6 top-4 h-2 w-2 rounded-full bg-[var(--bg)]" />
                       <div className="mb-1 flex items-center justify-between">
-                        <p className="text-xs font-semibold text-gray-900">{comment.userName}</p>
-                        <p className="text-xs text-gray-500">{comment.createdAt?.toDate?.()?.toLocaleString?.() || 'now'}</p>
+                        <p className="text-xs font-semibold text-gray-100">
+                          {comment.username || comment.userName}
+                          {comment.userSide && (
+                            <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${comment.userSide === 'YES' ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'}`}>
+                              {comment.userSide}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)]">{comment.createdAt?.toDate?.()?.toLocaleString?.() || 'now'}</p>
                       </div>
 
                       {editingCommentId === comment.id ? (
@@ -816,7 +1057,7 @@ export default function MarketPage() {
                           <textarea
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
-                            className="w-full rounded border p-2 text-sm text-gray-900"
+                            className="w-full rounded border p-2 text-sm text-[var(--text)]"
                             rows={2}
                             maxLength={400}
                           />
@@ -832,14 +1073,14 @@ export default function MarketPage() {
                                 setEditingCommentId(null);
                                 setEditingText('');
                               }}
-                              className="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700"
+                              className="rounded bg-[var(--surface3)] px-2 py-1 text-xs font-semibold text-[var(--text-dim)]"
                             >
                               Cancel
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-800 whitespace-pre-wrap">{comment.text}</p>
+                        <p className="text-sm text-gray-200 whitespace-pre-wrap">{comment.text}</p>
                       )}
 
                       {currentUser && editingCommentId !== comment.id && (isOwner || canDelete) && (
@@ -865,40 +1106,72 @@ export default function MarketPage() {
                           )}
                         </div>
                       )}
+                      <button onClick={() => handleLikeComment(comment)} className="mt-2 text-xs text-amber-400 hover:text-amber-300">
+                        Like ({Number(comment.likes || 0)})
+                      </button>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
+            <h3 className="mb-3 font-mono text-xs uppercase tracking-[0.05em] text-[var(--text-muted)]">Top Bettors</h3>
+            <div className="space-y-2">
+              {topBettors.length === 0 ? (
+                <p className="text-xs text-[var(--text-dim)]">No bettors yet.</p>
+              ) : topBettors.map((bettor, idx) => (
+                <div key={bettor.userId} className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--text)]">{idx + 1}. {bettor.name}</span>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono ${bettor.side === 'YES' ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)]' : 'bg-[var(--red-glow)] text-[var(--red)]'}`}>{bettor.side}</span>
+                  <span className="font-mono text-[var(--amber)]">${bettor.total.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
+            <h3 className="mb-3 font-mono text-xs uppercase tracking-[0.05em] text-[var(--text-muted)]">Related Active Markets</h3>
+            <div className="space-y-2">
+              {relatedMarkets.length === 0 ? (
+                <p className="text-xs text-[var(--text-dim)]">No related markets.</p>
+              ) : relatedMarkets.map((entry) => (
+                <Link key={entry.id} href={`/market/${entry.id}`} className="block rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] hover:border-brand-red">
+                  <p className="line-clamp-2">{entry.question}</p>
+                  <p className="mt-1 font-mono text-xs text-[var(--text-dim)]">{Math.round((entry.probability || 0) * 100)}%</p>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
       {showSellModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 max-w-md w-full shadow-xl">
-            <h2 className="text-2xl font-bold mb-4 text-gray-900">Sell {sellSide} Shares</h2>
+          <div className="bg-[var(--surface)] rounded-xl p-6 max-w-md w-full shadow-xl border border-[var(--border)]">
+            <h2 className="text-2xl font-bold mb-4 text-[var(--text)]">Sell {sellSide} Shares</h2>
 
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+            <div className="bg-[var(--surface2)] rounded-lg p-4 mb-4">
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-600">Available:</span>
+                <span className="text-[var(--text-dim)]">Available:</span>
                 <span className="font-semibold">{(sellSide === 'YES' ? userPosition.yesShares : userPosition.noShares).toFixed(2)} shares</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Exit all now:</span>
+                <span className="text-[var(--text-dim)]">Exit all now:</span>
                 <span className="font-bold text-green-600">${(sellSide === 'YES' ? exitValues.yesExit : exitValues.noExit).toFixed(2)}</span>
               </div>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Shares to Sell</label>
+              <label className="block text-sm font-medium text-[var(--text-dim)] mb-2">Shares to Sell</label>
               <div className="flex gap-2">
                 <input
                   type="number"
                   value={sellAmount}
                   onChange={(e) => setSellAmount(e.target.value)}
                   placeholder="Enter amount"
-                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[var(--text)]"
                   min="0.01"
                   step="0.01"
                   max={sellSide === 'YES' ? userPosition.yesShares : userPosition.noShares}
@@ -906,7 +1179,7 @@ export default function MarketPage() {
                 />
                 <button
                   onClick={() => setSellAmount((sellSide === 'YES' ? userPosition.yesShares : userPosition.noShares).toString())}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors text-sm"
+                  className="px-4 py-2 bg-[var(--surface3)] text-[var(--text-dim)] rounded-lg font-semibold hover:bg-[var(--surface3)] transition-colors text-sm"
                   disabled={!isTradeableMarket(market)}
                 >
                   Max
@@ -916,9 +1189,9 @@ export default function MarketPage() {
 
             {sellPreview && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-600 mb-2">You will receive now:</p>
+                <p className="text-sm text-[var(--text-dim)] mb-2">You will receive now:</p>
                 <p className="font-bold text-2xl text-green-600">${sellPreview.payout.toFixed(2)}</p>
-                <p className="text-xs text-gray-500 mt-2">New market probability: {Math.round(sellPreview.newProbability * 100)}%</p>
+                <p className="text-xs text-[var(--text-muted)] mt-2">New market probability: {Math.round(sellPreview.newProbability * 100)}%</p>
               </div>
             )}
 
@@ -926,7 +1199,7 @@ export default function MarketPage() {
               <button
                 onClick={handleSell}
                 disabled={!sellAmount || selling || parseFloat(sellAmount) <= 0 || !isTradeableMarket(market)}
-                className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
               >
                 {selling ? 'Selling...' : isLocked ? 'Market Locked' : 'Confirm'}
               </button>
@@ -938,7 +1211,7 @@ export default function MarketPage() {
                   setSellPreview(null);
                 }}
                 disabled={selling}
-                className="flex-1 bg-gray-200 text-gray-700 py-3 px-6 rounded-lg font-semibold hover:bg-gray-300"
+                className="flex-1 bg-[var(--surface3)] text-[var(--text-dim)] py-3 px-6 rounded-lg font-semibold hover:bg-[var(--surface3)]"
               >
                 Cancel
               </button>
@@ -946,6 +1219,7 @@ export default function MarketPage() {
           </div>
         </div>
       )}
+      <ToastStack toasts={toasts} onDismiss={removeToast} onConfirm={resolveConfirm} />
     </div>
   );
 }
@@ -955,22 +1229,22 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
   const isProfit = pnl >= 0;
 
   return (
-    <div className="bg-white rounded-lg p-3 border border-blue-200">
+    <div className="bg-[var(--surface2)] rounded-lg p-3 border border-blue-200">
       <div className="flex items-center justify-between mb-2">
         <span className={`font-bold text-sm ${side === 'YES' ? 'text-green-600' : 'text-red-600'}`}>{side}</span>
-        <span className="text-lg font-bold text-gray-900">{shares.toFixed(1)} shares</span>
+        <span className="text-lg font-bold text-[var(--text)]">{shares.toFixed(1)} shares</span>
       </div>
       <div className="space-y-1 text-xs">
-        <div className="flex justify-between text-gray-600">
+        <div className="flex justify-between text-[var(--text-dim)]">
           <span>You risked:</span>
           <span className="font-semibold">${invested.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-600">Sell now for:</span>
+          <span className="text-[var(--text-dim)]">Sell now for:</span>
           <span className="font-bold text-green-600">${exitValue.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-600">Current P/L:</span>
+          <span className="text-[var(--text-dim)]">Current P/L:</span>
           <span className={`font-semibold ${isProfit ? 'text-green-600' : 'text-red-600'}`}>
             {isProfit ? '+$' : '-$'}
             {Math.abs(pnl).toFixed(2)}
@@ -980,7 +1254,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
       <button
         onClick={onSell}
         disabled={!canSell}
-        className="w-full mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-700 disabled:bg-gray-300"
+        className="w-full mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-700 disabled:bg-[var(--surface3)]"
       >
         Sell {side}
       </button>

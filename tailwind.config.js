@@ -8,6 +8,11 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        mono: ['Space Mono', 'monospace'],
+        display: ['Instrument Serif', 'serif'],
+        sans: ['Syne', 'sans-serif'],
+      },
       colors: {
         brand: {
           red: '#DC2626',

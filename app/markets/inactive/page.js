@@ -64,16 +64,16 @@ export default function ClosedMarketsPage() {
     fetchMarkets();
   }, []);
 
-  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
+    <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
       <h1 className="text-3xl font-bold mb-2 text-white">Closed Markets</h1>
       <p className="text-white opacity-90 mb-8">{markets.length} closed markets</p>
 
       {markets.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-slate-900 border-2 border-gray-200 dark:border-slate-700 rounded-lg">
-          <p className="text-gray-500 dark:text-gray-300">No closed markets yet.</p>
+        <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
+          <p className="text-[var(--text-muted)]">No closed markets yet.</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -82,11 +82,11 @@ export default function ClosedMarketsPage() {
             const isCancelled = status === MARKET_STATUS.CANCELLED;
             return (
               <Link key={market.id} href={`/market/${market.id}`} className="block group">
-                <div className="relative bg-white dark:bg-slate-900 rounded-lg border-2 border-gray-200 dark:border-slate-700 hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full overflow-hidden">
+                <div className="relative bg-[var(--surface)] rounded-lg border-2 border-[var(--border)] hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full overflow-hidden">
                   <MutedTrendBackground series={trendSeriesByMarket[market.id]} />
                   <div className="flex items-start justify-between mb-3">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex-1 min-h-[60px] relative z-10">{market.question}</h2>
-                    <span className="ml-3 px-2 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200 relative z-10">{status}</span>
+                    <h2 className="text-lg font-semibold text-[var(--text)] flex-1 min-h-[60px] relative z-10">{market.question}</h2>
+                    <span className="ml-3 px-2 py-1 rounded-full text-xs font-bold bg-[var(--surface2)] text-[var(--text-dim)] relative z-10">{status}</span>
                   </div>
 
                   {!isCancelled ? (
@@ -94,10 +94,10 @@ export default function ClosedMarketsPage() {
                       Resolved: {market.resolution}
                     </div>
                   ) : (
-                    <div className="inline-block px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200 relative z-10">Cancelled + Refunded</div>
+                    <div className="inline-block px-3 py-1 rounded-full text-sm font-semibold bg-[var(--surface2)] text-[var(--text-dim)] relative z-10">Cancelled + Refunded</div>
                   )}
 
-                  <p className="text-xs text-gray-500 dark:text-gray-300 mt-3 relative z-10">
+                  <p className="text-xs text-[var(--text-muted)] mt-3 relative z-10">
                     {market.resolvedAt?.toDate?.()?.toLocaleDateString() || market.cancelledAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
                   </p>
 

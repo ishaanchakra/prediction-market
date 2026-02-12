@@ -54,12 +54,12 @@ export default function NotificationsPage() {
     }
   }
 
-  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
+    <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold text-white">Notifications</h1>
@@ -73,8 +73,8 @@ export default function NotificationsPage() {
       </div>
 
       {notifications.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-slate-900 border-2 border-gray-200 dark:border-slate-700 rounded-lg">
-          <p className="text-gray-500 dark:text-gray-300">No notifications yet.</p>
+        <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
+          <p className="text-[var(--text-muted)]">No notifications yet.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -85,16 +85,16 @@ export default function NotificationsPage() {
               onClick={() => !notif.read && markAsRead(notif.id)}
               className={`block p-4 rounded-lg transition-all border-2 ${
                 notif.read
-                  ? 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-500'
-                  : 'bg-white dark:bg-slate-900 border-brand-pink dark:border-slate-600 hover:border-brand-red shadow-md'
+                  ? 'bg-[var(--surface)] border-[var(--border)] hover:border-[var(--border2)]'
+                  : 'bg-[var(--surface)] border-brand-pink hover:border-brand-red shadow-md'
               }`}
             >
               {notif.type === 'payout' && (
                 <>
                   <HeaderEmoji emoji="💰" unread={!notif.read} />
-                  <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Your side won</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">{notif.marketQuestion}</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">If resolved {notif.resolution}, {notif.resolution} shares paid out.</p>
+                  <p className="font-semibold text-[var(--text)] mb-1">Your side won</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">{notif.marketQuestion}</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">If resolved {notif.resolution}, {notif.resolution} shares paid out.</p>
                   <span className="text-green-600 font-bold">+${Number(notif.amount || 0).toFixed(2)} added to your balance</span>
                   <TimeLabel createdAt={notif.createdAt} />
                 </>
@@ -103,9 +103,9 @@ export default function NotificationsPage() {
               {notif.type === 'loss' && (
                 <>
                   <HeaderEmoji emoji="📉" unread={!notif.read} />
-                  <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Market resolved against your side</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">{notif.marketQuestion}</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">Resolved: {notif.resolution}</p>
+                  <p className="font-semibold text-[var(--text)] mb-1">Market resolved against your side</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">{notif.marketQuestion}</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">Resolved: {notif.resolution}</p>
                   <span className="text-red-600 font-bold">-${Number(notif.amount || 0).toFixed(2)} was not recovered</span>
                   <TimeLabel createdAt={notif.createdAt} />
                 </>
@@ -114,9 +114,9 @@ export default function NotificationsPage() {
               {notif.type === 'refund' && (
                 <>
                   <HeaderEmoji emoji="↩️" unread={!notif.read} />
-                  <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Market cancelled + refund sent</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">{notif.marketQuestion}</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">This market was cancelled before resolution.</p>
+                  <p className="font-semibold text-[var(--text)] mb-1">Market cancelled + refund sent</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">{notif.marketQuestion}</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">This market was cancelled before resolution.</p>
                   <span className="text-blue-700 font-bold">+${Number(notif.amount || 0).toFixed(2)} refunded to your balance</span>
                   <TimeLabel createdAt={notif.createdAt} />
                 </>
@@ -125,9 +125,9 @@ export default function NotificationsPage() {
               {notif.type === 'significant_trade' && (
                 <>
                   <HeaderEmoji emoji="🐋" unread={!notif.read} />
-                  <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Large trade alert</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">{notif.marketQuestion}</p>
-                  <div className="text-sm text-gray-700 dark:text-gray-200 space-y-1">
+                  <p className="font-semibold text-[var(--text)] mb-1">Large trade alert</p>
+                  <p className="text-sm text-[var(--text-dim)] mb-2">{notif.marketQuestion}</p>
+                  <div className="text-sm text-[var(--text-dim)] space-y-1">
                     <p>
                       <span className="font-semibold">{notif.traderNetid}</span> placed a{' '}
                       <span className={`font-bold ${notif.tradeSide === 'YES' ? 'text-green-600' : 'text-red-600'}`}>
@@ -154,11 +154,11 @@ function HeaderEmoji({ emoji, unread }) {
   return (
     <div className="flex items-start justify-between mb-2">
       <span className="text-2xl">{emoji}</span>
-      {unread && <span className="bg-brand-red text-white text-xs font-bold px-2 py-1 rounded-full">NEW</span>}
+      {unread && <span className="bg-[var(--bg)] text-white text-xs font-bold px-2 py-1 rounded-full">NEW</span>}
     </div>
   );
 }
 
 function TimeLabel({ createdAt }) {
-  return <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{createdAt?.toDate?.()?.toLocaleString?.() || 'Recently'}</p>;
+  return <p className="text-xs text-[var(--text-muted)] mt-2">{createdAt?.toDate?.()?.toLocaleString?.() || 'Recently'}</p>;
 }

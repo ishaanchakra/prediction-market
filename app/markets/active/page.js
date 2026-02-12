@@ -55,16 +55,16 @@ export default function ActiveMarketsPage() {
     fetchMarkets();
   }, []);
 
-  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
+    <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
       <h1 className="text-3xl font-bold mb-2 text-white">Active Markets</h1>
       <p className="text-white opacity-90 mb-8">{markets.length} markets currently open or locked</p>
 
       {markets.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-slate-900 border-2 border-gray-200 dark:border-slate-700 rounded-lg">
-          <p className="text-gray-500 dark:text-gray-300">No active markets right now.</p>
+        <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
+          <p className="text-[var(--text-muted)]">No active markets right now.</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -72,10 +72,10 @@ export default function ActiveMarketsPage() {
             const status = getMarketStatus(market);
             return (
               <Link key={market.id} href={`/market/${market.id}`} className="block group">
-                <div className="relative bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700 hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full overflow-hidden">
+                <div className="relative bg-[var(--surface)] rounded-lg border border-[var(--border)] hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full overflow-hidden">
                   <MutedTrendBackground series={trendSeriesByMarket[market.id]} />
                   <div className="mb-3 flex items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 group-hover:text-brand-red transition-colors min-h-[60px] relative z-10">
+                    <h2 className="text-lg font-semibold text-[var(--text)] group-hover:text-brand-red transition-colors min-h-[60px] relative z-10">
                       {market.question}
                     </h2>
                     <span className={`px-2 py-1 rounded-full text-xs font-bold ${status === MARKET_STATUS.LOCKED ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
@@ -84,15 +84,15 @@ export default function ActiveMarketsPage() {
                   </div>
 
                   <div className="flex items-center justify-between mb-2 relative z-10">
-                    <span className="text-sm font-medium text-gray-500 dark:text-gray-300">Probability</span>
+                    <span className="text-sm font-medium text-[var(--text-muted)]">Probability</span>
                     <span className="text-3xl font-bold text-brand-red">
                       {typeof market.probability === 'number' ? `${Math.round(market.probability * 100)}%` : 'N/A'}
                     </span>
                   </div>
 
                   {typeof market.probability === 'number' && (
-                    <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2 relative z-10">
-                      <div className="bg-brand-red h-2 rounded-full transition-all duration-300" style={{ width: `${market.probability * 100}%` }} />
+                    <div className="w-full bg-[var(--surface3)] rounded-full h-2 relative z-10">
+                      <div className="bg-[var(--bg)] h-2 rounded-full transition-all duration-300" style={{ width: `${market.probability * 100}%` }} />
                     </div>
                   )}
 
