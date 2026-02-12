@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 export default function HowItWorksPage() {
   return (
-    <div className="min-h-screen bg-brand-red">
+    <div className="min-h-screen bg-brand-red dark:bg-slate-950">
       <div className="max-w-4xl mx-auto px-6 py-12 text-white">
         <h1 className="text-4xl font-black mb-3">How Predict Cornell Works</h1>
         <p className="text-white/90 mb-8">
@@ -12,7 +12,7 @@ export default function HowItWorksPage() {
         </p>
 
         <div className="space-y-6">
-          <section className="bg-white rounded-xl p-6 border-2 border-brand-pink text-gray-900">
+          <section className="bg-white dark:bg-slate-900 rounded-xl p-6 border-2 border-brand-pink dark:border-slate-700 text-gray-900 dark:text-gray-100">
             <h2 className="text-2xl font-bold mb-2">About the Project</h2>
             <p className="text-sm leading-6">
               Predict Cornell is a campus prediction market where students trade on yes/no questions.
@@ -20,7 +20,7 @@ export default function HowItWorksPage() {
             </p>
           </section>
 
-          <section className="bg-white rounded-xl p-6 border-2 border-brand-pink text-gray-900">
+          <section className="bg-white dark:bg-slate-900 rounded-xl p-6 border-2 border-brand-pink dark:border-slate-700 text-gray-900 dark:text-gray-100">
             <h2 className="text-2xl font-bold mb-2">How Trading Works</h2>
             <ol className="list-decimal ml-5 text-sm leading-6 space-y-1">
               <li>Pick YES or NO.</li>
@@ -30,7 +30,7 @@ export default function HowItWorksPage() {
             </ol>
           </section>
 
-          <section className="bg-white rounded-xl p-6 border-2 border-brand-pink text-gray-900">
+          <section className="bg-white dark:bg-slate-900 rounded-xl p-6 border-2 border-brand-pink dark:border-slate-700 text-gray-900 dark:text-gray-100">
             <h2 className="text-2xl font-bold mb-2">Probability as a Crowd Estimate</h2>
             <p className="text-sm leading-6 mb-2">
               If a market is at 70%, that means traders collectively price YES as more likely than NO.
@@ -41,7 +41,7 @@ export default function HowItWorksPage() {
             </p>
           </section>
 
-          <section className="bg-white rounded-xl p-6 border-2 border-brand-pink text-gray-900">
+          <section className="bg-white dark:bg-slate-900 rounded-xl p-6 border-2 border-brand-pink dark:border-slate-700 text-gray-900 dark:text-gray-100">
             <h2 className="text-2xl font-bold mb-2">Shares and Payouts</h2>
             <p className="text-sm leading-6 mb-2">
               Shares are your position size. More shares means a bigger stake.
@@ -55,7 +55,7 @@ export default function HowItWorksPage() {
             </ul>
           </section>
 
-          <section className="bg-white rounded-xl p-6 border-2 border-brand-pink text-gray-900">
+          <section className="bg-white dark:bg-slate-900 rounded-xl p-6 border-2 border-brand-pink dark:border-slate-700 text-gray-900 dark:text-gray-100">
             <h2 className="text-2xl font-bold mb-2">Why Price Moves</h2>
             <p className="text-sm leading-6 mb-2">
               When someone buys YES, the system adds YES exposure and pushes YES probability up.
@@ -66,7 +66,7 @@ export default function HowItWorksPage() {
             </p>
           </section>
 
-          <section className="bg-white rounded-xl p-6 border-2 border-brand-pink text-gray-900">
+          <section className="bg-white dark:bg-slate-900 rounded-xl p-6 border-2 border-brand-pink dark:border-slate-700 text-gray-900 dark:text-gray-100">
             <h2 className="text-2xl font-bold mb-2">LMSR in Plain Language</h2>
             <p className="text-sm leading-6 mb-2">
               The app uses LMSR (Logarithmic Market Scoring Rule), a pricing formula designed for prediction markets.

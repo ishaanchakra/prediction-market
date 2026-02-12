@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 
+const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
+
 function fmtMoney(num) {
   return Number(num || 0).toFixed(2);
 }
@@ -106,12 +108,13 @@ export default function UserProfilePage() {
   if (!user) return null;
 
   const username = getPublicDisplayName({ id, ...user });
+  const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
 
   return (
     <div className="p-8 max-w-4xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2 text-white">{username}&apos;s Profile</h1>
-        {viewer && user.email && <p className="text-white opacity-90">{user.email}</p>}
+        {viewerIsAdmin && user.email && <p className="text-white opacity-90">{user.email}</p>}
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
@@ -163,7 +166,7 @@ function PositionSection({ title, bets, emptyLabel }) {
               </div>
               <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">{bet.marketQuestion || 'Loading...'}</p>
               <p className="text-gray-900 dark:text-gray-100 mb-1">Amount: <span className="font-semibold">${fmtMoney(Math.abs(bet.amount || 0))}</span></p>
-              <p className="text-sm text-gray-600 dark:text-gray-300">Shares: {round2(bet.shares || 0)}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300">Shares: {round2(Math.abs(bet.shares || 0))}</p>
             </Link>
           ))}
         </div>

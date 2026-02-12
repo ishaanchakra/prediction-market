@@ -79,7 +79,8 @@ export default function Navigation() {
   };
 
   return (
-    <nav className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 sticky top-0 z-50 shadow-sm">
+    <>
+      <nav className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center gap-2">
@@ -92,6 +93,10 @@ export default function Navigation() {
           </div>
 
           <div className="flex items-center gap-4">
+            <Link href="/call-for-markets" className="text-yellow-700 hover:text-yellow-800 px-3 py-2 rounded-md text-sm font-semibold transition-colors">
+              Call for Markets
+            </Link>
+
             <div
               className="relative"
               onMouseEnter={openMarketsMenu}
@@ -126,17 +131,6 @@ export default function Navigation() {
               How It Works
             </Link>
 
-            <Link href="/call-for-markets" className="text-yellow-700 hover:text-yellow-800 px-3 py-2 rounded-md text-sm font-semibold transition-colors">
-              Call for Markets
-            </Link>
-
-            <button
-              onClick={toggleTheme}
-              className="text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            >
-              {darkMode ? 'Light' : 'Dark'}
-            </button>
-
             {user ? (
               <>
                 <Link href="/notifications" className="relative text-gray-700 dark:text-gray-200 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors">
@@ -170,6 +164,14 @@ export default function Navigation() {
           </div>
         </div>
       </div>
-    </nav>
+      </nav>
+      <button
+        onClick={toggleTheme}
+        aria-label="Toggle dark mode"
+        className="fixed bottom-5 right-5 z-[60] h-11 w-11 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 shadow-lg text-xl"
+      >
+        <span suppressHydrationWarning>{darkMode ? '☀️' : '🌙'}</span>
+      </button>
+    </>
   );
 }

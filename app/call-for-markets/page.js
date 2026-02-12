@@ -53,6 +53,14 @@ export default function CallForMarketsPage() {
       return;
     }
 
+    const selectedDate = new Date(`${form.resolutionDate}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (selectedDate < today) {
+      alert('Resolution date cannot be in the past.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await addDoc(collection(db, 'marketRequests'), {

@@ -22,7 +22,7 @@ body {
 .carousel-track {
   display: flex;
   width: max-content;
-  animation: market-scroll 45s linear infinite;
+  animation: market-scroll 38.25s linear infinite;
 }
 
 .carousel-wrap:hover .carousel-track {

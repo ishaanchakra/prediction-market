@@ -38,6 +38,13 @@ export default function AdminPage() {
   const [processingRequestId, setProcessingRequestId] = useState(null);
   const router = useRouter();
 
+  function isPastDateString(dateString) {
+    const picked = new Date(`${dateString}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return picked < today;
+  }
+
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       if (!currentUser) {
@@ -173,6 +180,11 @@ export default function AdminPage() {
       return;
     }
 
+    if (isPastDateString(edit.resolutionDate)) {
+      alert('Resolution date cannot be in the past.');
+      return;
+    }
+
     setProcessingRequestId(requestId);
     try {
       await updateDoc(doc(db, 'marketRequests', requestId), {
@@ -207,6 +219,11 @@ export default function AdminPage() {
 
     if (!edit.question?.trim() || !edit.resolutionRules?.trim() || !edit.resolutionDate) {
       alert('Request must include question, rules, and resolution date before approval.');
+      return;
+    }
+
+    if (isPastDateString(edit.resolutionDate)) {
+      alert('Resolution date cannot be in the past.');
       return;
     }
 
@@ -435,22 +452,22 @@ export default function AdminPage() {
     }
   }
 
-  if (loading) return <div className="p-8 bg-brand-red text-white min-h-screen">Loading...</div>;
-  if (!user) return <div className="p-8 bg-brand-red text-white min-h-screen">Access denied</div>;
+  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
+  if (!user) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Access denied</div>;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto bg-brand-red min-h-screen">
+    <div className="p-8 max-w-5xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
       <h1 className="text-3xl font-bold mb-6 text-white">Admin Panel</h1>
 
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+      <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-lg p-4 mb-6">
         <p className="text-sm text-yellow-800">
           <strong>Admin mode:</strong> Resolve, lock, unlock, or cancel markets. Resolving and cancelling are permanent.
         </p>
       </div>
 
-      <div className="bg-white border-2 border-brand-pink rounded-lg p-6 mb-6">
+      <div className="bg-white dark:bg-slate-900 border-2 border-brand-pink dark:border-slate-700 rounded-lg p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Create New Market</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Create New Market</h2>
           {!showCreateForm && (
             <button
               onClick={() => setShowCreateForm(true)}
@@ -464,7 +481,7 @@ export default function AdminPage() {
         {showCreateForm && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-900 mb-2">Market Question</label>
+              <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Market Question</label>
               <input
                 type="text"
                 value={newMarketQuestion}
@@ -476,7 +493,7 @@ export default function AdminPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">Initial Probability (%)</label>
+                <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Initial Probability (%)</label>
                 <input
                   type="number"
                   value={initialProbability}
@@ -488,7 +505,7 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">Liquidity (b)</label>
+                <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Liquidity (b)</label>
                 <input
                   type="number"
                   value={bValue}
@@ -501,7 +518,7 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <p className="text-xs text-gray-600">This market will open at {initialProbability}% and start in status OPEN.</p>
+            <p className="text-xs text-gray-600 dark:text-gray-300">This market will open at {initialProbability}% and start in status OPEN.</p>
 
             <div className="flex gap-3">
               <button
@@ -529,18 +546,18 @@ export default function AdminPage() {
         )}
       </div>
 
-      <div className="bg-white border-2 border-yellow-300 rounded-lg p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900">Incoming Requests ({requests.length})</h2>
+      <div className="bg-white dark:bg-slate-900 border-2 border-yellow-300 dark:border-slate-700 rounded-lg p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Incoming Requests ({requests.length})</h2>
 
         {requests.length === 0 ? (
-          <p className="text-gray-600">No pending requests.</p>
+          <p className="text-gray-600 dark:text-gray-300">No pending requests.</p>
         ) : (
           <div className="space-y-4">
             {requests.map((request) => {
               const edit = requestEdits[request.id] || request;
               const isEditing = editingRequestId === request.id;
               return (
-                <div key={request.id} className="rounded-lg border border-gray-200 p-4">
+                <div key={request.id} className="rounded-lg border border-gray-200 dark:border-slate-700 p-4">
                   {isEditing ? (
                     <div className="space-y-3">
                       <input
@@ -583,14 +600,14 @@ export default function AdminPage() {
                   ) : (
                     <>
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="font-semibold text-gray-900">{request.question}</p>
+                        <p className="font-semibold text-gray-900 dark:text-gray-100">{request.question}</p>
                         <span className="px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">PENDING</span>
                       </div>
-                      <p className="text-sm text-gray-700 mb-1">Requested by: {request.submitterDisplayName || request.submittedBy}</p>
-                      <p className="text-sm text-gray-700 mb-1">Initial probability: {request.initialProbability}%</p>
-                      <p className="text-sm text-gray-700 mb-1">Liquidity b: {request.liquidityB}</p>
-                      <p className="text-sm text-gray-700 mb-1">Resolution date: {request.resolutionDate?.toDate?.()?.toLocaleDateString() || 'N/A'}</p>
-                      <p className="text-sm text-gray-700"><span className="font-semibold">Rules:</span> {request.resolutionRules}</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Requested by: {request.submitterDisplayName || request.submittedBy}</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Initial probability: {request.initialProbability}%</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Liquidity b: {request.liquidityB}</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200 mb-1">Resolution date: {request.resolutionDate?.toDate?.()?.toLocaleDateString() || 'N/A'}</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200"><span className="font-semibold">Rules:</span> {request.resolutionRules}</p>
                     </>
                   )}
 
@@ -646,15 +663,15 @@ export default function AdminPage() {
             const isLocked = status === MARKET_STATUS.LOCKED;
 
             return (
-              <div key={market.id} className="bg-white border-2 border-brand-pink rounded-lg p-6">
+              <div key={market.id} className="bg-white dark:bg-slate-900 border-2 border-brand-pink dark:border-slate-700 rounded-lg p-6">
                 <div className="flex items-start justify-between gap-3 mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900">{market.question}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{market.question}</h3>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${isLocked ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
                     {status}
                   </span>
                 </div>
 
-                <p className="text-sm text-gray-600 mb-4">Current probability: {Math.round((market.probability || 0) * 100)}%</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">Current probability: {Math.round((market.probability || 0) * 100)}%</p>
 
                 <div className="grid gap-2 md:grid-cols-4">
                   <button

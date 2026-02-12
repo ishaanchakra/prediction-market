@@ -177,6 +177,13 @@ export default function ProfilePage() {
         const currentNormalized = current.displayNameNormalized || '';
         const newKeyRef = doc(db, 'displayNames', normalized);
         const newKeySnap = await tx.get(newKeyRef);
+        let oldKeyRef = null;
+        let oldKeySnap = null;
+
+        if (currentNormalized && currentNormalized !== normalized) {
+          oldKeyRef = doc(db, 'displayNames', currentNormalized);
+          oldKeySnap = await tx.get(oldKeyRef);
+        }
 
         if (newKeySnap.exists() && newKeySnap.data().userId !== user.uid) {
           throw new Error('Display name already taken.');
@@ -198,12 +205,8 @@ export default function ProfilePage() {
           displayNameNormalized: normalized
         });
 
-        if (currentNormalized && currentNormalized !== normalized) {
-          const oldKeyRef = doc(db, 'displayNames', currentNormalized);
-          const oldKeySnap = await tx.get(oldKeyRef);
-          if (oldKeySnap.exists() && oldKeySnap.data().userId === user.uid) {
-            tx.delete(oldKeyRef);
-          }
+        if (oldKeyRef && oldKeySnap?.exists() && oldKeySnap.data().userId === user.uid) {
+          tx.delete(oldKeyRef);
         }
       });
 
@@ -223,22 +226,22 @@ export default function ProfilePage() {
     }
   }
 
-  if (loading) return <div className="p-8 bg-brand-red text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-brand-red dark:bg-slate-950 text-white min-h-screen">Loading...</div>;
   if (!user) return null;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto bg-brand-red min-h-screen">
+    <div className="p-8 max-w-4xl mx-auto bg-brand-red dark:bg-slate-950 min-h-screen">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2 text-white">Your Profile</h1>
         <p className="text-white opacity-90">{user.email}</p>
       </div>
 
-      <div className="bg-white border-2 border-brand-pink rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900">Display Name</h2>
+      <div className="bg-white dark:bg-slate-900 border-2 border-brand-pink dark:border-slate-700 rounded-lg p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Display Name</h2>
 
         {!editingDisplayName ? (
           <div className="flex items-center justify-between">
-            <p className="text-gray-900 font-semibold text-lg">{getPublicDisplayName({ id: user.uid, ...user })}</p>
+            <p className="text-gray-900 dark:text-gray-100 font-semibold text-lg">{getPublicDisplayName({ id: user.uid, ...user })}</p>
             <button
               onClick={() => {
                 setEditingDisplayName(true);
@@ -262,7 +265,7 @@ export default function ProfilePage() {
             {nameMessage && (
               <p
                 className={`text-sm ${
-                  nameStatus === 'available' ? 'text-green-700' : nameStatus === 'taken' || nameStatus === 'invalid' || nameStatus === 'error' ? 'text-red-700' : 'text-gray-700'
+                  nameStatus === 'available' ? 'text-green-700' : nameStatus === 'taken' || nameStatus === 'invalid' || nameStatus === 'error' ? 'text-red-700' : 'text-gray-700 dark:text-gray-300'
                 }`}
               >
                 {nameMessage}
@@ -327,8 +330,8 @@ export default function ProfilePage() {
 
 function PositionSection({ title, emptyLabel, bets }) {
   return (
-    <div className="bg-white rounded-lg border-2 border-brand-pink p-6">
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 flex items-center gap-2">
+    <div className="bg-white dark:bg-slate-900 rounded-lg border-2 border-brand-pink dark:border-slate-700 p-6">
+      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100 flex items-center gap-2">
         {title}
         <InfoTooltip
           label="What are shares?"
@@ -337,14 +340,14 @@ function PositionSection({ title, emptyLabel, bets }) {
       </h2>
 
       {bets.length === 0 ? (
-        <p className="text-gray-500">{emptyLabel}</p>
+        <p className="text-gray-500 dark:text-gray-300">{emptyLabel}</p>
       ) : (
         <div className="space-y-3">
           {bets.map((bet) => (
             <Link
               key={bet.id}
               href={`/market/${bet.marketId}`}
-              className="block border-2 border-gray-200 rounded-lg p-4 hover:bg-gray-50 hover:border-brand-pink transition-colors"
+              className="block border-2 border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-brand-pink transition-colors"
             >
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
@@ -353,17 +356,17 @@ function PositionSection({ title, emptyLabel, bets }) {
                   }`}>
                     {bet.side}
                   </span>
-                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200">
                     {bet.marketStatus}
                   </span>
                 </div>
-                <span className="text-sm text-gray-500">
+                <span className="text-sm text-gray-500 dark:text-gray-300">
                   {bet.timestamp?.toDate?.()?.toLocaleDateString() || 'Recently'}
                 </span>
               </div>
-              <p className="font-medium text-gray-900 mb-2">{bet.marketQuestion || 'Loading...'}</p>
-              <p className="text-gray-900 mb-1">Amount: <span className="font-semibold">${round2(Math.abs(bet.amount || 0))}</span></p>
-              <p className="text-sm text-gray-600">Shares: {round2(bet.shares || 0)}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">{bet.marketQuestion || 'Loading...'}</p>
+              <p className="text-gray-900 dark:text-gray-100 mb-1">Amount: <span className="font-semibold">${round2(Math.abs(bet.amount || 0))}</span></p>
+              <p className="text-sm text-gray-600 dark:text-gray-300">Shares: {round2(Math.abs(bet.shares || 0))}</p>
             </Link>
           ))}
         </div>

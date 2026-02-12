@@ -86,10 +86,12 @@ export default function LeaderboardPage() {
 
       <LeaderboardTable
         title="Weekly Rankings"
-        subtitle="Who is performing best this week"
+        subtitle="Traders of the week"
         users={weeklyUsers}
-        viewer={viewer}
+        isAdmin={isAdmin}
         router={router}
+        metricLabel="Net Profit (Week)"
+        metricFn={(user) => Number(user.weeklyRep || 0) - 1000}
       />
 
       {isAdmin && (
@@ -106,17 +108,19 @@ export default function LeaderboardPage() {
 
       <LeaderboardTable
         title="Lifetime Rankings"
-        subtitle="Cumulative account performance"
+        subtitle="The Oracles of Ithaca"
         users={lifetimeUsers}
-        viewer={viewer}
+        isAdmin={isAdmin}
         router={router}
+        metricLabel="Net Profit (All-Time)"
+        metricFn={(user) => Number(user.lifetimeRep || 0)}
         lifetime
       />
     </div>
   );
 }
 
-function LeaderboardTable({ title, subtitle, users, viewer, router, lifetime = false }) {
+function LeaderboardTable({ title, subtitle, users, isAdmin, router, metricLabel, metricFn, lifetime = false }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-lg border-2 border-brand-pink dark:border-slate-700 overflow-hidden mb-8">
       <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
@@ -129,8 +133,7 @@ function LeaderboardTable({ title, subtitle, users, viewer, router, lifetime = f
           <tr>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Rank</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Weekly Balance</th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Lifetime Earnings</th>
+            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">{metricLabel}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
@@ -142,7 +145,7 @@ function LeaderboardTable({ title, subtitle, users, viewer, router, lifetime = f
             >
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="flex items-center text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {index === 0 && <span className="text-2xl mr-2">🥇</span>}
+                  {index === 0 && <span className="text-2xl mr-2">{lifetime ? '🔮' : '🥇'}</span>}
                   {index === 1 && <span className="text-2xl mr-2">🥈</span>}
                   {index === 2 && <span className="text-2xl mr-2">🥉</span>}
                   {index > 2 && <span>{index + 1}</span>}
@@ -150,14 +153,11 @@ function LeaderboardTable({ title, subtitle, users, viewer, router, lifetime = f
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{getPublicDisplayName(user)}</div>
-                {viewer && user.email && <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-right">
-                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">${fmtMoney(user.weeklyRep)}</span>
+                {isAdmin && user.email && <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
                 <span className={`text-sm font-bold ${lifetime ? 'text-brand-red' : 'text-gray-900 dark:text-gray-100'}`}>
-                  ${fmtMoney(user.lifetimeRep)}
+                  ${fmtMoney(metricFn(user))}
                 </span>
               </td>
             </tr>

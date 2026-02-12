@@ -534,8 +534,8 @@ export default function MarketPage() {
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {betHistory.length > 1 && (
-            <div className="bg-white border rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4 text-gray-900">Market Chart</h2>
+            <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Market Chart</h2>
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={betHistory}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} vertical={false} />
@@ -587,7 +587,7 @@ export default function MarketPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">
             {currentUser && !isResolved && !isCancelled && (userPosition.yesShares > 0 || userPosition.noShares > 0) && (
               <div className="bg-blue-50 border-b-2 border-blue-200 p-5">
                 <h3 className="text-sm font-semibold mb-3 text-blue-900 uppercase tracking-wide">Your Position</h3>
@@ -630,17 +630,17 @@ export default function MarketPage() {
               {isResolved ? (
                 <div className="text-center py-6">
                   <div className="text-4xl mb-3">{market.resolution === 'YES' ? 'YES' : 'NO'}</div>
-                  <h2 className="text-xl font-bold mb-1 text-gray-900">Resolved: {market.resolution}</h2>
-                  <p className="text-sm text-gray-600">Winning side pays out one point per share.</p>
+                  <h2 className="text-xl font-bold mb-1 text-gray-900 dark:text-gray-100">Resolved: {market.resolution}</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">Winning side pays out one point per share.</p>
                 </div>
               ) : isCancelled ? (
                 <div className="text-center py-6">
-                  <h2 className="text-xl font-bold mb-1 text-gray-900">Market Cancelled</h2>
-                  <p className="text-sm text-gray-600">This market no longer accepts trades.</p>
+                  <h2 className="text-xl font-bold mb-1 text-gray-900 dark:text-gray-100">Market Cancelled</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">This market no longer accepts trades.</p>
                 </div>
               ) : (
                 <>
-                  <h3 className="text-sm font-semibold mb-3 text-gray-900 uppercase tracking-wide">Place Bet</h3>
+                  <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Place Bet</h3>
 
                   {!currentUser && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
@@ -701,7 +701,7 @@ export default function MarketPage() {
                     </div>
                   )}
 
-                  <div className="bg-gray-50 rounded-lg border p-3 mb-4 text-xs text-gray-700">
+                  <div className="bg-gray-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700 p-3 mb-4 text-xs text-gray-700 dark:text-gray-200">
                     If resolved YES, each YES share pays out. If resolved NO, each NO share pays out.
                   </div>
 
@@ -718,8 +718,8 @@ export default function MarketPage() {
           </div>
 
           {recentTrades.length > 0 && (
-            <div className="bg-white border rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold mb-3 text-gray-900 uppercase tracking-wide flex items-center gap-2">
+            <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-5 shadow-sm">
+              <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide flex items-center gap-2">
                 Recent Activity
                 <InfoTooltip
                   label="Shares help"
@@ -750,7 +750,7 @@ export default function MarketPage() {
                         <p className="text-xs text-gray-600 mb-1">
                           {trade.type === 'SELL'
                             ? `${Math.abs(trade.shares).toFixed(1)} shares to $${Math.abs(trade.amount).toFixed(2)}`
-                            : `$${trade.amount.toFixed(2)} to ${trade.shares.toFixed(1)} shares`}
+                            : `$${Math.abs(trade.amount).toFixed(2)} to ${Math.abs(trade.shares).toFixed(1)} shares`}
                         </p>
                         <div className="flex items-center gap-1.5 text-xs">
                           <span className="text-gray-500">{Math.round(beforeProbability * 100)}%</span>
@@ -765,8 +765,8 @@ export default function MarketPage() {
             </div>
           )}
 
-          <div className="bg-white border rounded-xl p-5 shadow-sm">
-            <h3 className="text-sm font-semibold mb-3 text-gray-900 uppercase tracking-wide">Comments</h3>
+            <div className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-5 shadow-sm">
+            <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Comments</h3>
             {currentUser ? (
               <div className="mb-4 space-y-2">
                 <textarea
@@ -876,7 +876,7 @@ export default function MarketPage() {
 
       {showSellModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 max-w-md w-full shadow-xl">
             <h2 className="text-2xl font-bold mb-4 text-gray-900">Sell {sellSide} Shares</h2>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-4">

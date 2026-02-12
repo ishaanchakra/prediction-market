@@ -70,9 +70,11 @@ service cloud.firestore {
     match /marketRequests/{requestId} {
       allow create: if signedIn()
         && request.resource.data.submittedBy == request.auth.uid
-        && request.resource.data.status == 'PENDING';
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.resolutionDate > request.time;
       allow read: if isAdmin() || (signedIn() && resource.data.submittedBy == request.auth.uid);
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.resolutionDate > request.time;
       allow delete: if isAdmin();
     }
 

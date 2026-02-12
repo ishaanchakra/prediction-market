@@ -4,6 +4,7 @@ import { collection, query, where, getDocs, orderBy, limit } from 'firebase/fire
 import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
+import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 
 function mergeMarkets(primary, secondary) {
   const map = new Map();
@@ -14,6 +15,7 @@ function mergeMarkets(primary, secondary) {
 export default function Home() {
   const [activeMarkets, setActiveMarkets] = useState([]);
   const [closedMarkets, setClosedMarkets] = useState([]);
+  const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
@@ -48,15 +50,36 @@ export default function Home() {
         const resolvedData = resolvedSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
         const cancelledData = cancelledSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
 
-        setClosedMarkets(
-          mergeMarkets(resolvedData, cancelledData)
-            .sort((a, b) => {
-              const aTime = a.resolvedAt?.toDate?.()?.getTime?.() || a.cancelledAt?.toDate?.()?.getTime?.() || 0;
-              const bTime = b.resolvedAt?.toDate?.()?.getTime?.() || b.cancelledAt?.toDate?.()?.getTime?.() || 0;
-              return bTime - aTime;
-            })
-            .slice(0, 6)
+        const closedData = mergeMarkets(resolvedData, cancelledData)
+          .sort((a, b) => {
+            const aTime = a.resolvedAt?.toDate?.()?.getTime?.() || a.cancelledAt?.toDate?.()?.getTime?.() || 0;
+            const bTime = b.resolvedAt?.toDate?.()?.getTime?.() || b.cancelledAt?.toDate?.()?.getTime?.() || 0;
+            return bTime - aTime;
+          })
+          .slice(0, 6);
+        setClosedMarkets(closedData);
+
+        const allShownMarkets = Array.from(new Map([...activeData, ...closedData].map((market) => [market.id, market])).values());
+        const trendEntries = await Promise.all(
+          allShownMarkets.map(async (market) => {
+            const tradeQuery = query(
+              collection(db, 'bets'),
+              where('marketId', '==', market.id),
+              orderBy('timestamp', 'asc')
+            );
+            const tradeSnapshot = await getDocs(tradeQuery);
+            const tradeProbabilities = tradeSnapshot.docs
+              .map((snapshotDoc) => Number(snapshotDoc.data().probability))
+              .filter((value) => Number.isFinite(value));
+
+            const initial = typeof market.initialProbability === 'number'
+              ? market.initialProbability
+              : (tradeProbabilities[0] ?? market.probability ?? 0.5);
+            const series = tradeProbabilities.length > 0 ? [initial, ...tradeProbabilities] : [initial, initial];
+            return [market.id, series];
+          })
         );
+        setTrendSeriesByMarket(Object.fromEntries(trendEntries));
       } catch (error) {
         console.error('Error fetching markets:', error);
       } finally {
@@ -87,7 +110,7 @@ export default function Home() {
             </p>
             <div className="flex gap-4 justify-center">
               <Link href="/login" className="bg-white text-brand-red px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-xl hover:scale-105">
-                Get Started for Free
+                Get Started
               </Link>
               <button
                 onClick={() => document.getElementById('markets')?.scrollIntoView({ behavior: 'smooth' })}
@@ -124,7 +147,7 @@ export default function Home() {
             <div className="carousel-track gap-4 px-2">
               {carouselMarkets.map((market, idx) => (
                 <Link key={`${market.id}-${idx}`} href={`/market/${market.id}`} className="block min-w-[320px] max-w-[320px] group">
-                  <MarketCard market={market} isActive canTrade={!!user} />
+                  <MarketCard market={market} trendSeries={trendSeriesByMarket[market.id]} isActive canTrade={!!user} />
                 </Link>
               ))}
             </div>
@@ -135,7 +158,7 @@ export default function Home() {
           <div className="text-center mt-12 p-8 bg-brand-darkred dark:bg-slate-800 rounded-2xl border-2 border-brand-pink dark:border-slate-600">
             <p className="text-xl font-semibold text-white mb-4">Ready to start trading?</p>
             <Link href="/login" className="inline-block bg-white text-brand-red px-8 py-3 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
-              Create Account - It&apos;s Free
+              Create Account
             </Link>
           </div>
         )}
@@ -157,7 +180,7 @@ export default function Home() {
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {closedMarkets.map((market) => (
                 <Link key={market.id} href={`/market/${market.id}`} className="block group">
-                  <MarketCard market={market} isActive={false} canTrade={!!user} />
+                  <MarketCard market={market} trendSeries={trendSeriesByMarket[market.id]} isActive={false} canTrade={!!user} />
                 </Link>
               ))}
             </div>
@@ -168,18 +191,15 @@ export default function Home() {
   );
 }
 
-function MarketCard({ market, isActive, canTrade }) {
+function MarketCard({ market, trendSeries, isActive, canTrade }) {
   const status = getMarketStatus(market);
   return (
     <div
-      className={`bg-white dark:bg-slate-900 rounded-xl border-2 transition-all duration-200 p-6 h-full ${
+      className={`relative bg-white dark:bg-slate-900 rounded-xl border-2 transition-all duration-200 p-6 h-full ${
         isActive ? 'border-gray-200 dark:border-slate-700 hover:border-brand-pink hover:shadow-xl' : 'border-gray-300 dark:border-slate-700'
-      } ${!canTrade && isActive ? 'relative' : ''}`}
+      }`}
     >
-      {!canTrade && isActive && (
-        <div className="absolute top-4 right-4 bg-brand-red text-white text-xs font-bold px-3 py-1 rounded-full">Login to trade</div>
-      )}
-
+      <MutedTrendBackground series={trendSeries} />
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 min-h-[60px] leading-tight">{market.question}</h3>
         <span className="px-2 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200">{status}</span>
