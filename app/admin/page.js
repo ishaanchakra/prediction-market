@@ -39,6 +39,8 @@ export default function AdminPage() {
   const [requestEdits, setRequestEdits] = useState({});
   const [processingRequestId, setProcessingRequestId] = useState(null);
   const [newsDrafts, setNewsDrafts] = useState({});
+  const [rejectingRequestId, setRejectingRequestId] = useState(null);
+  const [rejectReasons, setRejectReasons] = useState({});
   const { toasts, notifySuccess, notifyError, confirmToast, removeToast, resolveConfirm } = useToastQueue();
   const router = useRouter();
 
@@ -262,8 +264,7 @@ export default function AdminPage() {
     }
   }
 
-  async function handleRejectRequest(requestId) {
-    const reason = window.prompt('Reason for rejection (required):');
+  async function handleRejectRequest(requestId, reason) {
     if (!reason || !reason.trim()) {
       notifyError('A rejection reason is required.');
       return;
@@ -279,6 +280,8 @@ export default function AdminPage() {
         updatedAt: new Date()
       });
 
+      setRejectingRequestId(null);
+      setRejectReasons((prev) => ({ ...prev, [requestId]: '' }));
       await fetchPendingRequests();
     } catch (error) {
       console.error('Error rejecting request:', error);
@@ -515,7 +518,7 @@ export default function AdminPage() {
                 value={newMarketQuestion}
                 onChange={(e) => setNewMarketQuestion(e.target.value)}
                 placeholder="Will Cornell have a snow day this month?"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-[var(--text)]"
+                className="w-full px-4 py-2 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
               />
             </div>
 
@@ -528,7 +531,7 @@ export default function AdminPage() {
                   onChange={(e) => setInitialProbability(Number(e.target.value))}
                   min="1"
                   max="99"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-[var(--text)]"
+                  className="w-full px-4 py-2 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                 />
               </div>
 
@@ -541,7 +544,7 @@ export default function AdminPage() {
                   min="10"
                   max="1000"
                   step="10"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-[var(--text)]"
+                  className="w-full px-4 py-2 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                 />
               </div>
             </div>
@@ -591,7 +594,7 @@ export default function AdminPage() {
                       <input
                         value={edit.question || ''}
                         onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, question: e.target.value } }))}
-                        className="w-full rounded border px-3 py-2 text-[var(--text)]"
+                        className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                       />
                       <div className="grid md:grid-cols-2 gap-3">
                         <input
@@ -600,7 +603,7 @@ export default function AdminPage() {
                           max="99"
                           value={edit.initialProbability || 50}
                           onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, initialProbability: Number(e.target.value) } }))}
-                          className="w-full rounded border px-3 py-2 text-[var(--text)]"
+                          className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                         />
                         <input
                           type="number"
@@ -609,20 +612,20 @@ export default function AdminPage() {
                           step="10"
                           value={edit.liquidityB || 100}
                           onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, liquidityB: Number(e.target.value) } }))}
-                          className="w-full rounded border px-3 py-2 text-[var(--text)]"
+                          className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                         />
                       </div>
                       <textarea
                         value={edit.resolutionRules || ''}
                         onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, resolutionRules: e.target.value } }))}
-                        className="w-full rounded border px-3 py-2 text-[var(--text)]"
+                        className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                         rows={3}
                       />
                       <input
                         type="date"
                         value={edit.resolutionDate || ''}
                         onChange={(e) => setRequestEdits((prev) => ({ ...prev, [request.id]: { ...edit, resolutionDate: e.target.value } }))}
-                        className="w-full rounded border px-3 py-2 text-[var(--text)]"
+                        className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                       />
                     </div>
                   ) : (
@@ -666,13 +669,52 @@ export default function AdminPage() {
                     </button>
 
                     <button
-                      onClick={() => handleRejectRequest(request.id)}
+                      onClick={() => setRejectingRequestId((prev) => (prev === request.id ? null : request.id))}
                       disabled={processingRequestId === request.id}
                       className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-red-700 disabled:bg-[var(--surface3)]"
                     >
                       Reject
                     </button>
                   </div>
+
+                  {rejectingRequestId === request.id && (
+                    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.05em] text-[var(--text-dim)]">
+                        Rejection reason
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={rejectReasons[request.id] || ''}
+                        onChange={(e) =>
+                          setRejectReasons((prev) => ({
+                            ...prev,
+                            [request.id]: e.target.value
+                          }))
+                        }
+                        placeholder="Explain why this request was rejected"
+                        className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
+                      />
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          onClick={() => handleRejectRequest(request.id, rejectReasons[request.id] || '')}
+                          disabled={processingRequestId === request.id}
+                          className="rounded bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-[var(--surface3)]"
+                        >
+                          {processingRequestId === request.id ? 'Rejecting...' : 'Confirm Reject'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRejectingRequestId(null);
+                            setRejectReasons((prev) => ({ ...prev, [request.id]: '' }));
+                          }}
+                          disabled={processingRequestId === request.id}
+                          className="rounded bg-[var(--surface3)] px-3 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface3)]"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -745,7 +787,7 @@ export default function AdminPage() {
                       onChange={(e) =>
                         setNewsDrafts((prev) => ({ ...prev, [market.id]: { ...(prev[market.id] || {}), headline: e.target.value } }))
                       }
-                      className="rounded px-3 py-2 text-sm"
+                      className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                     />
                     <input
                       type="url"
@@ -754,7 +796,7 @@ export default function AdminPage() {
                       onChange={(e) =>
                         setNewsDrafts((prev) => ({ ...prev, [market.id]: { ...(prev[market.id] || {}), url: e.target.value } }))
                       }
-                      className="rounded px-3 py-2 text-sm"
+                      className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                     />
                     <input
                       type="text"
@@ -763,7 +805,7 @@ export default function AdminPage() {
                       onChange={(e) =>
                         setNewsDrafts((prev) => ({ ...prev, [market.id]: { ...(prev[market.id] || {}), source: e.target.value } }))
                       }
-                      className="rounded px-3 py-2 text-sm"
+                      className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
                     />
                   </div>
                   <button

@@ -24,18 +24,35 @@ import useToastQueue from '@/app/hooks/useToastQueue';
 import { getPublicDisplayName } from '@/utils/displayName';
 import {
   ResponsiveContainer,
-  LineChart,
+  ComposedChart,
+  Area,
   Line,
   Tooltip,
   CartesianGrid,
   XAxis,
-  YAxis
+  YAxis,
+  ReferenceLine,
+  ReferenceDot
 } from 'recharts';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function round2(num) {
   return Math.round(num * 100) / 100;
+}
+
+function getInitials(name) {
+  if (!name) return 'PC';
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'PC';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function safeDate(value) {
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 export default function MarketPage() {
@@ -80,8 +97,17 @@ export default function MarketPage() {
     return !!(currentUser?.email && ADMIN_EMAILS.includes(currentUser.email));
   }, [currentUser]);
 
+  const repliesByParent = useMemo(() => {
+    return comments.reduce((acc, comment) => {
+      if (!comment.replyTo) return acc;
+      if (!acc[comment.replyTo]) acc[comment.replyTo] = [];
+      acc[comment.replyTo].push(comment);
+      return acc;
+    }, {});
+  }, [comments]);
+
   const timelineItems = useMemo(() => {
-    const commentItems = comments.map((comment) => ({
+    const commentItems = comments.filter((comment) => !comment.replyTo).map((comment) => ({
       id: `comment-${comment.id}`,
       type: 'COMMENT',
       timestamp: comment.timestamp?.toDate?.() || comment.createdAt?.toDate?.() || new Date(),
@@ -638,517 +664,582 @@ export default function MarketPage() {
     }
   }
 
+  async function handleShareMarket() {
+    if (typeof window === 'undefined') return;
+    const shareUrl = window.location.href;
+    const shareTitle = market?.question || 'Predict Cornell market';
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: shareTitle,
+          text: 'Check out this market on Predict Cornell',
+          url: shareUrl
+        });
+        notifySuccess('Shared.');
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        notifySuccess('Market link copied.');
+        return;
+      }
+      notifyError('Share is unavailable on this browser.');
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        notifyError('Unable to share right now.');
+      }
+    }
+  }
+
+  function handleFollowPlaceholder() {
+    notifySuccess('Follow is coming soon.');
+  }
+
   const openProbability = typeof market?.initialProbability === 'number' ? market.initialProbability : betHistory[0]?.probability ?? market?.probability ?? 0.5;
   const currentProbability = typeof market?.probability === 'number' ? market.probability : openProbability;
-  const probabilityDelta = currentProbability - openProbability;
-  const probabilityColor = currentProbability > 0.65 ? 'text-[var(--green)]' : currentProbability < 0.35 ? 'text-[var(--red)]' : 'text-[var(--amber)]';
+  const probabilityColor = currentProbability > 0.65 ? 'text-[var(--green-bright)]' : currentProbability < 0.35 ? 'text-[var(--red)]' : 'text-[var(--amber-bright)]';
+  const daysRemaining = market?.resolutionDate?.toDate
+    ? Math.max(0, Math.ceil((market.resolutionDate.toDate().getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+  const pointNow = betHistory[betHistory.length - 1]?.timestamp || Date.now();
+  const dayAgoTarget = pointNow - (24 * 60 * 60 * 1000);
+  let dayAgoProbability = null;
+  for (let i = betHistory.length - 1; i >= 0; i -= 1) {
+    if (betHistory[i].timestamp <= dayAgoTarget) {
+      dayAgoProbability = betHistory[i].probability;
+      break;
+    }
+  }
+  const using24hDelta = typeof dayAgoProbability === 'number';
+  const deltaBase = using24hDelta ? dayAgoProbability : openProbability;
+  const delta24h = currentProbability - deltaBase;
+  const deltaLabel = using24hDelta ? 'since 24h ago' : 'since open';
+  const deltaClass = delta24h >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]';
+  const deltaArrow = delta24h >= 0 ? '↑' : '↓';
+  const deltaText = `${deltaArrow} ${delta24h >= 0 ? '+' : ''}${Math.round(delta24h * 100)}% ${deltaLabel}`;
+
+  const marketTags = Array.isArray(market?.tags) ? market.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [];
+  const categoryLabel = market?.category || market?.topic || marketTags[0] || 'Campus';
+  const topicLabel = market?.subcategory || market?.league || market?.topicLabel || marketTags[1] || 'General';
+  const statusTagLabel = isResolved ? 'Resolved' : isCancelled ? 'Cancelled' : isLocked ? 'Locked' : '● Live';
+  const statusTagClass = isResolved
+    ? 'border-[rgba(22,163,74,.28)] bg-[rgba(22,163,74,.08)] text-[var(--green-bright)]'
+    : isCancelled
+      ? 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text-dim)]'
+      : isLocked
+        ? 'border-[rgba(217,119,6,.28)] bg-[rgba(217,119,6,.08)] text-[var(--amber-bright)]'
+        : 'border-[rgba(22,163,74,.28)] bg-[rgba(22,163,74,.08)] text-[var(--green-bright)]';
+
+  const chartNewsMarkers = newsItems
+    .map((newsItem) => {
+      const time = safeDate(newsItem.timestamp).getTime();
+      return {
+        id: newsItem.id,
+        timestamp: time,
+        probability: typeof newsItem.probabilityAtPost === 'number' ? newsItem.probabilityAtPost : currentProbability
+      };
+    })
+    .filter((marker) => Number.isFinite(marker.timestamp))
+    .slice(0, 4);
+
+  const renderCommentCard = (comment, isReply = false) => {
+    const isOwner = currentUser?.uid === comment.userId;
+    const canDelete = isOwner || isAdminUser;
+    const displayName = comment.username || comment.userName || 'trader';
+    const sideClass = comment.userSide === 'YES'
+      ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)] border border-[rgba(22,163,74,.2)]'
+      : 'bg-[var(--red-glow)] text-[var(--red)] border border-[rgba(220,38,38,.2)]';
+
+    return (
+      <div className={`${isReply ? 'mt-3 border-l border-[var(--border)] pl-4' : ''}`}>
+        <div className={`rounded-md border border-[var(--border)] ${isReply ? 'bg-[var(--surface2)]' : 'bg-[var(--surface)]'} p-4 transition-colors hover:bg-[var(--surface2)]`}>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="h-6 w-6 rounded-full border border-[var(--border2)] bg-[var(--surface3)] font-mono text-[0.52rem] font-bold text-[var(--text-dim)] flex items-center justify-center">
+              {getInitials(displayName)}
+            </div>
+            <span className="text-sm font-semibold text-[var(--text)]">{displayName}</span>
+            {comment.userSide && (
+              <span className={`ml-auto rounded px-1.5 py-0.5 font-mono text-[0.58rem] font-bold uppercase ${sideClass}`}>
+                {comment.userSide}
+              </span>
+            )}
+            <span className="font-mono text-[0.58rem] text-[var(--text-muted)]">
+              {safeDate(comment.timestamp || comment.createdAt).toLocaleString()}
+            </span>
+          </div>
+
+          {editingCommentId === comment.id ? (
+            <div className="space-y-2">
+              <textarea
+                value={editingText}
+                onChange={(e) => setEditingText(e.target.value)}
+                className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] p-2 text-sm text-[var(--text)]"
+                rows={2}
+                maxLength={400}
+              />
+              <div className="flex gap-2">
+                <button onClick={() => handleSaveComment(comment.id)} className="rounded bg-[var(--red)] px-2 py-1 text-xs font-semibold text-white hover:bg-[var(--red-dim)]">
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingCommentId(null);
+                    setEditingText('');
+                  }}
+                  className="rounded bg-[var(--surface3)] px-2 py-1 text-xs font-semibold text-[var(--text-dim)]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-[var(--text-dim)] whitespace-pre-wrap">{comment.text}</p>
+          )}
+
+          <div className="mt-3 flex items-center gap-3">
+            <button onClick={() => handleLikeComment(comment)} className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]">
+              ♥ {Number(comment.likes || 0)}
+            </button>
+            <button onClick={() => notifySuccess('Reply composer coming soon.')} className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]">
+              ↩ reply
+            </button>
+            {currentUser && editingCommentId !== comment.id && isOwner && (
+              <button
+                onClick={() => {
+                  setEditingCommentId(comment.id);
+                  setEditingText(comment.text);
+                }}
+                className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]"
+              >
+                Edit
+              </button>
+            )}
+            {currentUser && editingCommentId !== comment.id && canDelete && (
+              <button onClick={() => handleDeleteComment(comment)} className="font-mono text-[0.58rem] text-[var(--red)] hover:text-[var(--red-dim)]">
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
   if (!market) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Market not found</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
-      <Link href="/" className="text-brand-red hover:underline mb-4 inline-block font-mono text-xs uppercase tracking-[0.06em]">
-        ← Back to markets
-      </Link>
+    <div className="min-h-screen bg-[var(--bg)]">
+      <div className="mx-auto grid max-w-[1200px] lg:grid-cols-[1fr_320px]">
+        <main className="px-6 py-8 md:px-8 lg:border-r lg:border-[var(--border)]">
+          <div className="mb-6 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">
+            <Link href="/markets/active" className="text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
+            <span>/</span>
+            <span className="text-[var(--text-dim)]">{categoryLabel}</span>
+            <span>/</span>
+            <span>{topicLabel}</span>
+          </div>
 
-      <h1 className="text-3xl font-bold mb-2 text-[var(--text)]">{market.question}</h1>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <span className="rounded border border-[var(--red-dim)] bg-[var(--red-glow)] px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">{categoryLabel}</span>
+            <span className="rounded border border-[var(--border2)] px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{topicLabel}</span>
+            <span className={`rounded border px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] ${statusTagClass}`}>{statusTagLabel}</span>
+          </div>
 
-      <div className="mb-6 inline-flex items-center gap-3">
-        <div className="bg-[var(--surface)] rounded-lg px-6 py-3 border border-[var(--border)]">
-          <span className={`font-mono text-6xl font-bold ${probabilityColor}`}>
-            {typeof market.probability === 'number' ? `${Math.round(market.probability * 100)}%` : 'N/A'}
-          </span>
-          <span className="ml-3 font-mono text-xs text-[var(--text-dim)]">
-            Δ {probabilityDelta >= 0 ? '+' : ''}{Math.round(probabilityDelta * 100)}% from open
-          </span>
-        </div>
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-bold ${
-            isLocked
-              ? 'bg-yellow-100 text-yellow-800'
-              : isResolved
-                ? 'bg-green-100 text-green-800'
-                : isCancelled
-                  ? 'bg-[var(--surface3)] text-[var(--text-dim)]'
-                  : 'bg-blue-100 text-blue-800'
-          }`}
-        >
-          {marketStatus}
-        </span>
-      </div>
+          <h1 className="mb-7 max-w-[640px] font-display text-[2rem] leading-tight tracking-[-0.015em] text-[var(--text)]">{market.question}</h1>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Total Traded</p>
-          <p className="font-mono text-lg text-[var(--text)]">${marketStats.totalTraded.toFixed(2)}</p>
-        </div>
-        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Bettors</p>
-          <p className="font-mono text-lg text-[var(--text)]">{marketStats.bettors}</p>
-        </div>
-        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Days Remaining</p>
-          <p className="font-mono text-lg text-[var(--text)]">
-            {market?.resolutionDate?.toDate
-              ? Math.max(0, Math.ceil((market.resolutionDate.toDate().getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-              : 'N/A'}
-          </p>
-        </div>
-      </div>
-
-      {isLocked && (
-        <div className="mb-6 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
-          Trading is locked by admin. You can view history and comments, but cannot buy or sell until it is unlocked.
-        </div>
-      )}
-      {isCancelled && (
-        <div className="mb-6 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] p-3 text-sm text-[var(--text-dim)]">
-          This market was cancelled. Refunds were issued based on each user&apos;s net invested amount.
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="lg:col-span-2 space-y-6">
-          {betHistory.length > 1 && (
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4 text-[var(--text)]">Market Chart</h2>
-              <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={betHistory}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" strokeOpacity={0.6} vertical={false} />
-                  <XAxis
-                    dataKey="timestamp"
-                    tickFormatter={(timestamp) => {
-                      const date = new Date(timestamp);
-                      const hours = date.getHours();
-                      const ampm = hours >= 12 ? 'PM' : 'AM';
-                      const displayHours = hours % 12 || 12;
-                      const start = betHistory.length > 0 ? new Date(betHistory[0].timestamp) : date;
-                      const spansDays = date.toDateString() !== start.toDateString();
-                      return spansDays ? `${date.getMonth() + 1}/${date.getDate()} ${displayHours}${ampm}` : `${displayHours} ${ampm}`;
-                    }}
-                    tick={{ fontSize: 11, fill: '#777' }}
-                    stroke="#222"
-                  />
-                  <YAxis
-                    domain={[0, 1]}
-                    ticks={[0, 0.25, 0.5, 0.75, 1]}
-                    tickFormatter={(value) => `${Math.round(value * 100)}%`}
-                    tick={{ fontSize: 11, fill: '#777' }}
-                    stroke="#222"
-                  />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length) return null;
-                      const date = new Date(label);
-                      return (
-                        <div className="bg-gray-900 text-white rounded-lg p-3 shadow-xl border border-[var(--border2)]">
-                          <p className="text-xs text-gray-300 mb-1">{date.toLocaleString()}</p>
-                          <p className="text-lg font-bold">{Math.round(payload[0].value * 100)}%</p>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="probability"
-                    stroke="var(--red)"
-                    strokeWidth={3}
-                    dot={false}
-                    activeDot={{ r: 4, fill: 'var(--red)', strokeWidth: 2, stroke: '#fff' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+          <div className="mb-6 flex flex-wrap items-end gap-8 border-b border-[var(--border)] pb-6">
+            <div>
+              <span className={`block font-mono text-[4.5rem] font-bold leading-none tracking-[-0.06em] ${probabilityColor}`}>
+                {Math.round(currentProbability * 100)}%
+              </span>
+              <span className={`mt-1 block font-mono text-[0.68rem] ${deltaClass}`}>{deltaText}</span>
+              <span className="mt-1 block font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">chance YES</span>
             </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm overflow-hidden">
-            {currentUser && !isResolved && !isCancelled && (userPosition.yesShares > 0 || userPosition.noShares > 0) && (
-              <div className="bg-blue-50 border-b-2 border-blue-200 p-5">
-                <h3 className="text-sm font-semibold mb-3 text-blue-900 uppercase tracking-wide">Your Position</h3>
-                <div className="space-y-3">
-                  {userPosition.yesShares > 0 && (
-                    <PositionCard
-                      side="YES"
-                      shares={userPosition.yesShares}
-                      invested={userPosition.yesInvested}
-                      exitValue={exitValues.yesExit}
-                      onSell={() => {
-                        setSellSide('YES');
-                        setShowSellModal(true);
-                        setSellAmount('');
-                        setSellPreview(null);
-                      }}
-                      canSell={!!canTrade}
-                    />
-                  )}
-                  {userPosition.noShares > 0 && (
-                    <PositionCard
-                      side="NO"
-                      shares={userPosition.noShares}
-                      invested={userPosition.noInvested}
-                      exitValue={exitValues.noExit}
-                      onSell={() => {
-                        setSellSide('NO');
-                        setShowSellModal(true);
-                        setSellAmount('');
-                        setSellPreview(null);
-                      }}
-                      canSell={!!canTrade}
-                    />
-                  )}
-                </div>
+            <div className="ml-auto grid grid-cols-3 gap-6 pb-2">
+              <div>
+                <span className="block font-mono text-lg font-bold text-[var(--text)]">${marketStats.totalTraded.toFixed(0)}</span>
+                <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">traded</span>
               </div>
-            )}
-
-            <div className="p-5">
-              {isResolved ? (
-                <div className="text-center py-6">
-                  <div className="text-4xl mb-3">{market.resolution === 'YES' ? 'YES' : 'NO'}</div>
-                  <h2 className="text-xl font-bold mb-1 text-[var(--text)]">Resolved: {market.resolution}</h2>
-                  <p className="text-sm text-[var(--text-dim)]">Winning side pays out one point per share.</p>
-                </div>
-              ) : isCancelled ? (
-                <div className="text-center py-6">
-                  <h2 className="text-xl font-bold mb-1 text-[var(--text)]">Market Cancelled</h2>
-                  <p className="text-sm text-[var(--text-dim)]">This market no longer accepts trades.</p>
-                </div>
-              ) : (
-                <>
-                  <h3 className="text-sm font-semibold mb-3 text-[var(--text)] uppercase tracking-wide">Place Bet</h3>
-
-                  {!currentUser && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                      <p className="text-xs text-yellow-800">
-                        <Link href="/login" className="underline font-semibold">Sign in</Link> to trade.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2 mb-4">
-                    {(() => {
-                      const yesProb = Number(market?.probability || 0.5);
-                      const noProb = 1 - yesProb;
-                      const yesReturn = yesProb > 0 ? ((1 / yesProb) - 1) * 100 : 0;
-                      const noReturn = noProb > 0 ? ((1 / noProb) - 1) * 100 : 0;
-                      return (
-                        <>
-                    <button
-                      onClick={() => setSelectedSide('YES')}
-                      disabled={!canTrade}
-                      className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-colors ${
-                        selectedSide === 'YES' ? 'bg-green-500 text-white shadow-md' : 'bg-[var(--surface2)] text-[var(--text-dim)] hover:bg-[var(--surface3)]'
-                      } disabled:opacity-50`}
-                    >
-                      YES {Math.round(yesProb * 100)}% · +{Math.max(0, Math.round(yesReturn))}%
-                    </button>
-                    <button
-                      onClick={() => setSelectedSide('NO')}
-                      disabled={!canTrade}
-                      className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-colors ${
-                        selectedSide === 'NO' ? 'bg-red-500 text-white shadow-md' : 'bg-[var(--surface2)] text-[var(--text-dim)] hover:bg-[var(--surface3)]'
-                      } disabled:opacity-50`}
-                    >
-                      NO {Math.round(noProb * 100)}% · +{Math.max(0, Math.round(noReturn))}%
-                    </button>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium text-[var(--text-dim)] mb-1.5">Amount ($)</label>
-                    <input
-                      type="number"
-                      value={betAmount}
-                      onChange={(e) => setBetAmount(e.target.value)}
-                      placeholder={currentUser ? 'Enter amount' : 'Sign in to trade'}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-[var(--text)]"
-                      min="1"
-                      disabled={!canTrade}
-                    />
-                  </div>
-
-                  {preview && currentUser && (
-                    <div className="bg-indigo-50 rounded-lg p-3 mb-4 border border-indigo-200 text-xs text-indigo-900 space-y-1">
-                      <p className="font-semibold text-sm">Trade preview</p>
-                      <p>You risk: ${Number(betAmount || 0).toFixed(2)}</p>
-                      <p className="flex items-center gap-1">
-                        Estimated shares: {preview.shares.toFixed(2)}
-                        <InfoTooltip
-                          label="Shares help"
-                          text="Shares are your position size. If your side wins, your shares become payout."
-                        />
-                      </p>
-                      <p>You receive if correct: ~${preview.shares.toFixed(2)}</p>
-                      <p>Net if wrong: -${Number(betAmount || 0).toFixed(2)}</p>
-                      <p className="pt-1 border-t border-indigo-200">New probability: {Math.round(preview.newProbability * 100)}%</p>
-                    </div>
-                  )}
-
-                  <div className="bg-[var(--surface2)] rounded-lg border p-3 mb-4 text-xs text-[var(--text-dim)]">
-                    If resolved YES, each YES share pays out. If resolved NO, each NO share pays out.
-                  </div>
-
-                  <button
-                    onClick={handlePlaceBet}
-                    disabled={!currentUser || !betAmount || submitting || !isTradeableMarket(market)}
-                    className="w-full py-3 px-4 rounded-lg font-bold text-sm transition-colors bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
-                  >
-                    {submitting ? 'Placing...' : isLocked ? 'Market Locked' : 'Place Bet'}
-                  </button>
-                </>
-              )}
+              <div>
+                <span className="block font-mono text-lg font-bold text-[var(--text)]">{marketStats.bettors}</span>
+                <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">bettors</span>
+              </div>
+              <div>
+                <span className={`block font-mono text-lg font-bold ${daysRemaining !== null && daysRemaining <= 2 ? 'text-[var(--red)]' : 'text-[var(--text)]'}`}>
+                  {daysRemaining === null ? 'N/A' : `${daysRemaining}d`}
+                </span>
+                <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">remaining</span>
+              </div>
             </div>
           </div>
 
-          {recentTrades.length > 0 && (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold mb-3 text-[var(--text)] uppercase tracking-wide flex items-center gap-2">
-                Recent Activity
-                <InfoTooltip
-                  label="Shares help"
-                  text="Shares are your position size. If your side wins, your shares become payout."
+          {isLocked && (
+            <div className="mb-4 rounded-lg border border-[var(--border)] border-l-[3px] border-l-[var(--red)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">
+              Trading is locked by admin. You can view history and comments, but cannot buy or sell until it is unlocked.
+            </div>
+          )}
+          {isCancelled && (
+            <div className="mb-4 rounded-lg border border-[var(--border)] border-l-[3px] border-l-[var(--amber-bright)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">
+              This market was cancelled. Refunds were issued based on each user&apos;s net invested amount.
+            </div>
+          )}
+
+          <div className="mb-7">
+            <ResponsiveContainer width="100%" height={170}>
+              <ComposedChart data={betHistory} margin={{ top: 6, right: 6, left: -14, bottom: 8 }}>
+                <defs>
+                  <linearGradient id="probGradientFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#DC2626" stopOpacity={0.12} />
+                    <stop offset="100%" stopColor="#DC2626" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#1a1a1a" vertical={false} />
+                <XAxis
+                  dataKey="timestamp"
+                  stroke="#333"
+                  tick={{ fill: '#3D3B38', fontSize: 9, fontFamily: 'Space Mono' }}
+                  tickFormatter={(timestamp) => new Date(timestamp).toLocaleDateString('en-US', { weekday: 'short' })}
                 />
-              </h3>
-              <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {recentTrades.map((trade, index) => {
-                  const beforeProbability = recentTrades[index + 1]?.probability ?? market.initialProbability ?? market.probability ?? 0.5;
-                  const afterProbability = trade.probability;
-                  return (
-                    <div key={trade.id} className="flex items-start justify-between py-2 border-b border-gray-100 last:border-0">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs font-bold ${
-                              trade.type === 'SELL'
-                                ? 'bg-orange-100 text-orange-700'
-                                : trade.side === 'YES'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-red-100 text-red-700'
-                            }`}
-                          >
-                            {trade.type === 'SELL' ? `SOLD ${trade.side}` : trade.side}
-                          </span>
-                          <span className="text-xs font-medium text-[var(--text)] truncate">{trade.userName}</span>
-                        </div>
-                        <p className="text-xs text-[var(--text-dim)] mb-1">
-                          {trade.type === 'SELL'
-                            ? `${Math.abs(trade.shares).toFixed(1)} shares to $${Math.abs(trade.amount).toFixed(2)}`
-                            : `$${Math.abs(trade.amount).toFixed(2)} to ${Math.abs(trade.shares).toFixed(1)} shares`}
-                        </p>
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <span className="text-[var(--text-muted)]">{Math.round(beforeProbability * 100)}%</span>
-                          <span className="text-[var(--text-muted)]">to</span>
-                          <span className="font-semibold text-[var(--text)]">{Math.round(afterProbability * 100)}%</span>
-                        </div>
+                <YAxis
+                  domain={[0, 1]}
+                  stroke="#333"
+                  ticks={[0.25, 0.5, 0.75]}
+                  tick={{ fill: '#3D3B38', fontSize: 9, fontFamily: 'Space Mono' }}
+                  tickFormatter={(value) => `${Math.round(value * 100)}%`}
+                />
+                {chartNewsMarkers.map((marker) => (
+                  <ReferenceLine key={`news-line-${marker.id}`} x={marker.timestamp} stroke="var(--amber)" strokeDasharray="3 3" strokeOpacity={0.5} />
+                ))}
+                {chartNewsMarkers.map((marker) => (
+                  <ReferenceDot
+                    key={`news-dot-${marker.id}`}
+                    x={marker.timestamp}
+                    y={marker.probability}
+                    r={3}
+                    fill="var(--amber-bright)"
+                    stroke="var(--bg)"
+                    strokeWidth={1}
+                  />
+                ))}
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    return (
+                      <div className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 shadow-lg">
+                        <p className="font-mono text-[0.62rem] text-[var(--text-muted)]">{new Date(label).toLocaleString()}</p>
+                        <p className="font-mono text-sm font-bold text-[var(--text)]">{Math.round(payload[0].value * 100)}%</p>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  }}
+                />
+                <Area type="monotone" dataKey="probability" fill="url(#probGradientFill)" stroke="none" />
+                <Line type="monotone" dataKey="probability" stroke="var(--red)" strokeWidth={1.5} dot={false} />
+                <ReferenceDot
+                  x={betHistory[betHistory.length - 1]?.timestamp}
+                  y={betHistory[betHistory.length - 1]?.probability}
+                  r={3}
+                  fill="var(--red)"
+                  stroke="rgba(220,38,38,0.15)"
+                  strokeWidth={6}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          {currentUser && !isResolved && !isCancelled && (userPosition.yesShares > 0 || userPosition.noShares > 0) && (
+            <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+              <p className="mb-3 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Your Position</p>
+              <div className="space-y-3">
+                {userPosition.yesShares > 0 && (
+                  <PositionCard
+                    side="YES"
+                    shares={userPosition.yesShares}
+                    invested={userPosition.yesInvested}
+                    exitValue={exitValues.yesExit}
+                    onSell={() => {
+                      setSellSide('YES');
+                      setShowSellModal(true);
+                      setSellAmount('');
+                      setSellPreview(null);
+                    }}
+                    canSell={!!canTrade}
+                  />
+                )}
+                {userPosition.noShares > 0 && (
+                  <PositionCard
+                    side="NO"
+                    shares={userPosition.noShares}
+                    invested={userPosition.noInvested}
+                    exitValue={exitValues.noExit}
+                    onSell={() => {
+                      setSellSide('NO');
+                      setShowSellModal(true);
+                      setSellAmount('');
+                      setSellPreview(null);
+                    }}
+                    canSell={!!canTrade}
+                  />
+                )}
               </div>
             </div>
           )}
 
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
-            <h3 className="text-sm font-semibold mb-3 text-[var(--text)] uppercase tracking-wide">Timeline</h3>
-            {currentUser ? (
-              <div className="mb-4 space-y-2">
-                <textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Share your reasoning for YES or NO"
-                  maxLength={400}
-                  className="w-full rounded-lg border p-2 text-sm text-[var(--text)]"
-                  rows={3}
-                />
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-[var(--text-muted)]">{newComment.length}/400</span>
-                  <span className="text-xs text-[var(--text-muted)]">
-                    posting as {currentDisplayName} {userSide ? `· ${userSide} bettor` : '· no position'}
-                  </span>
-                  <button
-                    onClick={handlePostComment}
-                    disabled={!newComment.trim() || postingComment}
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:bg-[var(--surface3)]"
-                  >
-                    {postingComment ? 'Posting...' : 'Post Comment'}
-                  </button>
-                </div>
+          <div className="mb-8 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] px-5 py-5 relative">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-[var(--red)] to-transparent" />
+            {isResolved ? (
+              <div className="py-3 text-center">
+                <p className="font-mono text-4xl font-bold text-[var(--text)]">{market.resolution === 'YES' ? 'YES' : 'NO'}</p>
+                <p className="mt-1 text-sm text-[var(--text-dim)]">Winning side pays out one point per share.</p>
+              </div>
+            ) : isCancelled ? (
+              <div className="py-3 text-center">
+                <p className="font-mono text-xl font-bold text-[var(--text)]">Market Cancelled</p>
+                <p className="mt-1 text-sm text-[var(--text-dim)]">This market no longer accepts trades.</p>
               </div>
             ) : (
-              <p className="text-xs text-[var(--text-dim)] mb-4">
-                <Link href="/login" className="underline">Sign in</Link> to join the discussion.
-              </p>
-            )}
-
-            {commentsLoading ? (
-              <p className="text-sm text-[var(--text-muted)]">Loading timeline...</p>
-            ) : timelineItems.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">No timeline items yet.</p>
-            ) : (
-              <div className="relative space-y-3 max-h-[420px] overflow-y-auto pl-8">
-                <div className="pointer-events-none absolute left-4 top-0 bottom-0 w-px bg-[var(--border)]" />
-                {timelineItems.map((item) => {
-                  if (item.type === 'NEWS') {
-                    const news = item.data;
-                    const before = Number(news.probabilityAtPost || 0);
-                    const after = Number(market?.probability || before);
-                    const delta = after - before;
+              <>
+                <p className="mb-4 font-mono text-[0.58rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">Place a bet</p>
+                <div className="mb-4 grid grid-cols-2 gap-2">
+                  {(() => {
+                    const yesProb = Number(market?.probability || 0.5);
+                    const noProb = 1 - yesProb;
+                    const yesMult = yesProb > 0 ? 1 / yesProb : 0;
+                    const noMult = noProb > 0 ? 1 / noProb : 0;
                     return (
-                      <div key={item.id} className="relative rounded-lg border border-amber-700/40 bg-[var(--surface2)] p-3">
-                        <span className="absolute -left-6 top-4 h-2 w-2 rounded-full bg-amber-500" />
-                        <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-[0.05em] text-amber-400">News · {news.source}</p>
-                        <a href={news.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[var(--text)] hover:text-amber-300">
+                      <>
+                        <button
+                          onClick={() => setSelectedSide('YES')}
+                          disabled={!canTrade}
+                          className={`rounded-md border px-4 py-3 text-center transition ${
+                            selectedSide === 'YES'
+                              ? 'border-[var(--green-bright)] bg-[rgba(22,163,74,.08)]'
+                              : 'border-[var(--border2)] bg-[var(--surface2)]'
+                          } disabled:opacity-50`}
+                        >
+                          <span className="mb-1 block font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">YES</span>
+                          <span className="block font-mono text-[1.35rem] font-bold text-[var(--green-bright)]">{Math.round(yesProb * 100)}%</span>
+                          <span className="mt-1 block font-mono text-[0.58rem] text-[var(--text-muted)]">~{yesMult.toFixed(2)}x return</span>
+                        </button>
+                        <button
+                          onClick={() => setSelectedSide('NO')}
+                          disabled={!canTrade}
+                          className={`rounded-md border px-4 py-3 text-center transition ${
+                            selectedSide === 'NO'
+                              ? 'border-[var(--red)] bg-[var(--red-glow)]'
+                              : 'border-[var(--border2)] bg-[var(--surface2)]'
+                          } disabled:opacity-50`}
+                        >
+                          <span className="mb-1 block font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">NO</span>
+                          <span className="block font-mono text-[1.35rem] font-bold text-[var(--red)]">{Math.round(noProb * 100)}%</span>
+                          <span className="mt-1 block font-mono text-[0.58rem] text-[var(--text-muted)]">~{noMult.toFixed(2)}x return</span>
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="mb-3 flex gap-2">
+                  <input
+                    type="number"
+                    value={betAmount}
+                    onChange={(e) => setBetAmount(e.target.value)}
+                    placeholder={currentUser ? '$0.00' : 'Sign in to trade'}
+                    className="flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)]"
+                    min="1"
+                    disabled={!canTrade}
+                  />
+                  <button
+                    onClick={handlePlaceBet}
+                    disabled={!currentUser || !betAmount || submitting || !isTradeableMarket(market)}
+                    className="whitespace-nowrap rounded bg-[var(--red)] px-5 py-2 font-mono text-[0.7rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
+                  >
+                    {submitting ? 'Placing...' : `Bet ${selectedSide} →`}
+                  </button>
+                </div>
+                {preview && currentUser && (
+                  <div className="flex items-center justify-between rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.65rem] text-[var(--text-muted)]">
+                    <span className="flex items-center gap-1">
+                      You&apos;ll receive approx. {preview.shares.toFixed(1)} shares
+                      <InfoTooltip
+                        label="Shares help"
+                        text="Shares are your position size. If your side wins, your shares become payout."
+                      />
+                    </span>
+                    <span>
+                      new prob: <em className="not-italic text-[var(--green-bright)]">{Math.round(preview.newProbability * 100)}%</em>
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="mb-5 flex border-b border-[var(--border)]">
+            <span className="mb-[-1px] border-b-2 border-[var(--red)] px-4 py-2 font-mono text-[0.65rem] uppercase tracking-[0.06em] text-[var(--text)]">Timeline</span>
+            <span className="mb-[-1px] border-b-2 border-transparent px-4 py-2 font-mono text-[0.65rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Activity</span>
+          </div>
+
+          {commentsLoading ? (
+            <p className="font-mono text-sm text-[var(--text-muted)]">Loading timeline...</p>
+          ) : timelineItems.length === 0 ? (
+            <p className="font-mono text-sm text-[var(--text-muted)]">No timeline items yet.</p>
+          ) : (
+            <div className="relative max-h-[560px] space-y-4 overflow-y-auto pl-11">
+              <div className="pointer-events-none absolute bottom-0 left-[15px] top-0 w-px bg-[var(--border)]" />
+              {timelineItems.map((item) => {
+                if (item.type === 'NEWS') {
+                  const news = item.data;
+                  const before = Number(news.probabilityAtPost || 0);
+                  const after = Number(market?.probability || before);
+                  const delta = after - before;
+                  return (
+                    <div key={item.id} className="relative pb-4">
+                      <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--amber)] bg-[rgba(217,119,6,.12)] text-[0.5rem]">⚡</span>
+                      <div className="rounded-r-md border border-[var(--border)] border-l-[3px] border-l-[var(--amber-bright)] bg-[var(--surface)] p-4">
+                        <p className="mb-2 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--amber-bright)]">News · {news.source}</p>
+                        <a href={news.url} target="_blank" rel="noreferrer" className="mb-3 block text-sm font-semibold text-[var(--text)] hover:text-[var(--amber-bright)]">
                           {news.headline}
                         </a>
-                        <div className="mt-2 flex items-center gap-2 rounded border border-[var(--border)] bg-[var(--surface3)] px-2 py-1">
-                          <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-[var(--text-muted)]">Snapshot</span>
-                          <span className="font-mono text-xs text-[var(--text-dim)]">{Math.round(before * 100)}%</span>
-                          <span className="font-mono text-xs text-[var(--text-muted)]">to</span>
-                          <span className="font-mono text-xs text-[var(--text)]">{Math.round(after * 100)}%</span>
+                        <div className="flex items-center gap-2 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2">
+                          <span className="font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Snapshot</span>
+                          <span className="font-mono text-xs font-bold text-[var(--text-dim)]">{Math.round(before * 100)}%</span>
+                          <span className="font-mono text-xs text-[var(--text-muted)]">→</span>
+                          <span className="font-mono text-xs font-bold text-[var(--text)]">{Math.round(after * 100)}%</span>
                           <span className={`ml-auto font-mono text-xs ${delta >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
                             {delta >= 0 ? '+' : ''}{Math.round(delta * 100)}%
                           </span>
                         </div>
                       </div>
-                    );
-                  }
-
-                  if (item.type === 'EVENT') {
-                    const event = item.data;
-                    const up = event.delta >= 0;
-                    return (
-                      <div key={item.id} className="relative rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2">
-                        <span className={`absolute -left-6 top-3 h-2 w-2 rounded-full ${up ? 'bg-green-500' : 'bg-red-500'}`} />
-                        <p className="font-mono text-xs">
-                          Move: {Math.round((event.before || 0) * 100)}% to {Math.round((event.after || 0) * 100)}%{' '}
-                          <span className={up ? 'text-green-400' : 'text-red-400'}>
-                            ({up ? '+' : ''}{Math.round((event.delta || 0) * 100)}%)
-                          </span>
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  const comment = item.data;
-                  const isOwner = currentUser?.uid === comment.userId;
-                  const canDelete = isOwner || isAdminUser;
-
-                  return (
-                    <div key={item.id} className="relative rounded-lg border border-[var(--border)] bg-[var(--surface2)] p-3">
-                      <span className="absolute -left-6 top-4 h-2 w-2 rounded-full bg-[var(--bg)]" />
-                      <div className="mb-1 flex items-center justify-between">
-                        <p className="text-xs font-semibold text-gray-100">
-                          {comment.username || comment.userName}
-                          {comment.userSide && (
-                            <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${comment.userSide === 'YES' ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'}`}>
-                              {comment.userSide}
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-xs text-[var(--text-muted)]">{comment.createdAt?.toDate?.()?.toLocaleString?.() || 'now'}</p>
-                      </div>
-
-                      {editingCommentId === comment.id ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            className="w-full rounded border p-2 text-sm text-[var(--text)]"
-                            rows={2}
-                            maxLength={400}
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleSaveComment(comment.id)}
-                              className="rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingCommentId(null);
-                                setEditingText('');
-                              }}
-                              className="rounded bg-[var(--surface3)] px-2 py-1 text-xs font-semibold text-[var(--text-dim)]"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-200 whitespace-pre-wrap">{comment.text}</p>
-                      )}
-
-                      {currentUser && editingCommentId !== comment.id && (isOwner || canDelete) && (
-                        <div className="mt-2 flex gap-2 text-xs">
-                          {isOwner && (
-                            <button
-                              onClick={() => {
-                                setEditingCommentId(comment.id);
-                                setEditingText(comment.text);
-                              }}
-                              className="text-indigo-600 hover:underline"
-                            >
-                              Edit
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button
-                              onClick={() => handleDeleteComment(comment)}
-                              className="text-red-600 hover:underline"
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <button onClick={() => handleLikeComment(comment)} className="mt-2 text-xs text-amber-400 hover:text-amber-300">
-                        Like ({Number(comment.likes || 0)})
-                      </button>
+                      <p className="mt-1 pl-1 font-mono text-[0.58rem] text-[var(--text-muted)]">{safeDate(news.timestamp).toLocaleString()}</p>
                     </div>
                   );
-                })}
-              </div>
+                }
+
+                if (item.type === 'EVENT') {
+                  const event = item.data;
+                  const up = event.delta >= 0;
+                  return (
+                    <div key={item.id} className="relative pb-4">
+                      <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--red-dim)] bg-[var(--red-glow)] text-[0.48rem]">◆</span>
+                      <div className="flex items-center justify-between gap-3 rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2">
+                        <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">
+                          <strong className="text-[var(--red)]">{Math.round(Math.abs(event.delta) * 100)}% move</strong> — YES from {Math.round((event.before || 0) * 100)}% to {Math.round((event.after || 0) * 100)}%
+                        </p>
+                        <span className={`font-mono text-[0.75rem] font-bold ${up ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+                          {Math.round((event.before || 0) * 100)}% → {Math.round((event.after || 0) * 100)}%
+                        </span>
+                      </div>
+                      <p className="mt-1 pl-1 font-mono text-[0.58rem] text-[var(--text-muted)]">{safeDate(item.timestamp).toLocaleString()}</p>
+                    </div>
+                  );
+                }
+
+                const comment = item.data;
+                const replies = (repliesByParent[comment.id] || []).sort((a, b) => safeDate(a.timestamp || a.createdAt) - safeDate(b.timestamp || b.createdAt));
+                return (
+                  <div key={item.id} className="relative pb-4">
+                    <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--bg)] text-[0.5rem]">💬</span>
+                    {renderCommentCard(comment)}
+                    {replies.map((reply) => (
+                      <div key={reply.id}>{renderCommentCard(reply, true)}</div>
+                    ))}
+                    <p className="mt-1 pl-1 font-mono text-[0.58rem] text-[var(--text-muted)]">{safeDate(comment.timestamp || comment.createdAt).toLocaleString()}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-6 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] px-5 py-4 relative">
+            <div className="pointer-events-none absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-[var(--red)] to-transparent" />
+            {currentUser ? (
+              <>
+                <div className="mb-3 flex items-start gap-3">
+                  <div className="h-7 w-7 rounded-full border border-[var(--red-dim)] bg-[var(--red-glow)] font-mono text-[0.6rem] font-bold text-[var(--red)] flex items-center justify-center">
+                    {getInitials(currentDisplayName)}
+                  </div>
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="What's your take? Your position shows automatically."
+                    maxLength={400}
+                    className="min-h-[64px] flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[0.58rem] text-[var(--text-muted)]">
+                    posting as {currentDisplayName} {userSide ? `· ${userSide} bettor` : '· no position'}
+                  </span>
+                  <button
+                    onClick={handlePostComment}
+                    disabled={!newComment.trim() || postingComment}
+                    className="rounded bg-[var(--red)] px-4 py-2 font-mono text-[0.65rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)]"
+                  >
+                    {postingComment ? 'Posting...' : 'Post →'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-[var(--text-dim)]">
+                <Link href="/login" className="underline">Sign in</Link> to join the discussion.
+              </p>
             )}
           </div>
+        </main>
 
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
-            <h3 className="mb-3 font-mono text-xs uppercase tracking-[0.05em] text-[var(--text-muted)]">Top Bettors</h3>
-            <div className="space-y-2">
+        <aside className="space-y-8 px-6 py-8 md:px-8">
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={handleShareMarket} className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-center font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-dim)] hover:text-[var(--text)]">
+              ↗ Share
+            </button>
+            <button onClick={handleFollowPlaceholder} className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-center font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-dim)] hover:text-[var(--text)]">
+              ⊕ Follow
+            </button>
+          </div>
+
+          <section>
+            <p className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+              Top Bettors
+            </p>
+            <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
               {topBettors.length === 0 ? (
-                <p className="text-xs text-[var(--text-dim)]">No bettors yet.</p>
+                <p className="px-4 py-3 text-xs text-[var(--text-dim)]">No bettors yet.</p>
               ) : topBettors.map((bettor, idx) => (
-                <div key={bettor.userId} className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--text)]">{idx + 1}. {bettor.name}</span>
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono ${bettor.side === 'YES' ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)]' : 'bg-[var(--red-glow)] text-[var(--red)]'}`}>{bettor.side}</span>
-                  <span className="font-mono text-[var(--amber)]">${bettor.total.toFixed(2)}</span>
+                <div key={`${bettor.userId}-${idx}`} className="grid grid-cols-[20px_1fr_auto_auto] items-center gap-2 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--surface2)]">
+                  <span className={`text-center font-mono text-[0.6rem] ${idx === 0 ? 'text-[var(--amber-bright)]' : 'text-[var(--text-muted)]'}`}>{idx + 1}</span>
+                  <span className="text-sm text-[var(--text)]">{bettor.name}</span>
+                  <span className={`rounded px-1.5 py-0.5 font-mono text-[0.56rem] font-bold ${bettor.side === 'YES' ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)]' : 'bg-[var(--red-glow)] text-[var(--red)]'}`}>
+                    {bettor.side}
+                  </span>
+                  <span className="text-right font-mono text-[0.72rem] font-bold text-[var(--amber-bright)]">${bettor.total.toFixed(2)}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
-            <h3 className="mb-3 font-mono text-xs uppercase tracking-[0.05em] text-[var(--text-muted)]">Related Active Markets</h3>
+          <section>
+            <p className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+              Related Markets
+            </p>
             <div className="space-y-2">
               {relatedMarkets.length === 0 ? (
                 <p className="text-xs text-[var(--text-dim)]">No related markets.</p>
               ) : relatedMarkets.map((entry) => (
-                <Link key={entry.id} href={`/market/${entry.id}`} className="block rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] hover:border-brand-red">
-                  <p className="line-clamp-2">{entry.question}</p>
-                  <p className="mt-1 font-mono text-xs text-[var(--text-dim)]">{Math.round((entry.probability || 0) * 100)}%</p>
+                <Link key={entry.id} href={`/market/${entry.id}`} className="flex items-center justify-between rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-3 hover:border-[var(--border2)] hover:bg-[var(--surface2)]">
+                  <span className="mr-3 text-sm leading-5 text-[var(--text-dim)]">{entry.question}</span>
+                  <span className="whitespace-nowrap font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">{Math.round((entry.probability || 0) * 100)}%</span>
                 </Link>
               ))}
             </div>
-          </div>
-        </div>
+          </section>
+        </aside>
       </div>
 
       {showSellModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-[var(--surface)] rounded-xl p-6 max-w-md w-full shadow-xl border border-[var(--border)]">
             <h2 className="text-2xl font-bold mb-4 text-[var(--text)]">Sell {sellSide} Shares</h2>
 
@@ -1159,7 +1250,7 @@ export default function MarketPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-[var(--text-dim)]">Exit all now:</span>
-                <span className="font-bold text-green-600">${(sellSide === 'YES' ? exitValues.yesExit : exitValues.noExit).toFixed(2)}</span>
+                <span className="font-bold text-[var(--green-bright)]">${(sellSide === 'YES' ? exitValues.yesExit : exitValues.noExit).toFixed(2)}</span>
               </div>
             </div>
 
@@ -1171,7 +1262,7 @@ export default function MarketPage() {
                   value={sellAmount}
                   onChange={(e) => setSellAmount(e.target.value)}
                   placeholder="Enter amount"
-                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[var(--text)]"
+                  className="flex-1 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] px-4 py-2 text-[var(--text)]"
                   min="0.01"
                   step="0.01"
                   max={sellSide === 'YES' ? userPosition.yesShares : userPosition.noShares}
@@ -1188,9 +1279,9 @@ export default function MarketPage() {
             </div>
 
             {sellPreview && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+              <div className="bg-[var(--surface2)] border border-[var(--border2)] rounded-lg p-4 mb-4">
                 <p className="text-sm text-[var(--text-dim)] mb-2">You will receive now:</p>
-                <p className="font-bold text-2xl text-green-600">${sellPreview.payout.toFixed(2)}</p>
+                <p className="font-bold text-2xl text-[var(--green-bright)]">${sellPreview.payout.toFixed(2)}</p>
                 <p className="text-xs text-[var(--text-muted)] mt-2">New market probability: {Math.round(sellPreview.newProbability * 100)}%</p>
               </div>
             )}
@@ -1199,7 +1290,7 @@ export default function MarketPage() {
               <button
                 onClick={handleSell}
                 disabled={!sellAmount || selling || parseFloat(sellAmount) <= 0 || !isTradeableMarket(market)}
-                className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
+                className="flex-1 rounded-lg bg-[var(--red)] px-6 py-3 font-semibold text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
               >
                 {selling ? 'Selling...' : isLocked ? 'Market Locked' : 'Confirm'}
               </button>
@@ -1229,9 +1320,9 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
   const isProfit = pnl >= 0;
 
   return (
-    <div className="bg-[var(--surface2)] rounded-lg p-3 border border-blue-200">
+    <div className="rounded-md border border-[var(--border)] bg-[var(--surface2)] p-3">
       <div className="flex items-center justify-between mb-2">
-        <span className={`font-bold text-sm ${side === 'YES' ? 'text-green-600' : 'text-red-600'}`}>{side}</span>
+        <span className={`font-mono text-[0.68rem] font-bold uppercase ${side === 'YES' ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>{side}</span>
         <span className="text-lg font-bold text-[var(--text)]">{shares.toFixed(1)} shares</span>
       </div>
       <div className="space-y-1 text-xs">
@@ -1241,11 +1332,11 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--text-dim)]">Sell now for:</span>
-          <span className="font-bold text-green-600">${exitValue.toFixed(2)}</span>
+          <span className="font-bold text-[var(--green-bright)]">${exitValue.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--text-dim)]">Current P/L:</span>
-          <span className={`font-semibold ${isProfit ? 'text-green-600' : 'text-red-600'}`}>
+          <span className={`font-semibold ${isProfit ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
             {isProfit ? '+$' : '-$'}
             {Math.abs(pnl).toFixed(2)}
           </span>
@@ -1254,7 +1345,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
       <button
         onClick={onSell}
         disabled={!canSell}
-        className="w-full mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-700 disabled:bg-[var(--surface3)]"
+        className="mt-2 w-full rounded-lg bg-[var(--red)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)]"
       >
         Sell {side}
       </button>

@@ -95,13 +95,13 @@ export default function UserProfilePage() {
     [bets]
   );
 
-  if (loading) return <div className="p-8 bg-[var(--bg)] text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
   if (notFound) {
     return (
       <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
-        <h1 className="text-3xl font-bold mb-2 text-white">User Not Found</h1>
-        <p className="text-white opacity-90">This user does not exist.</p>
-        <Link href="/leaderboard" className="text-white underline mt-4 inline-block">Back to Leaderboard</Link>
+        <h1 className="font-display text-5xl leading-[1.05] tracking-[-0.02em] mb-2 text-[var(--text)]">User Not Found</h1>
+        <p className="text-[var(--text-dim)]">This user does not exist.</p>
+        <Link href="/leaderboard" className="text-[var(--text)] underline mt-4 inline-block">Back to Leaderboard</Link>
       </div>
     );
   }
@@ -109,25 +109,31 @@ export default function UserProfilePage() {
 
   const username = getPublicDisplayName({ id, ...user });
   const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
+  const weeklyNet = Number(user.weeklyRep || 0) - 1000;
+  const lifetimeNet = Number(user.lifetimeRep || 0);
 
   return (
     <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 text-white">{username}&apos;s Profile</h1>
-        {viewerIsAdmin && user.email && <p className="text-white opacity-90">{user.email}</p>}
+        <h1 className="mb-2 font-display text-5xl leading-[1.05] tracking-[-0.02em] text-[var(--text)]">{username}&apos;s Profile</h1>
+        {viewerIsAdmin && user.email && <p className="text-[var(--text-dim)]">{user.email}</p>}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-brand-red to-brand-darkred rounded-lg p-6 text-white border-2 border-white">
-          <p className="text-sm opacity-90 mb-1">Balance</p>
-          <p className="text-4xl font-bold">${fmtMoney(user.weeklyRep)}</p>
-          <p className="text-sm opacity-75 mt-2">Resets every Monday</p>
+      <div className="grid gap-3 sm:grid-cols-3 mb-8">
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Total Bets</p>
+          <p className="font-mono text-lg text-[var(--text)]">{bets.length}</p>
         </div>
-
-        <div className="bg-gradient-to-br from-brand-pink to-brand-red rounded-lg p-6 text-white border-2 border-white">
-          <p className="text-sm opacity-90 mb-1">Lifetime Earnings</p>
-          <p className="text-4xl font-bold">${fmtMoney(user.lifetimeRep)}</p>
-          <p className="text-sm opacity-75 mt-2">Net winnings over all time</p>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Profit / Loss</p>
+          <p className={`font-mono text-lg ${lifetimeNet >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+            {lifetimeNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(lifetimeNet))}
+          </p>
+          <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">Week: {weeklyNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(weeklyNet))}</p>
+        </div>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Rank</p>
+          <p className="font-mono text-lg text-[var(--amber-bright)]">{user.rank ? `#${user.rank}` : 'N/A'}</p>
         </div>
       </div>
 
@@ -142,25 +148,25 @@ export default function UserProfilePage() {
 
 function PositionSection({ title, bets, emptyLabel }) {
   return (
-    <div className="bg-[var(--surface)] rounded-lg border-2 border-brand-pink p-6">
+    <div className="bg-[var(--surface)] rounded-lg border border-[var(--border)] p-6">
       <h2 className="text-xl font-semibold mb-4 text-[var(--text)]">{title}</h2>
 
       {bets.length === 0 ? (
         <p className="text-[var(--text-muted)]">{emptyLabel}</p>
       ) : (
-        <div className="space-y-3">
+        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
           {bets.map((bet) => (
-            <Link key={bet.id} href={`/market/${bet.marketId}`} className="block border-2 border-[var(--border)] rounded-lg p-4 hover:bg-[var(--surface2)] hover:border-brand-pink transition-colors">
-              <div className="flex justify-between items-start mb-2">
+            <Link key={bet.id} href={`/market/${bet.marketId}`} className="block border-b border-[var(--border)] p-4 transition-colors last:border-b-0 hover:bg-[var(--surface2)]">
+              <div className="flex justify-between items-start mb-2 gap-3">
                 <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${bet.side === 'YES' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  <span className={`font-mono text-[0.72rem] uppercase tracking-[0.08em] font-bold ${bet.side === 'YES' ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
                     {bet.side}
                   </span>
-                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-[var(--surface2)] text-[var(--text-dim)]">
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-[var(--surface2)] text-[var(--text-dim)] border border-[var(--border2)]">
                     {bet.marketStatus}
                   </span>
                 </div>
-                <span className="text-sm text-[var(--text-muted)]">
+                <span className="font-mono text-[0.68rem] text-[var(--text-muted)]">
                   {bet.timestamp?.toDate?.()?.toLocaleDateString() || 'Recently'}
                 </span>
               </div>

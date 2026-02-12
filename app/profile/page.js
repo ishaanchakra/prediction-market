@@ -226,29 +226,32 @@ export default function ProfilePage() {
     }
   }
 
-  if (loading) return <div className="p-8 bg-[var(--bg)] text-white min-h-screen">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
   if (!user) return null;
+
+  const weeklyNet = Number(user.weeklyRep || 0) - 1000;
+  const lifetimeNet = Number(user.lifetimeRep || 0);
 
   return (
     <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 text-white">Your Profile</h1>
-        <p className="text-white opacity-90">{user.email}</p>
+        <h1 className="mb-2 font-display text-5xl leading-[1.05] tracking-[-0.02em] text-[var(--text)]">Your Profile</h1>
+        <p className="text-[var(--text-dim)]">{user.email}</p>
       </div>
 
-      <div className="bg-[var(--surface)] border-2 border-brand-pink rounded-lg p-6 mb-8">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4 text-[var(--text)]">Display Name</h2>
 
         {!editingDisplayName ? (
           <div className="flex items-center justify-between">
-            <p className="text-[var(--text)] font-semibold text-lg">{getPublicDisplayName({ id: user.uid, ...user })}</p>
+            <p className="font-display text-3xl text-[var(--text)]">{getPublicDisplayName({ id: user.uid, ...user })}</p>
             <button
               onClick={() => {
                 setEditingDisplayName(true);
                 setNameStatus('idle');
                 setNameMessage('');
               }}
-              className="bg-[var(--bg)] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-darkred"
+              className="bg-[var(--red)] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[var(--red-dim)]"
             >
               Edit Display Name
             </button>
@@ -260,12 +263,12 @@ export default function ProfilePage() {
               value={displayNameDraft}
               onChange={(e) => setDisplayNameDraft(e.target.value)}
               maxLength={24}
-              className="w-full rounded-lg border px-3 py-2 text-[var(--text)]"
+              className="w-full rounded-lg border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-[var(--red)]"
             />
             {nameMessage && (
               <p
                 className={`text-sm ${
-                  nameStatus === 'available' ? 'text-green-700' : nameStatus === 'taken' || nameStatus === 'invalid' || nameStatus === 'error' ? 'text-red-700' : 'text-[var(--text-dim)]'
+                  nameStatus === 'available' ? 'text-[var(--green-bright)]' : nameStatus === 'taken' || nameStatus === 'invalid' || nameStatus === 'error' ? 'text-[var(--red)]' : 'text-[var(--text-dim)]'
                 }`}
               >
                 {nameMessage}
@@ -275,7 +278,7 @@ export default function ProfilePage() {
               <button
                 onClick={handleSaveDisplayName}
                 disabled={savingName || nameStatus === 'taken' || nameStatus === 'invalid' || !displayNameDraft.trim()}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:bg-[var(--surface3)]"
+                className="bg-[var(--red)] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)]"
               >
                 {savingName ? 'Saving...' : 'Save'}
               </button>
@@ -295,17 +298,21 @@ export default function ProfilePage() {
         )}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-brand-red to-brand-darkred rounded-lg p-6 text-white border-2 border-white">
-          <p className="text-sm opacity-90 mb-1">Balance</p>
-          <p className="text-4xl font-bold">${Number(user.weeklyRep || 0).toFixed(2)}</p>
-          <p className="text-sm opacity-75 mt-2">Resets every Monday</p>
+      <div className="grid gap-3 sm:grid-cols-3 mb-8">
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Total Bets</p>
+          <p className="font-mono text-lg text-[var(--text)]">{bets.length}</p>
         </div>
-
-        <div className="bg-gradient-to-br from-brand-pink to-brand-red rounded-lg p-6 text-white border-2 border-white">
-          <p className="text-sm opacity-90 mb-1">Lifetime Earnings</p>
-          <p className="text-4xl font-bold">${Number(user.lifetimeRep || 0).toFixed(2)}</p>
-          <p className="text-sm opacity-75 mt-2">Net winnings over all time</p>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Profit / Loss</p>
+          <p className={`font-mono text-lg ${lifetimeNet >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+            {lifetimeNet >= 0 ? '+' : '-'}${Math.abs(lifetimeNet).toFixed(2)}
+          </p>
+          <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">Week: {weeklyNet >= 0 ? '+' : '-'}${Math.abs(weeklyNet).toFixed(2)}</p>
+        </div>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Rank</p>
+          <p className="font-mono text-lg text-[var(--amber-bright)]">{user.rank ? `#${user.rank}` : 'N/A'}</p>
         </div>
       </div>
 
@@ -330,7 +337,7 @@ export default function ProfilePage() {
 
 function PositionSection({ title, emptyLabel, bets }) {
   return (
-    <div className="bg-[var(--surface)] rounded-lg border-2 border-brand-pink p-6">
+    <div className="bg-[var(--surface)] rounded-lg border border-[var(--border)] p-6">
       <h2 className="text-xl font-semibold mb-4 text-[var(--text)] flex items-center gap-2">
         {title}
         <InfoTooltip
@@ -342,25 +349,23 @@ function PositionSection({ title, emptyLabel, bets }) {
       {bets.length === 0 ? (
         <p className="text-[var(--text-muted)]">{emptyLabel}</p>
       ) : (
-        <div className="space-y-3">
+        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
           {bets.map((bet) => (
             <Link
               key={bet.id}
               href={`/market/${bet.marketId}`}
-              className="block border-2 border-[var(--border)] rounded-lg p-4 hover:bg-[var(--surface2)] hover:border-brand-pink transition-colors"
+              className="block border-b border-[var(--border)] p-4 transition-colors last:border-b-0 hover:bg-[var(--surface2)]"
             >
-              <div className="flex justify-between items-start mb-2">
+              <div className="flex justify-between items-start mb-2 gap-3">
                 <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                    bet.side === 'YES' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
+                  <span className={`font-mono text-[0.72rem] uppercase tracking-[0.08em] font-bold ${bet.side === 'YES' ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
                     {bet.side}
                   </span>
-                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-[var(--surface2)] text-[var(--text-dim)]">
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-[var(--surface2)] text-[var(--text-dim)] border border-[var(--border2)]">
                     {bet.marketStatus}
                   </span>
                 </div>
-                <span className="text-sm text-[var(--text-muted)]">
+                <span className="font-mono text-[0.68rem] text-[var(--text-muted)]">
                   {bet.timestamp?.toDate?.()?.toLocaleDateString() || 'Recently'}
                 </span>
               </div>
