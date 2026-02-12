@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { getPublicDisplayName } from '@/utils/displayName';
 
-// Utility function for rounding to 2 decimals
 function round2(num) {
   return Math.round(num * 100) / 100;
 }
@@ -13,19 +13,23 @@ export default function LeaderboardPage() {
   const router = useRouter();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewer, setViewer] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setViewer(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     async function fetchLeaderboard() {
       try {
-        const q = query(
-          collection(db, 'users'),
-          orderBy('lifetimeRep', 'desc'),
-          limit(50) // Top 50 users
-        );
+        const q = query(collection(db, 'users'), orderBy('lifetimeRep', 'desc'), limit(50));
         const snapshot = await getDocs(q);
-        const userData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const userData = snapshot.docs.map((snapshotDoc) => ({
+          id: snapshotDoc.id,
+          ...snapshotDoc.data()
         }));
         setUsers(userData);
       } catch (error) {
@@ -48,18 +52,10 @@ export default function LeaderboardPage() {
         <table className="w-full">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Rank
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                User
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Balance
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Lifetime Earnings
-              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Lifetime Earnings</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -74,28 +70,22 @@ export default function LeaderboardPage() {
                     {index === 0 && <span className="text-2xl mr-2">🥇</span>}
                     {index === 1 && <span className="text-2xl mr-2">🥈</span>}
                     {index === 2 && <span className="text-2xl mr-2">🥉</span>}
-                    <span className="text-sm font-medium text-gray-900">
-                      #{index + 1}
-                    </span>
+                    <span className="text-sm font-medium text-gray-900">#{index + 1}</span>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">
-                    {user.email?.split('@')[0] || 'Anonymous'}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {user.email}
-                  </div>
+                  <div className="text-sm font-medium text-gray-900">{getPublicDisplayName(user)}</div>
+                  {viewer && user.email && (
+                    <div className="text-xs text-gray-500">
+                      {user.email}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <span className="text-sm font-semibold text-gray-900">
-                    ${round2(user.weeklyRep || 0)}
-                  </span>
+                  <span className="text-sm font-semibold text-gray-900">${round2(user.weeklyRep || 0)}</span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <span className="text-sm font-bold text-brand-red">
-                    ${round2(user.lifetimeRep || 0)}
-                  </span>
+                  <span className="text-sm font-bold text-brand-red">${round2(user.lifetimeRep || 0)}</span>
                 </td>
               </tr>
             ))}
@@ -103,9 +93,7 @@ export default function LeaderboardPage() {
         </table>
 
         {users.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            No users yet. Be the first!
-          </div>
+          <div className="text-center py-12 text-gray-500">No users yet. Be the first!</div>
         )}
       </div>
     </div>

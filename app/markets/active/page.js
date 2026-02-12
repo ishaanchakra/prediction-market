@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 
 export default function ActiveMarketsPage() {
   const [markets, setMarkets] = useState([]);
@@ -11,15 +12,16 @@ export default function ActiveMarketsPage() {
   useEffect(() => {
     async function fetchMarkets() {
       try {
-        const q = query(
-          collection(db, 'markets'),
-          where('resolution', '==', null)
-        );
+        const q = query(collection(db, 'markets'), where('resolution', '==', null));
         const snapshot = await getDocs(q);
-        const marketData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const marketData = snapshot.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => getMarketStatus(market) !== MARKET_STATUS.CANCELLED)
+          .sort((a, b) => {
+            const aTime = a.createdAt?.toDate?.()?.getTime?.() || 0;
+            const bTime = b.createdAt?.toDate?.()?.getTime?.() || 0;
+            return bTime - aTime;
+          });
         setMarkets(marketData);
       } catch (error) {
         console.error('Error fetching markets:', error);
@@ -35,7 +37,7 @@ export default function ActiveMarketsPage() {
   return (
     <div className="p-8 max-w-7xl mx-auto bg-brand-red min-h-screen">
       <h1 className="text-3xl font-bold mb-2 text-white">Active Markets</h1>
-      <p className="text-white opacity-90 mb-8">{markets.length} markets currently open for trading</p>
+      <p className="text-white opacity-90 mb-8">{markets.length} markets currently open or locked</p>
 
       {markets.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg">
@@ -43,41 +45,38 @@ export default function ActiveMarketsPage() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {markets.map((market) => (
-            <Link
-              key={market.id}
-              href={`/market/${market.id}`}
-              className="block group"
-            >
-              <div className="bg-white rounded-lg border border-gray-200 hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full">
-                <h2 className="text-lg font-semibold text-gray-900 group-hover:text-brand-red transition-colors mb-4 min-h-[60px]">
-                  {market.question}
-                </h2>
-
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-500">Probability</span>
-                  <span className="text-3xl font-bold text-brand-red">
-                    {typeof market.probability === 'number' 
-                      ? `${Math.round(market.probability * 100)}%` 
-                      : 'N/A'}
-                  </span>
-                </div>
-
-                {typeof market.probability === 'number' && (
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-brand-red h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${market.probability * 100}%` }}
-                    ></div>
+          {markets.map((market) => {
+            const status = getMarketStatus(market);
+            return (
+              <Link key={market.id} href={`/market/${market.id}`} className="block group">
+                <div className="bg-white rounded-lg border border-gray-200 hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h2 className="text-lg font-semibold text-gray-900 group-hover:text-brand-red transition-colors min-h-[60px]">
+                      {market.question}
+                    </h2>
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${status === MARKET_STATUS.LOCKED ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                      {status}
+                    </span>
                   </div>
-                )}
 
-                <div className="mt-4 text-sm text-brand-red font-medium group-hover:underline">
-                  View market →
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-500">Probability</span>
+                    <span className="text-3xl font-bold text-brand-red">
+                      {typeof market.probability === 'number' ? `${Math.round(market.probability * 100)}%` : 'N/A'}
+                    </span>
+                  </div>
+
+                  {typeof market.probability === 'number' && (
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-brand-red h-2 rounded-full transition-all duration-300" style={{ width: `${market.probability * 100}%` }} />
+                    </div>
+                  )}
+
+                  <div className="mt-4 text-sm text-brand-red font-medium group-hover:underline">View market →</div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

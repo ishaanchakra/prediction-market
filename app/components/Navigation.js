@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -12,12 +12,13 @@ export default function Navigation() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showMarketsDropdown, setShowMarketsDropdown] = useState(false);
+  const closeTimerRef = useRef(null);
   const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       setUser(currentUser);
-      
+
       if (currentUser) {
         try {
           const q = query(
@@ -35,6 +36,24 @@ export default function Navigation() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
+  function openMarketsMenu() {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setShowMarketsDropdown(true);
+  }
+
+  function closeMarketsMenuWithDelay() {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      setShowMarketsDropdown(false);
+    }, 120);
+  }
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -48,18 +67,22 @@ export default function Navigation() {
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <Link href="/" className="text-xl font-bold text-brand-red hover:text-brand-darkred transition-colors">
               Predict Cornell
             </Link>
+            <span className="inline-flex items-center rounded-full bg-yellow-400 text-yellow-900 text-[10px] font-extrabold px-2 py-0.5 tracking-wide">
+              BETA
+            </span>
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Markets dropdown - visible to all users */}
             <div
               className="relative"
-              onMouseEnter={() => setShowMarketsDropdown(true)}
-              onMouseLeave={() => setShowMarketsDropdown(false)}
+              onMouseEnter={openMarketsMenu}
+              onMouseLeave={closeMarketsMenuWithDelay}
+              onFocus={openMarketsMenu}
+              onBlur={closeMarketsMenuWithDelay}
             >
               <button className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1">
                 Markets
@@ -69,7 +92,7 @@ export default function Navigation() {
               </button>
 
               {showMarketsDropdown && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+                <div className="absolute top-full left-0 mt-0 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
                   <Link
                     href="/markets/active"
                     className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
@@ -80,7 +103,7 @@ export default function Navigation() {
                     href="/markets/inactive"
                     className="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-brand-red transition-colors"
                   >
-                    Resolved Markets
+                    Closed Markets
                   </Link>
                 </div>
               )}
@@ -91,6 +114,20 @@ export default function Navigation() {
               className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
             >
               Leaderboard
+            </Link>
+
+            <Link
+              href="/how-it-works"
+              className="text-gray-700 hover:text-brand-red px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              How It Works
+            </Link>
+
+            <Link
+              href="/call-for-markets"
+              className="text-yellow-700 hover:text-yellow-800 px-3 py-2 rounded-md text-sm font-semibold transition-colors"
+            >
+              Call for Markets
             </Link>
 
             {user ? (

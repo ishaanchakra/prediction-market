@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.email in [
+        'ichakravorty14@gmail.com',
+        'ic367@cornell.edu'
+      ];
+    }
+
+    function marketIsOpen(marketId) {
+      return get(/databases/$(database)/documents/markets/$(marketId)).data.status == 'OPEN'
+        || (!('status' in get(/databases/$(database)/documents/markets/$(marketId)).data)
+        && get(/databases/$(database)/documents/markets/$(marketId)).data.resolution == null);
+    }
+
+    match /markets/{marketId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /bets/{betId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.marketId is string
+        && marketIsOpen(request.resource.data.marketId);
+      allow update, delete: if false;
+    }
+
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.marketId is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 400;
+      allow update: if signedIn()
+        && request.auth.uid == resource.data.userId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.marketId == resource.data.marketId
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 400;
+      allow delete: if signedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn() && (
+        request.auth.uid == userId || isAdmin()
+      );
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && request.auth.uid == resource.data.userId;
+      allow create: if isAdmin();
+      allow update: if signedIn()
+        && request.auth.uid == resource.data.userId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.read is bool
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if false;
+    }
+  }
+}

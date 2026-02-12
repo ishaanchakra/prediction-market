@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { getPublicDisplayName } from '@/utils/displayName';
 
 function round2(num) {
   return Math.round(num * 100) / 100;
@@ -11,10 +12,18 @@ function round2(num) {
 
 export default function UserProfilePage() {
   const { id } = useParams();
+  const [viewer, setViewer] = useState(null);
   const [user, setUser] = useState(null);
   const [bets, setBets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setViewer(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     async function fetchUserProfile() {
@@ -27,10 +36,7 @@ export default function UserProfilePage() {
         }
         setUser({ uid: id, ...userDoc.data() });
 
-        const betsQuery = query(
-          collection(db, 'bets'),
-          where('userId', '==', id)
-        );
+        const betsQuery = query(collection(db, 'bets'), where('userId', '==', id));
         const betsSnapshot = await getDocs(betsQuery);
 
         const betsWithMarkets = await Promise.all(
@@ -73,13 +79,13 @@ export default function UserProfilePage() {
   );
   if (!user) return null;
 
-  const username = user.email?.split('@')[0] || 'Anonymous';
+  const username = getPublicDisplayName({ id, ...user });
 
   return (
     <div className="p-8 max-w-4xl mx-auto bg-brand-red min-h-screen">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2 text-white">{username}&apos;s Profile</h1>
-        <p className="text-white opacity-90">{user.email}</p>
+        {viewer && user.email && <p className="text-white opacity-90">{user.email}</p>}
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
@@ -103,7 +109,7 @@ export default function UserProfilePage() {
           <p className="text-gray-500">No bets yet.</p>
         ) : (
           <div className="space-y-3">
-            {bets.map(bet => (
+            {bets.map((bet) => (
               <Link
                 key={bet.id}
                 href={`/market/${bet.marketId}`}
@@ -119,9 +125,7 @@ export default function UserProfilePage() {
                     {bet.timestamp?.toDate?.()?.toLocaleDateString() || 'Recently'}
                   </span>
                 </div>
-                <p className="font-medium text-gray-900 mb-2">
-                  {bet.marketQuestion || 'Loading...'}
-                </p>
+                <p className="font-medium text-gray-900 mb-2">{bet.marketQuestion || 'Loading...'}</p>
                 <p className="text-gray-900 mb-1">Amount: <span className="font-semibold">${round2(Math.abs(bet.amount || 0))}</span></p>
                 <p className="text-sm text-gray-600">Shares: {round2(bet.shares || 0)}</p>
               </Link>

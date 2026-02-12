@@ -51,7 +51,37 @@ async function resetDatabase() {
     await notifsBatch.commit();
     console.log(`✅ Deleted ${notifsSnapshot.size} notifications\n`);
 
-    // 4. Reset all user rep to 500
+    // 4. Delete all comments
+    console.log('Deleting all comments...');
+    const commentsSnapshot = await db.collection('comments').get();
+    const commentsBatch = db.batch();
+    commentsSnapshot.docs.forEach(doc => {
+      commentsBatch.delete(doc.ref);
+    });
+    await commentsBatch.commit();
+    console.log(`✅ Deleted ${commentsSnapshot.size} comments\n`);
+
+    // 5. Delete all display name keys
+    console.log('Deleting all display name keys...');
+    const displayNamesSnapshot = await db.collection('displayNames').get();
+    const displayNamesBatch = db.batch();
+    displayNamesSnapshot.docs.forEach(doc => {
+      displayNamesBatch.delete(doc.ref);
+    });
+    await displayNamesBatch.commit();
+    console.log(`✅ Deleted ${displayNamesSnapshot.size} display name keys\n`);
+
+    // 6. Delete all market requests
+    console.log('Deleting all market requests...');
+    const requestSnapshot = await db.collection('marketRequests').get();
+    const requestBatch = db.batch();
+    requestSnapshot.docs.forEach(doc => {
+      requestBatch.delete(doc.ref);
+    });
+    await requestBatch.commit();
+    console.log(`✅ Deleted ${requestSnapshot.size} market requests\n`);
+
+    // 7. Reset all user rep to 500
     console.log('Resetting user rep to 500...');
     const usersSnapshot = await db.collection('users').get();
     const usersBatch = db.batch();
