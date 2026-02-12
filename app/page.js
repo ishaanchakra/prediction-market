@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
@@ -30,6 +30,22 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [stats, setStats] = useState({ balance: 1042.5, rank: '#3', totalTraded: 28440 });
+  const [displayStats, setDisplayStats] = useState({
+    activeMarkets: '14',
+    balance: '$1,043',
+    rank: '#3',
+    totalTraded: '$28,440',
+    settled: true
+  });
+  const displayStatsIntervalRef = useRef(null);
+  const displayStatsCycleTimeoutRef = useRef(null);
+  const displayStatsSettleTimeoutRef = useRef(null);
+  const realStatsRef = useRef({
+    activeMarkets: '14',
+    balance: '$1,043',
+    rank: '#3',
+    totalTraded: '$28,440'
+  });
 
   const tickerItems = useMemo(() => [...tickerMarkets, ...tickerMarkets], [tickerMarkets]);
   const carouselItems = useMemo(() => [...activeMarkets.slice(0, 5), ...activeMarkets.slice(0, 5)], [activeMarkets]);
@@ -38,6 +54,94 @@ export default function Home() {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => setUser(currentUser));
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const latestReal = {
+      activeMarkets: `${activeMarkets.length || 14}`,
+      balance: `$${Math.round(stats.balance).toLocaleString()}`,
+      rank: stats.rank || '#3',
+      totalTraded: `$${Math.round(stats.totalTraded).toLocaleString()}`
+    };
+    realStatsRef.current = latestReal;
+    if (user) {
+      setDisplayStats({ ...latestReal, settled: true });
+    }
+  }, [activeMarkets.length, stats.balance, stats.rank, stats.totalTraded, user]);
+
+  useEffect(() => {
+    if (user) {
+      if (displayStatsIntervalRef.current) {
+        clearInterval(displayStatsIntervalRef.current);
+        displayStatsIntervalRef.current = null;
+      }
+      if (displayStatsCycleTimeoutRef.current) {
+        clearTimeout(displayStatsCycleTimeoutRef.current);
+        displayStatsCycleTimeoutRef.current = null;
+      }
+      if (displayStatsSettleTimeoutRef.current) {
+        clearTimeout(displayStatsSettleTimeoutRef.current);
+        displayStatsSettleTimeoutRef.current = null;
+      }
+      return undefined;
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function randomSettledValues() {
+      return {
+        activeMarkets: `${randomInt(8, 24)}`,
+        balance: `$${randomInt(800, 1400).toLocaleString()}`,
+        rank: `#${randomInt(1, 20)}`,
+        totalTraded: `$${randomInt(18000, 40000).toLocaleString()}`
+      };
+    }
+
+    function runLoop() {
+      if (displayStatsIntervalRef.current) clearInterval(displayStatsIntervalRef.current);
+      setDisplayStats((prev) => ({ ...prev, settled: false }));
+
+      displayStatsIntervalRef.current = setInterval(() => {
+        setDisplayStats({
+          activeMarkets: `${randomInt(8, 24)}`,
+          balance: `$${randomInt(800, 1400).toLocaleString()}`,
+          rank: `#${randomInt(1, 20)}`,
+          totalTraded: `$${randomInt(18000, 40000).toLocaleString()}`,
+          settled: false
+        });
+      }, 80);
+
+      displayStatsCycleTimeoutRef.current = setTimeout(() => {
+        if (displayStatsIntervalRef.current) {
+          clearInterval(displayStatsIntervalRef.current);
+          displayStatsIntervalRef.current = null;
+        }
+        setDisplayStats({ ...randomSettledValues(), settled: true });
+
+        displayStatsSettleTimeoutRef.current = setTimeout(() => {
+          runLoop();
+        }, 6000);
+      }, 2000);
+    }
+
+    runLoop();
+
+    return () => {
+      if (displayStatsIntervalRef.current) {
+        clearInterval(displayStatsIntervalRef.current);
+        displayStatsIntervalRef.current = null;
+      }
+      if (displayStatsCycleTimeoutRef.current) {
+        clearTimeout(displayStatsCycleTimeoutRef.current);
+        displayStatsCycleTimeoutRef.current = null;
+      }
+      if (displayStatsSettleTimeoutRef.current) {
+        clearTimeout(displayStatsSettleTimeoutRef.current);
+        displayStatsSettleTimeoutRef.current = null;
+      }
+    };
+  }, [user]);
 
   useEffect(() => {
     async function fetchData() {
@@ -146,10 +250,10 @@ export default function Home() {
         </div>
 
         <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
-          <HeroStat label="Active Markets" value={`${activeMarkets.length || 14}`} tone="red" />
-          <HeroStat label="Your Balance" value={`$${Math.round(stats.balance).toLocaleString()}`} tone="amber" />
-          <HeroStat label="Your Rank" value={stats.rank} tone="green" />
-          <HeroStat label="Total Traded" value={`$${stats.totalTraded.toLocaleString()}`} tone="dim" />
+          <HeroStat label="Active Markets" value={displayStats.activeMarkets} tone="red" settled={displayStats.settled} />
+          <HeroStat label="Your Balance" value={displayStats.balance} tone="amber" settled={displayStats.settled} />
+          <HeroStat label="Your Rank" value={displayStats.rank} tone="green" settled={displayStats.settled} />
+          <HeroStat label="Total Traded" value={displayStats.totalTraded} tone="dim" settled={displayStats.settled} />
         </div>
       </div>
 
@@ -260,7 +364,7 @@ export default function Home() {
   );
 }
 
-function HeroStat({ label, value, tone }) {
+function HeroStat({ label, value, tone, settled }) {
   const toneClass = tone === 'red'
     ? 'text-[var(--red)]'
     : tone === 'green'
@@ -271,7 +375,7 @@ function HeroStat({ label, value, tone }) {
   return (
     <div className="flex items-baseline justify-between bg-[var(--surface)] px-6 py-5">
       <span className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">{label}</span>
-      <span className={`font-mono text-[1.6rem] font-bold tracking-[-0.03em] ${toneClass}`}>{value}</span>
+      <span className={`font-mono text-[1.6rem] font-bold tracking-[-0.03em] transition-colors duration-300 ease-in-out ${settled ? toneClass : 'text-[var(--text-muted)]'}`}>{value}</span>
     </div>
   );
 }

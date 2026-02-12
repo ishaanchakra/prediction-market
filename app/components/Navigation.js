@@ -62,15 +62,15 @@ export default function Navigation() {
   }
 
   return (
-    <nav className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[rgba(8,8,8,0.92)] px-8 backdrop-blur-[16px]">
-      <Link href="/" className="flex items-center gap-2 no-underline">
+    <nav className="sticky top-0 z-50 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-[var(--border)] bg-[rgba(8,8,8,0.92)] px-8 backdrop-blur-[16px]">
+      <Link href="/" className="justify-self-start flex items-center gap-2 no-underline">
         <span className="dot-pulse h-[7px] w-[7px] rounded-full bg-[var(--red)] shadow-[0_0_6px_var(--red)]" />
         <span className="font-sans text-base font-extrabold tracking-[-0.025em] text-[var(--text)]">
           Predict <em className="not-italic text-[var(--red)]">Cornell</em>
         </span>
       </Link>
 
-      <ul className="flex list-none items-center gap-[0.15rem]">
+      <ul className="justify-self-center flex list-none items-center gap-[0.15rem]">
         <li>
           <Link href="/markets/active" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
             Markets
@@ -93,7 +93,7 @@ export default function Navigation() {
         </li>
       </ul>
 
-      <div className="flex items-center gap-3">
+      <div className="justify-self-end flex items-center gap-3">
         {user && (
           <>
             <div className="flex items-center gap-2 rounded border border-[var(--border2)] px-3 py-[0.3rem] font-mono text-[0.7rem] text-[var(--text-dim)]">
