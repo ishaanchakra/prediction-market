@@ -160,6 +160,7 @@ export default function AdminPage() {
   const [expandedUsers, setExpandedUsers] = useState({});
   const [userBetCounts, setUserBetCounts] = useState({});
   const [loadingUserBetCounts, setLoadingUserBetCounts] = useState({});
+  const [resetting, setResetting] = useState(false);
 
   const [commentsModeration, setCommentsModeration] = useState([]);
   const [newsModeration, setNewsModeration] = useState([]);
@@ -443,7 +444,7 @@ export default function AdminPage() {
   async function createMarket({ question, probabilityPercent, liquidityB }) {
     const probDecimal = probabilityPercent / 100;
     const b = liquidityB;
-    const qYes = round2(b * Math.log(probDecimal / (1 - probDecimal)));
+    const qYes = b * Math.log(probDecimal / (1 - probDecimal));
 
     await addDoc(collection(db, 'markets'), {
       question: question.trim(),
@@ -695,9 +696,8 @@ export default function AdminPage() {
 
         const userData = userSnap.data();
         const newWeeklyRep = round2(Number(userData.weeklyRep || 0) + adj.payout);
-        const newLifetimeRep = round2(
-          Number(userData.lifetimeRep || 0) + adj.payout - adj.lostInvestment
-        );
+        const currentLifetime = Number(userData.lifetimeRep) || 0;
+        const newLifetimeRep = round2(currentLifetime + adj.payout - adj.lostInvestment);
 
         operationFns.push((batch) => {
           batch.update(userRef, {
@@ -789,7 +789,8 @@ export default function AdminPage() {
         const userData = userSnap.data();
         operationFns.push((batch) => {
           batch.update(userRef, {
-            weeklyRep: round2((userData.weeklyRep || 0) + refundAmount)
+            weeklyRep: round2((userData.weeklyRep || 0) + refundAmount),
+            lifetimeRep: Number(userData.lifetimeRep) || 0
           });
         });
 
@@ -1185,6 +1186,34 @@ export default function AdminPage() {
       notifyError('Could not update user balances.');
     } finally {
       setSavingUserId(null);
+    }
+  }
+
+  async function handleWeeklyReset() {
+    if (!(await confirmToast(
+      'Reset weekly leaderboard now? This sets all weekly balances to $1,000.00 for all users.'
+    ))) return;
+
+    setResetting(true);
+    try {
+      const snapshot = await getDocs(collection(db, 'users'));
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((d) =>
+        batch.update(doc(db, 'users', d.id), { weeklyRep: 1000 })
+      );
+      await batch.commit();
+      notifySuccess('Weekly leaderboard reset. All balances set to $1,000.00.');
+      await addDoc(collection(db, 'adminLog'), {
+        action: 'RESET',
+        detail: 'Weekly leaderboard reset — all users set to $1,000.00',
+        adminEmail: user.email,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.error('Error resetting weekly leaderboard:', error);
+      notifyError('Failed to reset weekly leaderboard.');
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -1883,6 +1912,51 @@ export default function AdminPage() {
   function renderUsersSection() {
     return (
       <div className="space-y-4">
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '8px',
+          padding: '1rem 1.25rem',
+          marginBottom: '1.5rem',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <div style={{ borderLeft: '3px solid var(--amber-bright)',
+            position: 'absolute', left: 0, top: 0, bottom: 0 }} />
+          <div style={{ paddingLeft: '1rem' }}>
+            <p style={{ fontFamily: 'var(--mono)', fontSize: '0.58rem',
+              textTransform: 'uppercase', letterSpacing: '0.1em',
+              color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+              Weekly Reset
+            </p>
+            <p style={{ fontFamily: 'var(--sans)', fontSize: '0.9rem',
+              fontWeight: 700, color: 'var(--text)' }}>
+              Resets all balances to $1,000.00
+            </p>
+            <p style={{ fontFamily: 'var(--mono)', fontSize: '0.62rem',
+              color: 'var(--text-dim)', marginTop: '0.15rem' }}>
+              Next Monday at midnight · use at start of each week
+            </p>
+          </div>
+          <button
+            onClick={handleWeeklyReset}
+            disabled={resetting}
+            style={{
+              fontFamily: 'var(--mono)', fontSize: '0.68rem',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+              background: 'rgba(217,119,6,0.15)',
+              color: 'var(--amber-bright)',
+              border: '1px solid rgba(217,119,6,0.3)',
+              borderRadius: '4px', padding: '0.5rem 1.25rem',
+              cursor: resetting ? 'not-allowed' : 'pointer',
+              opacity: resetting ? 0.6 : 1
+            }}
+          >
+            {resetting ? 'Resetting...' : 'Run Weekly Reset →'}
+          </button>
+        </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
           <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
             Search by email prefix

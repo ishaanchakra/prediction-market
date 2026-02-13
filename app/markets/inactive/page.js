@@ -83,7 +83,7 @@ export default function ClosedMarketsPage() {
             return (
               <Link key={market.id} href={`/market/${market.id}`} className="block group">
                 <div className="relative h-full overflow-hidden rounded-lg border-2 border-[var(--border)] bg-[var(--surface)] p-6 transition-all duration-200 hover:border-[var(--border2)] hover:shadow-lg">
-                  <MutedTrendBackground series={trendSeriesByMarket[market.id]} />
+                  <MutedTrendBackground series={trendSeriesByMarket[market.id]} probability={market.probability} />
                   <div className="flex items-start justify-between mb-3">
                     <h2 className="text-lg font-semibold text-[var(--text)] flex-1 min-h-[60px] relative z-10">{market.question}</h2>
                     <span className="relative z-10 ml-3 rounded-[3px] bg-[var(--surface2)] px-2 py-1 text-xs font-bold text-[var(--text-dim)]">{status}</span>

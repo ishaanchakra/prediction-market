@@ -271,7 +271,7 @@ export default function Home() {
           <div className="carousel-track gap-4 pb-2">
             {carouselItems.map((market, idx) => (
               <Link key={`${market.id}-${idx}`} href={`/market/${market.id}`} className="group relative block w-[300px] flex-shrink-0 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-5 transition-all hover:-translate-y-[1px]">
-                <MutedTrendBackground series={trendSeriesByMarket[market.id]} />
+                <MutedTrendBackground series={trendSeriesByMarket[market.id]} probability={market.probability} />
                 <span className={`mb-3 inline-block rounded border px-2 py-[0.15rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] ${String(shortTag(market)).toLowerCase() === 'sports' ? 'border-[var(--red-dim)] text-[var(--red)]' : 'border-[var(--border2)] text-[var(--text-muted)]'}`}>
                   {shortTag(market)}
                 </span>

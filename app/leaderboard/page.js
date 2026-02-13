@@ -1,13 +1,11 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { auth, db } from '@/lib/firebase';
-import { collection, query, orderBy, limit, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { getPublicDisplayName } from '@/utils/displayName';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
-
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function fmtMoney(value) {
   return Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -39,12 +37,9 @@ export default function LeaderboardPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState(null);
-  const [resetting, setResetting] = useState(false);
   const [openMarketsCount, setOpenMarketsCount] = useState(0);
   const [totalTraded, setTotalTraded] = useState(0);
-  const { toasts, notifySuccess, notifyError, confirmToast, removeToast, resolveConfirm } = useToastQueue();
-
-  const isAdmin = useMemo(() => !!viewer?.email && ADMIN_EMAILS.includes(viewer.email), [viewer]);
+  const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
   const weeklyUsers = useMemo(
     () => [...users].sort((a, b) => Number(b.weeklyRep || 0) - Number(a.weeklyRep || 0)).slice(0, 50),
@@ -88,26 +83,6 @@ export default function LeaderboardPage() {
     }
     fetchAll();
   }, []);
-
-  async function handleWeeklyReset() {
-    if (!isAdmin) return;
-    if (!(await confirmToast('Reset weekly leaderboard now? This sets all weekly balances to $1000.00.'))) return;
-
-    setResetting(true);
-    try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => batch.update(doc(db, 'users', d.id), { weeklyRep: 1000 }));
-      await batch.commit();
-      setUsers((prev) => prev.map((u) => ({ ...u, weeklyRep: 1000 })));
-      notifySuccess('Weekly leaderboard reset complete.');
-    } catch (error) {
-      console.error('Error resetting weekly leaderboard:', error);
-      notifyError('Failed to reset weekly leaderboard.');
-    } finally {
-      setResetting(false);
-    }
-  }
 
   if (loading) {
     return (
@@ -176,16 +151,6 @@ export default function LeaderboardPage() {
           metricFn={(u) => Number(u.weeklyRep || 0) - 1000}
           betsLabelFn={() => ''}
         />
-
-        {isAdmin && (
-          <button
-            onClick={handleWeeklyReset}
-            disabled={resetting}
-            className="mb-10 rounded bg-[var(--amber-bright)] px-4 py-2 font-mono text-xs uppercase tracking-[0.08em] text-black hover:bg-[var(--amber)] disabled:opacity-60"
-          >
-            {resetting ? 'Resetting...' : 'Admin Weekly Reset'}
-          </button>
-        )}
 
         <TableBlock
           title="All-Time Rankings"

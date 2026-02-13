@@ -73,7 +73,7 @@ export default function ActiveMarketsPage() {
             return (
               <Link key={market.id} href={`/market/${market.id}`} className="block group">
                 <div className="relative bg-[var(--surface)] rounded-lg border border-[var(--border)] hover:border-brand-pink hover:shadow-lg transition-all duration-200 p-6 h-full overflow-hidden">
-                  <MutedTrendBackground series={trendSeriesByMarket[market.id]} />
+                  <MutedTrendBackground series={trendSeriesByMarket[market.id]} probability={market.probability} />
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h2 className="text-lg font-semibold text-[var(--text)] group-hover:text-brand-red transition-colors min-h-[60px] relative z-10">
                       {market.question}

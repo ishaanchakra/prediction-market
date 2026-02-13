@@ -50,7 +50,8 @@ export function calculateBet(outstandingShares, betAmount, side, b = DEFAULT_B) 
   // Binary search for how many shares the user gets for betAmount
   // Cost to buy n shares of YES = C(qYes + n, qNo) - C(qYes, qNo)
   let lo = 0;
-  let hi = betAmount / Math.max(currentPrice * 0.01, 1e-6);
+  const minPrice = Math.max(0.001, Math.min(currentPrice, 1 - currentPrice));
+  let hi = (betAmount / minPrice) * 2;
   let shares = 0;
 
   for (let i = 0; i < 100; i++) {
@@ -115,6 +116,9 @@ export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT
 
   const newQYes = side === 'YES' ? qYes - sharesToSell : qYes;
   const newQNo = side === 'NO' ? qNo - sharesToSell : qNo;
+  if (newQYes < -b * 20 || newQNo < -b * 20) {
+    throw new Error('Sell amount exceeds safe pool bounds');
+  }
   const newProbability = price(newQYes, newQNo, b);
 
   if (isNaN(payout) || isNaN(newProbability)) {
