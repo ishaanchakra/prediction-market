@@ -305,10 +305,16 @@ export default function Home() {
           </span>
           <span className="font-mono text-[0.6rem] text-[var(--text-muted)]">{activeMarkets.length} open</span>
         </div>
-        <div className="grid grid-cols-1 gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] md:grid-cols-2 lg:grid-cols-3">
-          {activeMarkets.slice(0, 6).map((market) => (
-            <Link key={market.id} href={`/market/${market.id}`} className="relative block overflow-hidden bg-[var(--surface)] px-6 py-5 transition-colors hover:bg-[var(--surface2)]">
-              <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">{market.question}</p>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {activeMarkets.map((market) => (
+            <Link
+              key={market.id}
+              href={`/market/${market.id}`}
+              className="relative block overflow-hidden rounded-[6px] border border-[var(--border)] border-l-2 border-l-transparent bg-[var(--surface)] px-6 py-5 transition-[background,border-color] hover:border-[var(--border2)] hover:border-l-[var(--red)] hover:bg-[var(--surface2)]"
+            >
+              <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">
+                {market.question}
+              </p>
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[0.55rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">{shortTag(market)}</span>
                 <span className={`font-mono text-[1.2rem] font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
@@ -333,7 +339,7 @@ export default function Home() {
           </Link>
         </div>
         <div className="flex flex-col gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
-          {resolvedMarkets.map((market) => (
+          {resolvedMarkets.slice(0, 5).map((market) => (
             <Link key={market.id} href={`/market/${market.id}`} className="flex items-center gap-4 bg-[var(--surface)] px-5 py-3 transition-colors hover:bg-[var(--surface2)]">
               <span className="text-sm">{market.resolution === 'YES' ? '✅' : '❌'}</span>
               <span className="flex-1 text-[0.82rem] font-medium text-[var(--text-dim)]">{market.question}</span>

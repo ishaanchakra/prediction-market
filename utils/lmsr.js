@@ -20,15 +20,37 @@ function price(qYes, qNo, b = DEFAULT_B) {
   return expYes / (expYes + expNo);
 }
 
+function assertFiniteNumber(value, label) {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be finite`);
+  }
+}
+
+function normalizePool(outstandingShares) {
+  const { yes = 0, no = 0 } = outstandingShares || {};
+  assertFiniteNumber(yes, 'yes');
+  assertFiniteNumber(no, 'no');
+  return { yes, no };
+}
+
+function assertPositiveB(b) {
+  assertFiniteNumber(b, 'b');
+  if (b <= 0) throw new Error('b must be positive');
+}
+
 export function calculateBet(outstandingShares, betAmount, side, b = DEFAULT_B) {
-  let { yes: qYes = 0, no: qNo = 0 } = outstandingShares;
+  const { yes: qYes, no: qNo } = normalizePool(outstandingShares);
+  assertPositiveB(b);
+  assertFiniteNumber(betAmount, 'betAmount');
+  if (betAmount <= 0) throw new Error('betAmount must be positive');
 
   const currentCost = cost(qYes, qNo, b);
+  const currentPrice = price(qYes, qNo, b);
 
   // Binary search for how many shares the user gets for betAmount
   // Cost to buy n shares of YES = C(qYes + n, qNo) - C(qYes, qNo)
   let lo = 0;
-  let hi = betAmount * 10; // Upper bound - LMSR shares can exceed bet amount
+  let hi = betAmount / Math.max(currentPrice * 0.01, 1e-6);
   let shares = 0;
 
   for (let i = 0; i < 100; i++) {
@@ -68,7 +90,16 @@ export function calculateBet(outstandingShares, betAmount, side, b = DEFAULT_B) 
 }
 
 export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT_B) {
-  let { yes: qYes = 0, no: qNo = 0 } = outstandingShares;
+  const { yes: qYes, no: qNo } = normalizePool(outstandingShares);
+  assertPositiveB(b);
+  assertFiniteNumber(sharesToSell, 'sharesToSell');
+  if (sharesToSell <= 0) throw new Error('sharesToSell must be positive');
+  if (side === 'YES' && sharesToSell > qYes) {
+    throw new Error('Cannot sell more YES shares than exist');
+  }
+  if (side === 'NO' && sharesToSell > qNo) {
+    throw new Error('Cannot sell more NO shares than exist');
+  }
 
   const currentCost = cost(qYes, qNo, b);
 
@@ -79,7 +110,8 @@ export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT
     newCost = cost(qYes, qNo - sharesToSell, b);
   }
 
-  const payout = currentCost - newCost;
+  let payout = currentCost - newCost;
+  if (payout < 0 && Math.abs(payout) < 1e-9) payout = 0;
 
   const newQYes = side === 'YES' ? qYes - sharesToSell : qYes;
   const newQNo = side === 'NO' ? qNo - sharesToSell : qNo;
@@ -97,6 +129,9 @@ export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT
 }
 
 export function getPrice(outstandingShares, b = DEFAULT_B) {
-  const { yes: qYes = 0, no: qNo = 0 } = outstandingShares;
-  return price(qYes, qNo, b);
+  const { yes: qYes, no: qNo } = normalizePool(outstandingShares);
+  assertPositiveB(b);
+  const rawPrice = price(qYes, qNo, b);
+  const EPS = 1e-12;
+  return Math.min(1 - EPS, Math.max(EPS, rawPrice));
 }

@@ -53,13 +53,15 @@ export default function LoginPage() {
 
       router.push('/');
     } catch (signInError) {
-      console.error('Error signing in:', signInError);
-
       if (signInError.code === 'auth/popup-closed-by-user') {
-        setError('Sign-in was cancelled');
+        setError('');
+        setLoading(false);
+        return;
       } else if (signInError.code === 'auth/unauthorized-domain') {
+        console.error('Error signing in:', signInError);
         setError('This domain is not authorized. Please contact administrator.');
       } else {
+        console.error('Error signing in:', signInError);
         setError('Failed to sign in. Please try again.');
       }
 

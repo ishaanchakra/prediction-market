@@ -30,7 +30,8 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.marketId is string
         && marketIsOpen(request.resource.data.marketId);
-      allow update, delete: if false;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /comments/{commentId} {
@@ -40,8 +41,11 @@ service cloud.firestore {
 
     match /newsItems/{newsId} {
       allow read: if true;
-      allow write: if request.auth != null
-        && request.auth.token.email == 'ic367@cornell.edu';
+      allow write: if isAdmin();
+    }
+
+    match /adminLog/{id} {
+      allow read, write: if isAdmin();
     }
 
     match /users/{userId} {
@@ -72,14 +76,16 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow read: if signedIn() && request.auth.uid == resource.data.userId;
+      allow read: if signedIn()
+        && (request.auth.uid == resource.data.userId || isAdmin());
       allow create: if isAdmin();
-      allow update: if signedIn()
+      allow update: if (signedIn()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.read is bool
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow delete: if false;
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']))
+        || isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }

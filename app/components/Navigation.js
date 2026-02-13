@@ -102,16 +102,37 @@ export default function Navigation() {
                 ${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </strong>
             </div>
-            <Link href="/notifications" className="rounded border border-[var(--border)] px-2 py-1 font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
-              N{unreadCount > 0 ? `:${unreadCount}` : ''}
+            <Link
+              href="/notifications"
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}
+            >
+              <svg
+                width="16" height="16" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor"
+                strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
+                style={{ color: unreadCount > 0 ? 'var(--text)' : 'var(--text-muted)', transition: 'color 0.12s' }}
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: '-2px', right: '-2px',
+                  minWidth: '16px', height: '16px',
+                  background: 'var(--red)',
+                  borderRadius: '99px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'var(--mono)', fontSize: '9px',
+                  fontWeight: 700, color: 'white',
+                  padding: '0 3px',
+                  lineHeight: 1
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Link>
             <Link href="/profile" className="relative flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--red-glow)] font-mono text-[0.6rem] font-bold text-[var(--red)]">
               {initialsFor(user)}
-              {unreadCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--red)] px-1 text-[9px] font-bold text-white">
-                  {unreadCount}
-                </span>
-              )}
             </Link>
             {isAdmin && (
               <Link href="/admin" className="rounded px-[0.5rem] py-[0.25rem] font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]">

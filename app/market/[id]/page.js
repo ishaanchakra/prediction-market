@@ -77,6 +77,8 @@ export default function MarketPage() {
   const [commentsLoading, setCommentsLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [postingComment, setPostingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [replyText, setReplyText] = useState('');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingText, setEditingText] = useState('');
   const [currentDisplayName, setCurrentDisplayName] = useState('user');
@@ -201,16 +203,34 @@ export default function MarketPage() {
 
         snapshot.docs.forEach((snapshotDoc) => {
           const bet = snapshotDoc.data();
+          const shares = Number(bet.shares || 0);
+          const amount = Number(bet.amount || 0);
           if (bet.side === 'YES') {
-            yesShares += bet.shares || 0;
-            if (bet.amount > 0) yesInvested += bet.amount;
-          } else {
-            noShares += bet.shares || 0;
-            if (bet.amount > 0) noInvested += bet.amount;
+            if (bet.type === 'SELL') {
+              yesShares -= Math.abs(shares);
+              yesInvested -= Math.abs(amount);
+            } else {
+              yesShares += shares;
+              yesInvested += amount;
+            }
+          } else if (bet.side === 'NO') {
+            if (bet.type === 'SELL') {
+              noShares -= Math.abs(shares);
+              noInvested -= Math.abs(amount);
+            } else {
+              noShares += shares;
+              noInvested += amount;
+            }
           }
         });
 
-        setUserPosition({ yesShares, noShares, yesInvested, noInvested });
+        const clean = (value) => (Math.abs(value) < 0.001 ? 0 : value);
+        setUserPosition({
+          yesShares: clean(yesShares),
+          noShares: clean(noShares),
+          yesInvested: clean(yesInvested),
+          noInvested: clean(noInvested)
+        });
       } catch (error) {
         console.error('Error fetching user position:', error);
       }
@@ -339,27 +359,58 @@ export default function MarketPage() {
     async function fetchSidebarData() {
       if (!params.id) return;
       try {
-        const betsQ = query(
-          collection(db, 'bets'),
-          where('marketId', '==', params.id),
-          orderBy('amount', 'desc'),
-          limit(20)
-        );
+        const betsQ = query(collection(db, 'bets'), where('marketId', '==', params.id));
         const betsSnap = await getDocs(betsQ);
-        const top = betsSnap.docs
-          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-          .filter((bet) => Number(bet.amount || 0) > 0)
+
+        const positionMap = new Map();
+        betsSnap.docs.forEach((snapshotDoc) => {
+          const bet = snapshotDoc.data();
+          if (!bet.userId) return;
+
+          const entry = positionMap.get(bet.userId) || {
+            userId: bet.userId,
+            yesShares: 0,
+            noShares: 0,
+            invested: 0
+          };
+
+          const shares = Number(bet.shares || 0);
+          const amount = Number(bet.amount || 0);
+
+          if (bet.type === 'SELL') {
+            if (bet.side === 'YES') entry.yesShares -= Math.abs(shares);
+            if (bet.side === 'NO') entry.noShares -= Math.abs(shares);
+            entry.invested -= Math.abs(amount);
+          } else {
+            if (bet.side === 'YES') entry.yesShares += shares;
+            if (bet.side === 'NO') entry.noShares += shares;
+            entry.invested += amount;
+          }
+
+          positionMap.set(bet.userId, entry);
+        });
+
+        const top = Array.from(positionMap.values())
+          .map((entry) => ({
+            ...entry,
+            yesShares: Math.abs(entry.yesShares) < 0.001 ? 0 : entry.yesShares,
+            noShares: Math.abs(entry.noShares) < 0.001 ? 0 : entry.noShares
+          }))
+          .filter((entry) => entry.yesShares > 0.001 || entry.noShares > 0.001)
+          .sort((a, b) => b.invested - a.invested)
           .slice(0, 5);
+
         const bettorRows = await Promise.all(
-          top.map(async (bet) => {
-            const userId = bet.userId;
-            const userDoc = await getDoc(doc(db, 'users', userId));
+          top.map(async (entry) => {
+            const userDoc = await getDoc(doc(db, 'users', entry.userId));
             const userData = userDoc.exists() ? userDoc.data() : {};
+            const dominantSide = entry.yesShares >= entry.noShares ? 'YES' : 'NO';
             return {
-              userId,
-              total: Number(bet.amount || 0),
-              side: bet.side,
-              name: getPublicDisplayName({ id: userId, ...userData })
+              userId: entry.userId,
+              dominantSide,
+              dominantShares: Math.max(entry.yesShares, entry.noShares),
+              invested: entry.invested,
+              name: getPublicDisplayName({ id: entry.userId, ...userData })
             };
           })
         );
@@ -615,6 +666,45 @@ export default function MarketPage() {
     }
   }
 
+  async function handlePostReply(parentId) {
+    if (!currentUser) return;
+    if (!replyText.trim()) return;
+
+    setPostingComment(true);
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      const displayName = userDoc.exists() ? getPublicDisplayName({ id: currentUser.uid, ...userDoc.data() }) : (currentUser.email?.split('@')[0] || 'user');
+      await addDoc(collection(db, 'comments'), {
+        marketId: params.id,
+        userId: currentUser.uid,
+        username: displayName,
+        userName: displayName,
+        text: replyText.trim(),
+        createdAt: new Date(),
+        timestamp: new Date(),
+        likes: 0,
+        replyTo: parentId,
+        userSide
+      });
+      setReplyText('');
+      setReplyingTo(null);
+      notifySuccess('Reply posted.');
+
+      const commentsQuery = query(
+        collection(db, 'comments'),
+        where('marketId', '==', params.id),
+        orderBy('timestamp', 'desc')
+      );
+      const snapshot = await getDocs(commentsQuery);
+      setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+    } catch (error) {
+      console.error('Error posting reply:', error);
+      notifyError('Unable to post reply right now.');
+    } finally {
+      setPostingComment(false);
+    }
+  }
+
   async function handleSaveComment(commentId) {
     if (!editingText.trim()) return;
     try {
@@ -702,26 +792,15 @@ export default function MarketPage() {
   const daysRemaining = market?.resolutionDate?.toDate
     ? Math.max(0, Math.ceil((market.resolutionDate.toDate().getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
-  const pointNow = betHistory[betHistory.length - 1]?.timestamp || Date.now();
-  const dayAgoTarget = pointNow - (24 * 60 * 60 * 1000);
-  let dayAgoProbability = null;
-  for (let i = betHistory.length - 1; i >= 0; i -= 1) {
-    if (betHistory[i].timestamp <= dayAgoTarget) {
-      dayAgoProbability = betHistory[i].probability;
-      break;
-    }
-  }
-  const using24hDelta = typeof dayAgoProbability === 'number';
-  const deltaBase = using24hDelta ? dayAgoProbability : openProbability;
-  const delta24h = currentProbability - deltaBase;
-  const deltaLabel = using24hDelta ? 'since 24h ago' : 'since open';
-  const deltaClass = delta24h >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]';
-  const deltaArrow = delta24h >= 0 ? '↑' : '↓';
-  const deltaText = `${deltaArrow} ${delta24h >= 0 ? '+' : ''}${Math.round(delta24h * 100)}% ${deltaLabel}`;
+  const firstHistoryProbability = typeof betHistory[0]?.probability === 'number' ? betHistory[0].probability : openProbability;
+  const deltaFromStart = currentProbability - firstHistoryProbability;
+  const deltaClass = deltaFromStart >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]';
+  const deltaArrow = deltaFromStart >= 0 ? '↑' : '↓';
+  const deltaText = `${deltaArrow} ${deltaFromStart >= 0 ? '+' : ''}${Math.round(deltaFromStart * 100)}% from first trade`;
 
   const marketTags = Array.isArray(market?.tags) ? market.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [];
   const categoryLabel = market?.category || market?.topic || marketTags[0] || 'Campus';
-  const topicLabel = market?.subcategory || market?.league || market?.topicLabel || marketTags[1] || 'General';
+  const truncatedQuestion = (market?.question || '').length > 36 ? `${market.question.slice(0, 36)}...` : (market?.question || 'Market');
   const statusTagLabel = isResolved ? 'Resolved' : isCancelled ? 'Cancelled' : isLocked ? 'Locked' : '● Live';
   const statusTagClass = isResolved
     ? 'border-[rgba(22,163,74,.28)] bg-[rgba(22,163,74,.08)] text-[var(--green-bright)]'
@@ -742,6 +821,36 @@ export default function MarketPage() {
     })
     .filter((marker) => Number.isFinite(marker.timestamp))
     .slice(0, 4);
+
+  const renderReplyComposer = (parentId) => (
+    replyingTo === parentId ? (
+      <div className="mt-[0.6rem] ml-4 border-l border-[var(--border)] pl-4">
+        <textarea
+          placeholder="Write a reply..."
+          value={replyText}
+          onChange={(e) => setReplyText(e.target.value)}
+          className="min-h-[52px] w-full resize-none rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[0.82rem] text-[var(--text)]"
+        />
+        <div className="mt-2 flex justify-end gap-2">
+          <button
+            onClick={() => {
+              setReplyingTo(null);
+              setReplyText('');
+            }}
+            className="bg-transparent font-mono text-[0.6rem] uppercase text-[var(--text-muted)]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => handlePostReply(parentId)}
+            className="rounded bg-[var(--red)] px-4 py-1.5 font-mono text-[0.62rem] uppercase text-white hover:bg-[var(--red-dim)]"
+          >
+            Reply →
+          </button>
+        </div>
+      </div>
+    ) : null
+  );
 
   const renderCommentCard = (comment, isReply = false) => {
     const isOwner = currentUser?.uid === comment.userId;
@@ -801,7 +910,17 @@ export default function MarketPage() {
             <button onClick={() => handleLikeComment(comment)} className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]">
               ♥ {Number(comment.likes || 0)}
             </button>
-            <button onClick={() => notifySuccess('Reply composer coming soon.')} className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]">
+            <button
+              onClick={() => {
+                if (!currentUser) {
+                  notifyError('Sign in to reply.');
+                  return;
+                }
+                setReplyingTo(comment.id);
+                setReplyText('');
+              }}
+              className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]"
+            >
               ↩ reply
             </button>
             {currentUser && editingCommentId !== comment.id && isOwner && (
@@ -822,6 +941,7 @@ export default function MarketPage() {
             )}
           </div>
         </div>
+        {renderReplyComposer(comment.id)}
       </div>
     );
   };
@@ -831,19 +951,20 @@ export default function MarketPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      <div className="mx-auto grid max-w-[1200px] lg:grid-cols-[1fr_320px]">
-        <main className="px-6 py-8 md:px-8 lg:border-r lg:border-[var(--border)]">
+      <div className="mx-auto max-w-[1200px]" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 0, minHeight: 'calc(100vh - 56px)' }}>
+        <main style={{ borderRight: '1px solid var(--border)', padding: '2rem' }}>
           <div className="mb-6 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">
             <Link href="/markets/active" className="text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
             <span>/</span>
             <span className="text-[var(--text-dim)]">{categoryLabel}</span>
             <span>/</span>
-            <span>{topicLabel}</span>
+            <span>{truncatedQuestion}</span>
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
-            <span className="rounded border border-[var(--red-dim)] bg-[var(--red-glow)] px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">{categoryLabel}</span>
-            <span className="rounded border border-[var(--border2)] px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{topicLabel}</span>
+            {market?.category && (
+              <span className="rounded border border-[var(--red-dim)] bg-[var(--red-glow)] px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">{market.category}</span>
+            )}
             <span className={`rounded border px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] ${statusTagClass}`}>{statusTagLabel}</span>
           </div>
 
@@ -949,8 +1070,8 @@ export default function MarketPage() {
           </div>
 
           {currentUser && !isResolved && !isCancelled && (userPosition.yesShares > 0 || userPosition.noShares > 0) && (
-            <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-              <p className="mb-3 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Your Position</p>
+            <div className="mb-6 border-b border-[var(--border)] bg-[var(--surface)] pb-4">
+              <p className="mb-3 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Your Position</p>
               <div className="space-y-3">
                 {userPosition.yesShares > 0 && (
                   <PositionCard
@@ -1093,6 +1214,9 @@ export default function MarketPage() {
                   const before = Number(news.probabilityAtPost || 0);
                   const after = Number(market?.probability || before);
                   const delta = after - before;
+                  const newsReplies = (repliesByParent[news.id] || []).sort(
+                    (a, b) => safeDate(a.timestamp || a.createdAt) - safeDate(b.timestamp || b.createdAt)
+                  );
                   return (
                     <div key={item.id} className="relative pb-4">
                       <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--amber)] bg-[rgba(217,119,6,.12)] text-[0.5rem]">⚡</span>
@@ -1110,6 +1234,25 @@ export default function MarketPage() {
                             {delta >= 0 ? '+' : ''}{Math.round(delta * 100)}%
                           </span>
                         </div>
+                        <div className="mt-2">
+                          <button
+                            onClick={() => {
+                              if (!currentUser) {
+                                notifyError('Sign in to reply.');
+                                return;
+                              }
+                              setReplyingTo(news.id);
+                              setReplyText('');
+                            }}
+                            className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]"
+                          >
+                            ↩ comment on this
+                          </button>
+                        </div>
+                        {renderReplyComposer(news.id)}
+                        {newsReplies.map((reply) => (
+                          <div key={reply.id}>{renderCommentCard(reply, true)}</div>
+                        ))}
                       </div>
                       <p className="mt-1 pl-1 font-mono text-[0.58rem] text-[var(--text-muted)]">{safeDate(news.timestamp).toLocaleString()}</p>
                     </div>
@@ -1188,7 +1331,7 @@ export default function MarketPage() {
           </div>
         </main>
 
-        <aside className="space-y-8 px-6 py-8 md:px-8">
+        <aside className="space-y-8" style={{ padding: '2rem' }}>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={handleShareMarket} className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-center font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-dim)] hover:text-[var(--text)]">
               ↗ Share
@@ -1201,7 +1344,7 @@ export default function MarketPage() {
           <section>
             <p className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
               <span className="inline-block h-px w-3 bg-[var(--red)]" />
-              Top Bettors
+              Whale Watch
             </p>
             <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
               {topBettors.length === 0 ? (
@@ -1210,10 +1353,10 @@ export default function MarketPage() {
                 <div key={`${bettor.userId}-${idx}`} className="grid grid-cols-[20px_1fr_auto_auto] items-center gap-2 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--surface2)]">
                   <span className={`text-center font-mono text-[0.6rem] ${idx === 0 ? 'text-[var(--amber-bright)]' : 'text-[var(--text-muted)]'}`}>{idx + 1}</span>
                   <span className="text-sm text-[var(--text)]">{bettor.name}</span>
-                  <span className={`rounded px-1.5 py-0.5 font-mono text-[0.56rem] font-bold ${bettor.side === 'YES' ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)]' : 'bg-[var(--red-glow)] text-[var(--red)]'}`}>
-                    {bettor.side}
+                  <span className={`rounded px-1.5 py-0.5 font-mono text-[0.56rem] font-bold ${bettor.dominantSide === 'YES' ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)]' : 'bg-[var(--red-glow)] text-[var(--red)]'}`}>
+                    {bettor.dominantSide}
                   </span>
-                  <span className="text-right font-mono text-[0.72rem] font-bold text-[var(--amber-bright)]">${bettor.total.toFixed(2)}</span>
+                  <span className="text-right font-mono text-[0.72rem] font-bold text-[var(--amber-bright)]">${bettor.invested.toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -1320,7 +1463,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
   const isProfit = pnl >= 0;
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--surface2)] p-3">
+    <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
       <div className="flex items-center justify-between mb-2">
         <span className={`font-mono text-[0.68rem] font-bold uppercase ${side === 'YES' ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>{side}</span>
         <span className="text-lg font-bold text-[var(--text)]">{shares.toFixed(1)} shares</span>
@@ -1332,7 +1475,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--text-dim)]">Sell now for:</span>
-          <span className="font-bold text-[var(--green-bright)]">${exitValue.toFixed(2)}</span>
+          <span className="font-bold text-[var(--amber-bright)]">${exitValue.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--text-dim)]">Current P/L:</span>
@@ -1345,7 +1488,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
       <button
         onClick={onSell}
         disabled={!canSell}
-        className="mt-2 w-full rounded-lg bg-[var(--red)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)]"
+        className="mt-2 w-full rounded-md border border-[var(--border2)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--text-dim)] hover:border-[var(--red)] hover:text-[var(--text)] disabled:border-[var(--border)] disabled:text-[var(--text-muted)]"
       >
         Sell {side}
       </button>
