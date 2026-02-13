@@ -185,9 +185,12 @@ export default function AdminPage() {
   const [deletingMarketId, setDeletingMarketId] = useState(null);
   const [refundingBetId, setRefundingBetId] = useState(null);
   const [editingQuestionMarketId, setEditingQuestionMarketId] = useState(null);
+  const [editingRulesMarketId, setEditingRulesMarketId] = useState(null);
   const [questionDrafts, setQuestionDrafts] = useState({});
+  const [rulesDrafts, setRulesDrafts] = useState({});
 
   const [newMarketQuestion, setNewMarketQuestion] = useState('');
+  const [newMarketResolutionRules, setNewMarketResolutionRules] = useState('');
   const [creating, setCreating] = useState(false);
   const [initialProbability, setInitialProbability] = useState(50);
   const [bValue, setBValue] = useState(100);
@@ -441,13 +444,14 @@ export default function AdminPage() {
     setMarketQuestionMap((prev) => ({ ...prev, ...loaded }));
   }
 
-  async function createMarket({ question, probabilityPercent, liquidityB }) {
+  async function createMarket({ question, probabilityPercent, liquidityB, resolutionRules }) {
     const probDecimal = probabilityPercent / 100;
     const b = liquidityB;
     const qYes = b * Math.log(probDecimal / (1 - probDecimal));
 
     await addDoc(collection(db, 'markets'), {
       question: question.trim(),
+      resolutionRules: (resolutionRules || '').trim() || null,
       probability: round2(probDecimal),
       initialProbability: round2(probDecimal),
       outstandingShares: {
@@ -477,12 +481,14 @@ export default function AdminPage() {
       await createMarket({
         question: newMarketQuestion,
         probabilityPercent: initialProbability,
-        liquidityB: bValue
+        liquidityB: bValue,
+        resolutionRules: newMarketResolutionRules
       });
 
       await logAdminAction('CREATE', `Market created: ${newMarketQuestion.trim().slice(0, 120)}`);
       notifySuccess('Market created successfully.');
       setNewMarketQuestion('');
+      setNewMarketResolutionRules('');
       setInitialProbability(50);
       setBValue(100);
       await Promise.all([fetchUnresolvedMarkets(), fetchOverviewStats()]);
@@ -577,7 +583,8 @@ export default function AdminPage() {
       await createMarket({
         question: edit.question,
         probabilityPercent: Number(edit.initialProbability),
-        liquidityB: Number(edit.liquidityB)
+        liquidityB: Number(edit.liquidityB),
+        resolutionRules: edit.resolutionRules
       });
 
       await updateDoc(doc(db, 'marketRequests', request.id), {
@@ -870,6 +877,11 @@ export default function AdminPage() {
     setQuestionDrafts((prev) => ({ ...prev, [market.id]: market.question || '' }));
   }
 
+  function beginEditRules(market) {
+    setEditingRulesMarketId(market.id);
+    setRulesDrafts((prev) => ({ ...prev, [market.id]: market.resolutionRules || '' }));
+  }
+
   async function handleEditQuestion(marketId, currentQuestion) {
     const nextQuestion = (questionDrafts[marketId] ?? currentQuestion ?? '').trim();
     if (!nextQuestion) {
@@ -888,6 +900,31 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error updating question:', error);
       notifyError('Could not update question.');
+    }
+  }
+
+  async function handleEditResolutionRules(marketId, currentRules) {
+    const nextRules = (rulesDrafts[marketId] ?? currentRules ?? '').trim();
+    if (!nextRules) {
+      notifyError('Resolution rules cannot be empty.');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'markets', marketId), { resolutionRules: nextRules });
+      await logAdminAction('EDIT', `Resolution rules updated on market ${marketId}`);
+
+      setMarkets((prev) =>
+        prev.map((market) => (market.id === marketId ? { ...market, resolutionRules: nextRules } : market))
+      );
+      setResolvedMarkets((prev) =>
+        prev.map((market) => (market.id === marketId ? { ...market, resolutionRules: nextRules } : market))
+      );
+      setEditingRulesMarketId(null);
+      notifySuccess('Resolution rules updated.');
+    } catch (error) {
+      console.error('Error updating resolution rules:', error);
+      notifyError('Could not update resolution rules.');
     }
   }
 
@@ -1362,6 +1399,19 @@ export default function AdminPage() {
             />
           </div>
 
+          <div>
+            <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">
+              Resolution Rules
+            </label>
+            <textarea
+              value={newMarketResolutionRules}
+              onChange={(e) => setNewMarketResolutionRules(e.target.value)}
+              placeholder="What specifically makes this market resolve YES or NO?"
+              rows={3}
+              className={INPUT_CLASS}
+            />
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">Initial Probability (%)</label>
@@ -1397,6 +1447,7 @@ export default function AdminPage() {
             <button
               onClick={() => {
                 setNewMarketQuestion('');
+                setNewMarketResolutionRules('');
                 setInitialProbability(50);
                 setBValue(100);
               }}
@@ -1484,6 +1535,7 @@ export default function AdminPage() {
     const isLocked = status === MARKET_STATUS.LOCKED;
     const stats = marketStatsById[market.id] || { betCount: 0, totalVolume: 0 };
     const editingQuestion = editingQuestionMarketId === market.id;
+    const editingRules = editingRulesMarketId === market.id;
 
     return (
       <div key={market.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
@@ -1534,6 +1586,44 @@ export default function AdminPage() {
             Resolution date: {formatDate(market.resolutionDate)}
           </p>
         )}
+        <div className="mb-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2">
+          <p className="mb-1 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            Resolution Rules
+          </p>
+          {editingRules ? (
+            <div className="space-y-2">
+              <textarea
+                rows={3}
+                value={rulesDrafts[market.id] || ''}
+                onChange={(e) =>
+                  setRulesDrafts((prev) => ({ ...prev, [market.id]: e.target.value }))
+                }
+                className={INPUT_CLASS}
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleEditResolutionRules(market.id, market.resolutionRules)}
+                  className={BTN_GREEN}
+                >
+                  Save Rules
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingRulesMarketId(null);
+                    setRulesDrafts((prev) => ({ ...prev, [market.id]: market.resolutionRules || '' }));
+                  }}
+                  className={BTN_NEUTRAL}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-[var(--text)]">
+              {market.resolutionRules || 'No resolution rules have been set yet.'}
+            </p>
+          )}
+        </div>
 
         <div className="mb-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <button
@@ -1581,8 +1671,9 @@ export default function AdminPage() {
           />
         </div>
 
-        <div className="mb-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-2 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
           <button onClick={() => beginEditQuestion(market)} className={BTN_NEUTRAL}>Edit Question</button>
+          <button onClick={() => beginEditRules(market)} className={BTN_NEUTRAL}>Edit Rules</button>
           <button
             onClick={() => handlePermanentDelete(market.id)}
             disabled={deletingMarketId === market.id || resolving === market.id || cancelling === market.id}

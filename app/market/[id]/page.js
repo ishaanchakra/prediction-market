@@ -797,6 +797,9 @@ export default function MarketPage() {
   const deltaClass = deltaFromStart >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]';
   const deltaArrow = deltaFromStart >= 0 ? '↑' : '↓';
   const deltaText = `${deltaArrow} ${deltaFromStart >= 0 ? '+' : ''}${Math.round(deltaFromStart * 100)}% from first trade`;
+  const resolutionRulesText = typeof market?.resolutionRules === 'string' && market.resolutionRules.trim()
+    ? market.resolutionRules.trim()
+    : null;
 
   const marketTags = Array.isArray(market?.tags) ? market.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [];
   const categoryLabel = market?.category || market?.topic || marketTags[0] || 'Campus';
@@ -1006,6 +1009,19 @@ export default function MarketPage() {
               This market was cancelled. Refunds were issued based on each user&apos;s net invested amount.
             </div>
           )}
+
+          <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+            <p className="mb-2 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+              How this resolves
+            </p>
+            <p className="mb-2 text-sm text-[var(--text-dim)]">
+              This market resolves YES if the rule below is met by the resolution criteria. Otherwise, it resolves NO.
+            </p>
+            <p className="text-sm leading-6 text-[var(--text)]">
+              {resolutionRulesText || 'No specific resolution rule has been posted yet. Trade carefully and check comments for clarifications.'}
+            </p>
+          </div>
 
           <div className="mb-7">
             <ResponsiveContainer width="100%" height={170}>
