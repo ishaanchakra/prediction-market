@@ -94,28 +94,31 @@ export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT
   const { yes: qYes, no: qNo } = normalizePool(outstandingShares);
   assertPositiveB(b);
   assertFiniteNumber(sharesToSell, 'sharesToSell');
-  if (sharesToSell <= 0) throw new Error('sharesToSell must be positive');
-  if (side === 'YES' && sharesToSell > qYes) {
-    throw new Error('Cannot sell more YES shares than exist');
+  if (sharesToSell <= 0) {
+    return { payout: 0, newPool: { yes: qYes, no: qNo }, newProbability: price(qYes, qNo, b) };
   }
-  if (side === 'NO' && sharesToSell > qNo) {
-    throw new Error('Cannot sell more NO shares than exist');
+  let safeSharesToSell = sharesToSell;
+  if (side === 'YES') {
+    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qYes));
+  }
+  if (side === 'NO') {
+    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qNo));
   }
 
   const currentCost = cost(qYes, qNo, b);
 
   let newCost;
   if (side === 'YES') {
-    newCost = cost(qYes - sharesToSell, qNo, b);
+    newCost = cost(qYes - safeSharesToSell, qNo, b);
   } else {
-    newCost = cost(qYes, qNo - sharesToSell, b);
+    newCost = cost(qYes, qNo - safeSharesToSell, b);
   }
 
   let payout = currentCost - newCost;
   if (payout < 0 && Math.abs(payout) < 1e-9) payout = 0;
 
-  const newQYes = side === 'YES' ? qYes - sharesToSell : qYes;
-  const newQNo = side === 'NO' ? qNo - sharesToSell : qNo;
+  const newQYes = side === 'YES' ? qYes - safeSharesToSell : qYes;
+  const newQNo = side === 'NO' ? qNo - safeSharesToSell : qNo;
   if (newQYes < -b * 20 || newQNo < -b * 20) {
     throw new Error('Sell amount exceeds safe pool bounds');
   }

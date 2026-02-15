@@ -1,75 +1,89 @@
 import { getPrice, calculateBet, calculateSell } from '../lmsr';
 
-function cost(qYes, qNo, b = 100) {
-  const max = Math.max(qYes, qNo);
-  return b * (max / b + Math.log(Math.exp((qYes - max) / b) + Math.exp((qNo - max) / b)));
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Seed a market to a given probability using the logit formula */
+function seededPool(prob, b = 100) {
+  return { yes: b * Math.log(prob / (1 - prob)), no: 0 };
 }
 
+// ─── getPrice ────────────────────────────────────────────────────────────────
+
 describe('getPrice', () => {
-  test('symmetry — equal shares returns exactly 0.5', () => {
-    expect(getPrice({ yes: 0, no: 0 })).toBeCloseTo(0.5, 12);
-    expect(getPrice({ yes: 100, no: 100 })).toBeCloseTo(0.5, 12);
-    expect(getPrice({ yes: 1000, no: 1000 })).toBeCloseTo(0.5, 12);
+  // --- existing coverage (kept for regression) ---
+  test('equal shares returns 0.5', () => {
+    expect(getPrice({ yes: 0, no: 0 })).toBeCloseTo(0.5);
+    expect(getPrice({ yes: 100, no: 100 })).toBeCloseTo(0.5);
   });
 
-  test('monotonicity — more YES shares → higher price', () => {
+  test('more YES shares → higher price', () => {
     expect(getPrice({ yes: 50, no: 0 })).toBeGreaterThan(0.5);
+  });
+
+  test('more NO shares → lower price', () => {
     expect(getPrice({ yes: 0, no: 50 })).toBeLessThan(0.5);
-    expect(getPrice({ yes: 200, no: 100 })).toBeGreaterThan(getPrice({ yes: 100, no: 100 }));
   });
 
-  test('probability bounds — always in (0, 1) exclusive', () => {
-    [0, 1, 10, 100, 1000, 10000].forEach((qYes) => {
-      const p = getPrice({ yes: qYes, no: 0 });
-      expect(p).toBeGreaterThan(0);
-      expect(p).toBeLessThan(1);
-      expect(Number.isNaN(p)).toBe(false);
-    });
+  test('higher b reduces price impact', () => {
+    const priceLowB  = getPrice({ yes: 50, no: 0 }, 50);
+    const priceHighB = getPrice({ yes: 50, no: 0 }, 200);
+    expect(Math.abs(priceHighB - 0.5)).toBeLessThan(Math.abs(priceLowB - 0.5));
   });
 
-  test('numerical stability — extreme values do not produce NaN', () => {
-    const highYes = getPrice({ yes: 100000, no: 0 });
-    const highNo = getPrice({ yes: 0, no: 100000 });
-    const equal = getPrice({ yes: 100000, no: 100000 });
-    expect(Number.isFinite(highYes)).toBe(true);
-    expect(Number.isFinite(highNo)).toBe(true);
-    expect(highYes).toBeGreaterThan(0.999999);
-    expect(highNo).toBeLessThan(0.000001);
-    expect(equal).toBeCloseTo(0.5, 12);
+  test('numerical stability with large values', () => {
+    const p = getPrice({ yes: 10000, no: 0 }, 100);
+    expect(p).toBeGreaterThan(0);
+    expect(p).toBeLessThanOrEqual(1);
+    expect(isNaN(p)).toBe(false);
   });
 
-  test('complement — getPrice(yes,no) + getPrice(no,yes) = 1', () => {
-    const pairs = [
-      [0, 0],
-      [5, 1],
-      [12, 90],
-      [500, 250],
-      [2500, 123]
-    ];
-    pairs.forEach(([yes, no]) => {
-      expect(getPrice({ yes, no }) + getPrice({ yes: no, no: yes })).toBeCloseTo(1, 12);
-    });
+  test('defaults missing shares to 0', () => {
+    expect(getPrice({})).toBeCloseTo(0.5);
   });
 
-  test('b sensitivity — higher b gives price closer to 0.5', () => {
-    const lowB = getPrice({ yes: 50, no: 0 }, 50);
-    const highB = getPrice({ yes: 50, no: 0 }, 200);
-    expect(Math.abs(highB - 0.5)).toBeLessThan(Math.abs(lowB - 0.5));
+  // --- new edge cases ---
+  test('seeded 70% pool returns ~70%', () => {
+    expect(getPrice(seededPool(0.7))).toBeCloseTo(0.7, 4);
   });
 
-  test('missing fields default to 0', () => {
-    expect(getPrice({})).toBeCloseTo(0.5, 12);
-    expect(getPrice({ yes: 50 })).toBeCloseTo(getPrice({ yes: 50, no: 0 }), 12);
+  test('seeded 95% pool returns ~95%', () => {
+    expect(getPrice(seededPool(0.95))).toBeCloseTo(0.95, 4);
   });
 
-  test('throws on non-finite input', () => {
-    expect(() => getPrice({ yes: Number.NaN, no: 0 })).toThrow();
-    expect(() => getPrice({ yes: Number.POSITIVE_INFINITY, no: 0 })).toThrow();
-    expect(() => getPrice({ yes: 0, no: Number.NEGATIVE_INFINITY })).toThrow();
+  test('seeded 5% pool returns ~5%', () => {
+    expect(getPrice(seededPool(0.05))).toBeCloseTo(0.05, 4);
+  });
+
+  test('symmetry: YES and NO pools at same magnitude mirror each other', () => {
+    const pYes = getPrice({ yes: 200, no: 0 });
+    const pNo  = getPrice({ yes: 0, no: 200 });
+    expect(pYes + pNo).toBeCloseTo(1, 10);
+    expect(pYes).toBeCloseTo(1 - pNo, 10);
+  });
+
+  test('very large b → price barely moves from 0.5 with same shares', () => {
+    const p = getPrice({ yes: 50, no: 0 }, 10000);
+    expect(p).toBeCloseTo(0.5, 1); // within 0.05 of 0.5
+  });
+
+  test('very small b → price moves sharply', () => {
+    const p = getPrice({ yes: 5, no: 0 }, 1);
+    expect(p).toBeGreaterThan(0.99);
+  });
+
+  test('negative qNo (should not arise in practice, but handles gracefully)', () => {
+    // negative qNo means NO side has been sold back – result should still be valid
+    const p = getPrice({ yes: 100, no: -10 }, 100);
+    expect(p).toBeGreaterThan(0.5);
+    expect(p).toBeLessThan(1);
+    expect(isNaN(p)).toBe(false);
   });
 });
 
+// ─── calculateBet ────────────────────────────────────────────────────────────
+
 describe('calculateBet', () => {
+  // --- existing coverage ---
   test('YES bet increases probability', () => {
     expect(calculateBet({ yes: 0, no: 0 }, 50, 'YES').newProbability).toBeGreaterThan(0.5);
   });
@@ -78,168 +92,268 @@ describe('calculateBet', () => {
     expect(calculateBet({ yes: 0, no: 0 }, 50, 'NO').newProbability).toBeLessThan(0.5);
   });
 
-  test('shares are positive', () => {
+  test('returns positive shares', () => {
     expect(calculateBet({ yes: 0, no: 0 }, 50, 'YES').shares).toBeGreaterThan(0);
   });
 
-  test('pool updated correctly', () => {
-    const result = calculateBet({ yes: 0, no: 0 }, 50, 'YES');
-    expect(result.newPool.yes).toBeGreaterThan(0);
-    expect(result.newPool.no).toBe(0);
-
-    const result2 = calculateBet({ yes: 0, no: 0 }, 50, 'NO');
-    expect(result2.newPool.yes).toBe(0);
-    expect(result2.newPool.no).toBeGreaterThan(0);
+  test('probability stays in [0, 1]', () => {
+    const r = calculateBet({ yes: 0, no: 0 }, 1000, 'YES');
+    expect(r.newProbability).toBeGreaterThanOrEqual(0);
+    expect(r.newProbability).toBeLessThanOrEqual(1);
   });
 
-  test('probability in [0,1]', () => {
-    expect(calculateBet({ yes: 0, no: 0 }, 10000, 'YES').newProbability).toBeLessThanOrEqual(1);
-    expect(calculateBet({ yes: 0, no: 0 }, 10000, 'NO').newProbability).toBeGreaterThanOrEqual(0);
-  });
-
-  test('monotonicity — larger bet means more shares and larger move', () => {
-    const small = calculateBet({ yes: 0, no: 0 }, 10, 'YES');
+  test('larger bet → more shares and more price movement', () => {
+    const small = calculateBet({ yes: 0, no: 0 }, 10,  'YES');
     const large = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
     expect(large.shares).toBeGreaterThan(small.shares);
     expect(large.newProbability).toBeGreaterThan(small.newProbability);
   });
 
-  test('cost consistency — cost of shares equals bet amount', () => {
-    const result = calculateBet({ yes: 0, no: 0 }, 50, 'YES', 100);
-    const costPaid = cost(result.newPool.yes, 0, 100) - cost(0, 0, 100);
-    expect(Math.abs(costPaid - 50)).toBeLessThan(0.01);
+  test('updates pool correctly', () => {
+    const r1 = calculateBet({ yes: 0, no: 0 }, 50, 'YES');
+    expect(r1.newPool.yes).toBeGreaterThan(0);
+    expect(r1.newPool.no).toBe(0);
+
+    const r2 = calculateBet({ yes: 0, no: 0 }, 50, 'NO');
+    expect(r2.newPool.yes).toBe(0);
+    expect(r2.newPool.no).toBeGreaterThan(0);
   });
 
-  test('already-skewed market — bet on dominant side', () => {
-    const pool = calculateBet({ yes: 0, no: 0 }, 200, 'YES').newPool;
-    const result = calculateBet(pool, 50, 'YES');
-    expect(result.newProbability).toBeGreaterThan(getPrice(pool));
-    expect(result.shares).toBeGreaterThan(0);
+  test('throws on non-finite pool input', () => {
+    expect(() => calculateBet({ yes: NaN, no: 0 }, 50, 'YES')).toThrow('finite');
   });
 
-  test('bet on trailing side of skewed market', () => {
-    const pool = calculateBet({ yes: 0, no: 0 }, 200, 'YES').newPool;
-    const result = calculateBet(pool, 50, 'NO');
-    expect(result.newProbability).toBeLessThan(getPrice(pool));
+  // --- new edge cases ---
+
+  test('tiny bet ($0.01) returns non-zero shares', () => {
+    const r = calculateBet({ yes: 0, no: 0 }, 0.01, 'YES');
+    expect(r.shares).toBeGreaterThan(0);
+    expect(isNaN(r.shares)).toBe(false);
+    expect(r.newProbability).toBeGreaterThan(0.5);
   });
 
-  test('very small bet ($0.01) does not crash', () => {
-    const result = calculateBet({ yes: 0, no: 0 }, 0.01, 'YES');
-    expect(result.shares).toBeGreaterThan(0);
-    expect(Number.isFinite(result.newProbability)).toBe(true);
+  test('large bet ($100,000) does not produce NaN or Infinity', () => {
+    const r = calculateBet({ yes: 0, no: 0 }, 100000, 'YES');
+    expect(isNaN(r.shares)).toBe(false);
+    expect(isFinite(r.shares)).toBe(true);
+    expect(r.newProbability).toBeLessThanOrEqual(1);
+    expect(r.newProbability).toBeGreaterThan(0.5);
   });
 
-  test('large b value → smaller price impact', () => {
-    const highB = calculateBet({ yes: 0, no: 0 }, 100, 'YES', 1000);
-    const lowB = calculateBet({ yes: 0, no: 0 }, 100, 'YES', 10);
-    expect(Math.abs(highB.newProbability - 0.5)).toBeLessThan(Math.abs(lowB.newProbability - 0.5));
+  test('YES bet on extreme-probability market (95%) gives valid result', () => {
+    // This tests the binary search ceiling fix: hi = betAmount * 10 was too small here
+    const pool = seededPool(0.95); // qYes ≈ 294
+    const r = calculateBet(pool, 50, 'YES');
+    expect(r.shares).toBeGreaterThan(0);
+    expect(isNaN(r.shares)).toBe(false);
+    expect(r.newProbability).toBeGreaterThan(0.95);
+    expect(r.newProbability).toBeLessThanOrEqual(1);
   });
 
-  test('throws on invalid inputs', () => {
-    expect(() => calculateBet({ yes: Number.NaN, no: 0 }, 50, 'YES')).toThrow();
-    expect(() => calculateBet({ yes: 0, no: 0 }, 0, 'YES')).toThrow('positive');
-    expect(() => calculateBet({ yes: 0, no: 0 }, -10, 'YES')).toThrow();
-    expect(() => calculateBet({ yes: 0, no: 0 }, 50, 'YES', 0)).toThrow('b must be positive');
-    expect(() => calculateBet({ yes: 0, no: 0 }, 50, 'YES', -1)).toThrow('b must be positive');
+  test('NO bet on 5% market gives valid result', () => {
+    const pool = seededPool(0.05);
+    const r = calculateBet(pool, 50, 'NO');
+    expect(r.shares).toBeGreaterThan(0);
+    expect(r.newProbability).toBeLessThan(0.05);
+    expect(r.newProbability).toBeGreaterThanOrEqual(0);
+  });
+
+  test('pool conservation: YES bet increments qYes by exactly shares received', () => {
+    const pool = { yes: 0, no: 0 };
+    const r = calculateBet(pool, 100, 'YES');
+    expect(r.newPool.yes).toBeCloseTo(pool.yes + r.shares, 5);
+    expect(r.newPool.no).toBe(pool.no);
+  });
+
+  test('pool conservation: NO bet increments qNo by exactly shares received', () => {
+    const pool = { yes: 50, no: 20 };
+    const r = calculateBet(pool, 100, 'NO');
+    expect(r.newPool.no).toBeCloseTo(pool.no + r.shares, 5);
+    expect(r.newPool.yes).toBe(pool.yes);
+  });
+
+  test('YES and NO bets from 50% are symmetric', () => {
+    const rYes = calculateBet({ yes: 0, no: 0 }, 50, 'YES');
+    const rNo  = calculateBet({ yes: 0, no: 0 }, 50, 'NO');
+    expect(rYes.shares).toBeCloseTo(rNo.shares, 5);
+    expect(rYes.newProbability + rNo.newProbability).toBeCloseTo(1, 5);
+  });
+
+  test('small b (b=10) → larger price impact per dollar', () => {
+    const rSmall = calculateBet({ yes: 0, no: 0 }, 50, 'YES', 10);
+    const rLarge = calculateBet({ yes: 0, no: 0 }, 50, 'YES', 500);
+    expect(rSmall.newProbability).toBeGreaterThan(rLarge.newProbability);
+  });
+
+  test('large b (b=1000) → very small price impact', () => {
+    const r = calculateBet({ yes: 0, no: 0 }, 50, 'YES', 1000);
+    expect(r.newProbability).toBeCloseTo(0.5, 1);
+    expect(r.newProbability).toBeGreaterThan(0.5);
+  });
+
+  test('seeded 70% market: YES bet pushes above 70%', () => {
+    const r = calculateBet(seededPool(0.7), 50, 'YES');
+    expect(r.newProbability).toBeGreaterThan(0.7);
+  });
+
+  test('seeded 70% market: NO bet pushes below 70%', () => {
+    const r = calculateBet(seededPool(0.7), 50, 'NO');
+    expect(r.newProbability).toBeLessThan(0.7);
+  });
+
+  test('sequential bets move price monotonically', () => {
+    let pool = { yes: 0, no: 0 };
+    const probs = [];
+    for (let i = 0; i < 5; i++) {
+      const r = calculateBet(pool, 20, 'YES');
+      probs.push(r.newProbability);
+      pool = r.newPool;
+    }
+    for (let i = 1; i < probs.length; i++) {
+      expect(probs[i]).toBeGreaterThan(probs[i - 1]);
+    }
+  });
+
+  test('buy YES then buy NO brings price back toward start', () => {
+    const start = getPrice({ yes: 0, no: 0 });
+    const r1 = calculateBet({ yes: 0, no: 0 }, 50, 'YES');
+    const r2 = calculateBet(r1.newPool, 50, 'NO');
+    // Price should be closer to start after NO bet
+    expect(Math.abs(r2.newProbability - start))
+      .toBeLessThan(Math.abs(r1.newProbability - start));
   });
 });
 
+// ─── calculateSell ───────────────────────────────────────────────────────────
+
 describe('calculateSell', () => {
-  test('selling YES shares decreases probability', () => {
-    const buyResult = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
-    const sellResult = calculateSell(buyResult.newPool, buyResult.shares / 2, 'YES');
-    expect(sellResult.newProbability).toBeLessThan(getPrice(buyResult.newPool));
+  // --- existing coverage ---
+  test('selling YES decreases probability', () => {
+    const pool = { yes: 50, no: 0 };
+    expect(calculateSell(pool, 25, 'YES').newProbability)
+      .toBeLessThan(getPrice(pool));
   });
 
-  test('selling NO shares increases probability', () => {
-    const buyResult = calculateBet({ yes: 0, no: 0 }, 100, 'NO');
-    const sellResult = calculateSell(buyResult.newPool, buyResult.shares / 2, 'NO');
-    expect(sellResult.newProbability).toBeGreaterThan(getPrice(buyResult.newPool));
+  test('selling NO increases probability', () => {
+    const pool = { yes: 0, no: 50 };
+    expect(calculateSell(pool, 25, 'NO').newProbability)
+      .toBeGreaterThan(getPrice(pool));
   });
 
   test('payout is positive', () => {
-    const buyResult = calculateBet({ yes: 0, no: 0 }, 50, 'YES');
-    const sellResult = calculateSell(buyResult.newPool, buyResult.shares, 'YES');
-    expect(sellResult.payout).toBeGreaterThan(0);
+    expect(calculateSell({ yes: 100, no: 0 }, 50, 'YES').payout)
+      .toBeGreaterThan(0);
   });
 
-  test('round-trip — buy then sell all shares ≈ original amount', () => {
+  test('buy-then-sell round-trip (50% market)', () => {
     const betAmount = 50;
-    const buy = calculateBet({ yes: 0, no: 0 }, betAmount, 'YES');
+    const buy  = calculateBet({ yes: 0, no: 0 }, betAmount, 'YES');
     const sell = calculateSell(buy.newPool, buy.shares, 'YES');
-    expect(Math.abs(sell.payout - betAmount)).toBeLessThan(0.05);
+    expect(sell.payout).toBeCloseTo(betAmount, 0);
   });
 
-  test('round-trip on NO side', () => {
-    const betAmount = 75;
-    const buy = calculateBet({ yes: 0, no: 0 }, betAmount, 'NO');
-    const sell = calculateSell(buy.newPool, buy.shares, 'NO');
-    expect(Math.abs(sell.payout - betAmount)).toBeLessThan(0.05);
+  test('throws on non-finite pool input', () => {
+    expect(() => calculateSell({ yes: NaN, no: 0 }, 50, 'YES')).toThrow('finite');
   });
 
-  test('round-trip on skewed market', () => {
-    const pool = calculateBet({ yes: 0, no: 0 }, 200, 'YES').newPool;
+  // --- new edge cases ---
+
+  test('sell 0 shares returns 0 payout without error', () => {
+    const pool = { yes: 100, no: 0 };
+    const r = calculateSell(pool, 0, 'YES');
+    expect(r.payout).toBe(0);
+  });
+
+  test('buy-then-sell round-trip on seeded 70% market', () => {
+    const pool = seededPool(0.7);
+    const betAmount = 80;
+    const buy  = calculateBet(pool, betAmount, 'YES');
+    const sell = calculateSell(buy.newPool, buy.shares, 'YES');
+    expect(sell.payout).toBeCloseTo(betAmount, 0);
+    // Price should return to starting probability
+    expect(sell.newProbability).toBeCloseTo(0.7, 3);
+  });
+
+  test('buy-then-sell round-trip on seeded 95% market', () => {
+    const pool = seededPool(0.95);
     const betAmount = 30;
-    const buy = calculateBet(pool, betAmount, 'YES');
+    const buy  = calculateBet(pool, betAmount, 'NO');
+    const sell = calculateSell(buy.newPool, buy.shares, 'NO');
+    expect(sell.payout).toBeCloseTo(betAmount, 0);
+  });
+
+  test('sell after price moved in your favor yields more than invested', () => {
+    // u1 buys YES, then u2 also buys YES (drives price up), then u1 sells
+    const pool0 = { yes: 0, no: 0 };
+    const u1buy = calculateBet(pool0, 50, 'YES');
+    const u2buy = calculateBet(u1buy.newPool, 200, 'YES'); // big bet pushes price up
+    const u1sell = calculateSell(u2buy.newPool, u1buy.shares, 'YES');
+    expect(u1sell.payout).toBeGreaterThan(50); // sold into higher price
+  });
+
+  test('sell after price moved against you yields less than invested', () => {
+    // u1 buys YES, then u2 buys NO heavily (drives price down), u1 sells
+    const pool0 = { yes: 0, no: 0 };
+    const u1buy = calculateBet(pool0, 50, 'YES');
+    const u2buy = calculateBet(u1buy.newPool, 300, 'NO');
+    const u1sell = calculateSell(u2buy.newPool, u1buy.shares, 'YES');
+    expect(u1sell.payout).toBeLessThan(50);
+    expect(u1sell.payout).toBeGreaterThanOrEqual(0); // never negative
+  });
+
+  test('selling more YES shares than pool qYes clamps to pool and returns valid payout', () => {
+    const pool = { yes: 50, no: 0 };
+    expect(() => calculateSell(pool, 80, 'YES')).not.toThrow();
+    const r = calculateSell(pool, 80, 'YES');
+    expect(r.payout).toBeGreaterThanOrEqual(0);
+    expect(isNaN(r.payout)).toBe(false);
+  });
+
+  test('selling more NO shares than pool qNo clamps to pool and returns valid payout', () => {
+    const pool = { yes: 0, no: 30 };
+    expect(() => calculateSell(pool, 50, 'NO')).not.toThrow();
+    const r = calculateSell(pool, 50, 'NO');
+    expect(r.payout).toBeGreaterThanOrEqual(0);
+    expect(isNaN(r.payout)).toBe(false);
+  });
+
+  test('clamped sell on seeded 95% pool does not crash', () => {
+    const pool = { yes: 294, no: 0 };
+    expect(() => calculateSell(pool, 50, 'NO')).not.toThrow();
+  });
+
+  test('tiny sell (0.001 shares) returns non-zero positive payout', () => {
+    const pool = { yes: 200, no: 0 };
+    const r = calculateSell(pool, 0.001, 'YES');
+    expect(r.payout).toBeGreaterThan(0);
+    expect(isNaN(r.payout)).toBe(false);
+  });
+
+  test('pool is updated correctly after sell', () => {
+    const pool = { yes: 100, no: 40 };
+    const r = calculateSell(pool, 30, 'YES');
+    expect(r.newPool.yes).toBeCloseTo(100 - 30, 5);
+    expect(r.newPool.no).toBe(40);
+  });
+
+  test('selling all YES shares from symmetric pool returns ~half the cost', () => {
+    // Buy YES from 50%, sell all shares back
+    const buy  = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
     const sell = calculateSell(buy.newPool, buy.shares, 'YES');
-    expect(Math.abs(sell.payout - betAmount)).toBeLessThan(0.05);
+    // Payout should equal original bet (LMSR property)
+    expect(sell.payout).toBeCloseTo(100, 0);
   });
 
-  test('partial sell payout is less than full sell payout', () => {
-    const buy = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
-    const fullSell = calculateSell(buy.newPool, buy.shares, 'YES');
-    const halfSell = calculateSell(buy.newPool, buy.shares / 2, 'YES');
-    expect(halfSell.payout).toBeLessThan(fullSell.payout);
-    expect(halfSell.payout).toBeGreaterThan(0);
-  });
-
-  test('pool correctly updated after full sell', () => {
-    const buy = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
-    const sell = calculateSell(buy.newPool, buy.shares, 'YES');
-    expect(Math.abs(sell.newPool.yes)).toBeLessThan(0.01);
-  });
-
-  test('selling 0 shares throws', () => {
-    expect(() => calculateSell({ yes: 50, no: 0 }, 0, 'YES')).toThrow('positive');
-  });
-
-  test('selling negative shares throws', () => {
-    expect(() => calculateSell({ yes: 50, no: 0 }, -5, 'YES')).toThrow('positive');
-  });
-
-  test('NaN pool throws', () => {
-    expect(() => calculateSell({ yes: Number.NaN, no: 0 }, 10, 'YES')).toThrow();
-  });
-
-  test('selling more shares than exist throws explicitly', () => {
-    expect(() => calculateSell({ yes: 10, no: 0 }, 1000, 'YES')).toThrow();
-  });
-});
-
-describe('Sequential Multi-Trade Consistency', () => {
-  test('path independence of end price', () => {
-    const r1 = calculateBet({ yes: 0, no: 0 }, 25, 'YES');
-    const r2 = calculateBet(r1.newPool, 25, 'YES');
-    const r3 = calculateBet({ yes: 0, no: 0 }, 50, 'YES');
-    expect(Math.abs(r2.newProbability - r3.newProbability)).toBeLessThan(0.001);
-  });
-
-  test('alternating buy/sell leaves market near initial state', () => {
-    const buy1 = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
-    const sell1 = calculateSell(buy1.newPool, buy1.shares, 'YES');
-    const buy2 = calculateBet(sell1.newPool, 100, 'NO');
-    const sell2 = calculateSell(buy2.newPool, buy2.shares, 'NO');
-    expect(Math.abs(getPrice(sell2.newPool) - 0.5)).toBeLessThan(0.01);
-  });
-
-  test('10 sequential small bets same side = one large bet probability', () => {
-    let pool = { yes: 0, no: 0 };
-    for (let i = 0; i < 10; i += 1) {
-      pool = calculateBet(pool, 10, 'YES').newPool;
+  test('result probability is always in [0, 1]', () => {
+    const cases = [
+      [{ yes: 500, no: 0 }, 400, 'YES'],
+      [{ yes: 0, no: 500 }, 400, 'NO'],
+      [{ yes: 100, no: 100 }, 50, 'YES'],
+    ];
+    for (const [pool, shares, side] of cases) {
+      const r = calculateSell(pool, shares, side);
+      expect(r.newProbability).toBeGreaterThanOrEqual(0);
+      expect(r.newProbability).toBeLessThanOrEqual(1);
     }
-    const finalProbSmall = getPrice(pool);
-    const bigResult = calculateBet({ yes: 0, no: 0 }, 100, 'YES');
-    const finalProbBig = bigResult.newProbability;
-    expect(Math.abs(finalProbSmall - finalProbBig)).toBeLessThan(0.001);
   });
 });

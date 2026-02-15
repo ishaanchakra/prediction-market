@@ -243,11 +243,17 @@ export default function MarketPage() {
     if (!market?.outstandingShares) return;
 
     try {
-      const yesExit = userPosition.yesShares > 0
-        ? calculateSell(market.outstandingShares, userPosition.yesShares, 'YES', market.b).payout
+      const poolYes = Math.max(0, market.outstandingShares.yes ?? 0);
+      const poolNo = Math.max(0, market.outstandingShares.no ?? 0);
+
+      const clampedYesShares = Math.min(userPosition.yesShares, poolYes);
+      const clampedNoShares = Math.min(userPosition.noShares, poolNo);
+
+      const yesExit = clampedYesShares > 0
+        ? calculateSell(market.outstandingShares, clampedYesShares, 'YES', market.b).payout
         : 0;
-      const noExit = userPosition.noShares > 0
-        ? calculateSell(market.outstandingShares, userPosition.noShares, 'NO', market.b).payout
+      const noExit = clampedNoShares > 0
+        ? calculateSell(market.outstandingShares, clampedNoShares, 'NO', market.b).payout
         : 0;
       setExitValues({ yesExit, noExit });
     } catch (error) {
@@ -1000,7 +1006,7 @@ export default function MarketPage() {
           </div>
 
           {isLocked && (
-            <div className="mb-4 rounded-lg border border-[var(--border)] border-l-[3px] border-l-[var(--red)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]">
+            <div className="mb-6 rounded-lg border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] p-3 text-sm text-[#f59e0b]">
               Trading is locked by admin. You can view history and comments, but cannot buy or sell until it is unlocked.
             </div>
           )}
@@ -1152,7 +1158,7 @@ export default function MarketPage() {
                           className={`rounded-md border px-4 py-3 text-center transition ${
                             selectedSide === 'YES'
                               ? 'border-[var(--green-bright)] bg-[rgba(22,163,74,.08)]'
-                              : 'border-[var(--border2)] bg-[var(--surface2)]'
+                              : 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface3)]'
                           } disabled:opacity-50`}
                         >
                           <span className="mb-1 block font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">YES</span>
@@ -1165,7 +1171,7 @@ export default function MarketPage() {
                           className={`rounded-md border px-4 py-3 text-center transition ${
                             selectedSide === 'NO'
                               ? 'border-[var(--red)] bg-[var(--red-glow)]'
-                              : 'border-[var(--border2)] bg-[var(--surface2)]'
+                              : 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface3)]'
                           } disabled:opacity-50`}
                         >
                           <span className="mb-1 block font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">NO</span>
@@ -1441,7 +1447,7 @@ export default function MarketPage() {
               <div className="bg-[var(--surface2)] border border-[var(--border2)] rounded-lg p-4 mb-4">
                 <p className="text-sm text-[var(--text-dim)] mb-2">You will receive now:</p>
                 <p className="font-bold text-2xl text-[var(--green-bright)]">${sellPreview.payout.toFixed(2)}</p>
-                <p className="text-xs text-[var(--text-muted)] mt-2">New market probability: {Math.round(sellPreview.newProbability * 100)}%</p>
+                <p className="text-xs text-[var(--text-dim)] mt-2">New market probability: {Math.round(sellPreview.newProbability * 100)}%</p>
               </div>
             )}
 
@@ -1479,7 +1485,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
   const isProfit = pnl >= 0;
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+    <div className="rounded-md border border-[var(--border2)] bg-[var(--surface3)] p-3">
       <div className="flex items-center justify-between mb-2">
         <span className={`font-mono text-[0.68rem] font-bold uppercase ${side === 'YES' ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>{side}</span>
         <span className="text-lg font-bold text-[var(--text)]">{shares.toFixed(1)} shares</span>
@@ -1504,7 +1510,7 @@ function PositionCard({ side, shares, invested, exitValue, onSell, canSell }) {
       <button
         onClick={onSell}
         disabled={!canSell}
-        className="mt-2 w-full rounded-md border border-[var(--border2)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--text-dim)] hover:border-[var(--red)] hover:text-[var(--text)] disabled:border-[var(--border)] disabled:text-[var(--text-muted)]"
+        className="mt-2 w-full rounded-lg bg-[var(--red)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:text-[var(--text-muted)]"
       >
         Sell {side}
       </button>

@@ -78,7 +78,7 @@ export default function ActiveMarketsPage() {
                     <h2 className="text-lg font-semibold text-[var(--text)] group-hover:text-brand-red transition-colors min-h-[60px] relative z-10">
                       {market.question}
                     </h2>
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${status === MARKET_STATUS.LOCKED ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${status === MARKET_STATUS.LOCKED ? 'bg-[rgba(217,119,6,0.12)] text-[#f59e0b]' : 'bg-[rgba(34,197,94,0.12)] text-[#22c55e]'}`}>
                       {status}
                     </span>
                   </div>
@@ -92,7 +92,17 @@ export default function ActiveMarketsPage() {
 
                   {typeof market.probability === 'number' && (
                     <div className="w-full bg-[var(--surface3)] rounded-full h-2 relative z-10">
-                      <div className="bg-[var(--bg)] h-2 rounded-full transition-all duration-300" style={{ width: `${market.probability * 100}%` }} />
+                      <div
+                        className="h-2 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${market.probability * 100}%`,
+                          background: market.probability > 0.65
+                            ? 'var(--green-bright, #22c55e)'
+                            : market.probability < 0.35
+                              ? 'var(--red, #DC2626)'
+                              : 'var(--amber-bright, #f59e0b)'
+                        }}
+                      />
                     </div>
                   )}
 

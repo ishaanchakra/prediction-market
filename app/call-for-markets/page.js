@@ -154,7 +154,7 @@ export default function CallForMarketsPage() {
                   <div key={request.id} className="rounded-lg border p-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="font-semibold text-[var(--text)]">{request.question}</p>
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${request.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : request.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{request.status}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${request.status === 'PENDING' ? 'bg-[rgba(217,119,6,0.12)] text-[#f59e0b]' : request.status === 'APPROVED' ? 'bg-[rgba(34,197,94,0.12)] text-[#22c55e]' : 'bg-[rgba(220,38,38,0.12)] text-[var(--red)]'}`}>{request.status}</span>
                     </div>
                     <p className="text-sm text-[var(--text-dim)]">Requested: {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}</p>
                     {request.adminNotes && <p className="text-sm text-[var(--text-dim)] mt-2"><span className="font-semibold">Admin note:</span> {request.adminNotes}</p>}

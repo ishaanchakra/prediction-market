@@ -1,5 +1,5 @@
 export function round2(num) {
-  return Math.round(num * 100) / 100;
+  return Math.round((num + Number.EPSILON) * 100) / 100;
 }
 
 export function calculateRefundsByUser(bets) {
