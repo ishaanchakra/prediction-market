@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { collection, query, where, doc, onSnapshot } from 'firebase/firestore';
 import { CATEGORIES } from '@/utils/categorize';
 
@@ -27,14 +27,13 @@ export default function Navigation() {
   const [mobileMenuPath, setMobileMenuPath] = useState('');
   const [desktopMarketsOpen, setDesktopMarketsOpen] = useState(false);
   const [desktopMenuPath, setDesktopMenuPath] = useState('');
+  const [selectedMarketCategoryId, setSelectedMarketCategoryId] = useState('all');
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
-  const requestedCategory = (searchParams.get('category') || 'all').toLowerCase();
   const activeCategoryId = pathname === '/markets/active'
-    ? (MARKET_CATEGORY_IDS.includes(requestedCategory) ? requestedCategory : 'all')
+    ? (MARKET_CATEGORY_IDS.includes(selectedMarketCategoryId) ? selectedMarketCategoryId : 'all')
     : null;
 
   useEffect(() => {
@@ -154,7 +153,10 @@ export default function Navigation() {
                       <Link
                         key={category.id}
                         href={href}
-                        onClick={() => setDesktopMarketsOpen(false)}
+                        onClick={() => {
+                          setSelectedMarketCategoryId(category.id);
+                          setDesktopMarketsOpen(false);
+                        }}
                         className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors last:border-b-0 ${
                           isActiveCategory
                             ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
@@ -283,7 +285,10 @@ export default function Navigation() {
                   <Link
                     key={category.id}
                     href={href}
-                    onClick={() => setMobileMenuOpen(false)}
+                    onClick={() => {
+                      setSelectedMarketCategoryId(category.id);
+                      setMobileMenuOpen(false);
+                    }}
                     className={`flex min-h-[48px] items-center px-1 font-mono text-[0.68rem] uppercase tracking-[0.08em] ${
                       isActiveCategory ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'
                     }`}

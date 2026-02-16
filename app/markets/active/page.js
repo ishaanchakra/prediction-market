@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 import { CATEGORIES } from '@/utils/categorize';
 
-export default function ActiveMarketsPage() {
+function ActiveMarketsContent() {
   const [markets, setMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
   const [loading, setLoading] = useState(true);
@@ -141,5 +141,19 @@ export default function ActiveMarketsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ActiveMarketsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">
+          Loading...
+        </div>
+      }
+    >
+      <ActiveMarketsContent />
+    </Suspense>
   );
 }
