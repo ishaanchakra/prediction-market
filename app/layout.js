@@ -1,4 +1,5 @@
 import { Syne, Space_Mono, Instrument_Serif } from "next/font/google";
+import { Suspense } from "react";
 import "./globals.css";
 import Navigation from "./components/Navigation";
 
@@ -44,7 +45,9 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className="antialiased">
-        <Navigation />
+        <Suspense fallback={null}>
+          <Navigation />
+        </Suspense>
         {children}
       </body>
     </html>
