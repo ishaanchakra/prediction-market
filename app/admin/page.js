@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import { calculateRefundsByUser, round2 } from '@/utils/refunds';
 import { getPublicDisplayName } from '@/utils/displayName';
+import { CATEGORIES, categorizeMarket } from '@/utils/categorize';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -38,6 +39,21 @@ const BTN_GREEN = `${ACTION_BUTTON_BASE} bg-[rgba(22,163,74,0.15)] text-[var(--g
 const BTN_RED = `${ACTION_BUTTON_BASE} bg-[var(--red-glow)] text-[var(--red)] border-[rgba(220,38,38,0.3)] hover:bg-[rgba(220,38,38,0.15)]`;
 const BTN_AMBER = `${ACTION_BUTTON_BASE} bg-[rgba(217,119,6,0.15)] text-[var(--amber-bright)] border-[rgba(217,119,6,0.25)] hover:bg-[rgba(217,119,6,0.25)]`;
 const BTN_NEUTRAL = `${ACTION_BUTTON_BASE} bg-[var(--surface2)] text-[var(--text-dim)] border-[var(--border2)] hover:bg-[var(--surface3)]`;
+const MARKET_CATEGORY_OPTIONS = CATEGORIES.filter((category) => category.id !== 'all');
+const MARKET_CATEGORY_IDS = new Set(MARKET_CATEGORY_OPTIONS.map((category) => category.id));
+
+function normalizeCategory(category, question) {
+  if (category === 'auto') return categorizeMarket(question);
+  return MARKET_CATEGORY_IDS.has(category) ? category : categorizeMarket(question);
+}
+
+function getCategoryLabel(categoryId) {
+  return MARKET_CATEGORY_OPTIONS.find((category) => category.id === categoryId)?.label || 'Wildcard';
+}
+
+function getMarketCategoryValue(market) {
+  return normalizeCategory(market?.category, market?.question || '');
+}
 
 function toDate(value) {
   if (value?.toDate) return value.toDate();
@@ -188,14 +204,17 @@ export default function AdminPage() {
   const [refundingBetId, setRefundingBetId] = useState(null);
   const [editingQuestionMarketId, setEditingQuestionMarketId] = useState(null);
   const [editingRulesMarketId, setEditingRulesMarketId] = useState(null);
+  const [savingCategoryMarketId, setSavingCategoryMarketId] = useState(null);
   const [questionDrafts, setQuestionDrafts] = useState({});
   const [rulesDrafts, setRulesDrafts] = useState({});
+  const [categoryDrafts, setCategoryDrafts] = useState({});
 
   const [newMarketQuestion, setNewMarketQuestion] = useState('');
   const [newMarketResolutionRules, setNewMarketResolutionRules] = useState('');
   const [creating, setCreating] = useState(false);
   const [initialProbability, setInitialProbability] = useState(50);
   const [bValue, setBValue] = useState(100);
+  const [newMarketCategory, setNewMarketCategory] = useState('auto');
   const [newsDrafts, setNewsDrafts] = useState({});
   const [cancelReasonsByMarket, setCancelReasonsByMarket] = useState({});
 
@@ -453,13 +472,15 @@ export default function AdminPage() {
     setMarketQuestionMap((prev) => ({ ...prev, ...loaded }));
   }
 
-  async function createMarket({ question, probabilityPercent, liquidityB, resolutionRules }) {
+  async function createMarket({ question, probabilityPercent, liquidityB, resolutionRules, category }) {
+    const normalizedQuestion = question.trim();
     const probDecimal = probabilityPercent / 100;
     const b = liquidityB;
     const qYes = b * Math.log(probDecimal / (1 - probDecimal));
+    const normalizedCategory = normalizeCategory(category, normalizedQuestion);
 
     await addDoc(collection(db, 'markets'), {
-      question: question.trim(),
+      question: normalizedQuestion,
       resolutionRules: (resolutionRules || '').trim() || null,
       probability: round2(probDecimal),
       initialProbability: round2(probDecimal),
@@ -470,7 +491,8 @@ export default function AdminPage() {
       b,
       status: MARKET_STATUS.OPEN,
       resolution: null,
-      createdAt: new Date()
+      createdAt: new Date(),
+      category: normalizedCategory
     });
   }
 
@@ -491,7 +513,8 @@ export default function AdminPage() {
         question: newMarketQuestion,
         probabilityPercent: initialProbability,
         liquidityB: bValue,
-        resolutionRules: newMarketResolutionRules
+        resolutionRules: newMarketResolutionRules,
+        category: newMarketCategory
       });
 
       await logAdminAction('CREATE', `Market created: ${newMarketQuestion.trim().slice(0, 120)}`);
@@ -500,6 +523,7 @@ export default function AdminPage() {
       setNewMarketResolutionRules('');
       setInitialProbability(50);
       setBValue(100);
+      setNewMarketCategory('auto');
       await Promise.all([fetchUnresolvedMarkets(), fetchOverviewStats()]);
     } catch (error) {
       console.error('Error creating market:', error);
@@ -517,6 +541,7 @@ export default function AdminPage() {
         question: request.question || '',
         initialProbability: request.initialProbability || 50,
         liquidityB: request.liquidityB || 100,
+        category: request.category || categorizeMarket(request.question || ''),
         resolutionRules: request.resolutionRules || '',
         resolutionDate: request.resolutionDate?.toDate?.()
           ? request.resolutionDate.toDate().toISOString().split('T')[0]
@@ -550,6 +575,7 @@ export default function AdminPage() {
         question: edit.question.trim(),
         initialProbability: Number(edit.initialProbability),
         liquidityB: Number(edit.liquidityB),
+        category: normalizeCategory(edit.category, edit.question?.trim() || ''),
         resolutionRules: edit.resolutionRules.trim(),
         resolutionDate: new Date(edit.resolutionDate),
         updatedAt: new Date()
@@ -571,6 +597,7 @@ export default function AdminPage() {
       question: request.question,
       initialProbability: request.initialProbability,
       liquidityB: request.liquidityB,
+      category: request.category || categorizeMarket(request.question || ''),
       resolutionRules: request.resolutionRules,
       resolutionDate: request.resolutionDate?.toDate?.()
         ? request.resolutionDate.toDate().toISOString().split('T')[0]
@@ -593,13 +620,15 @@ export default function AdminPage() {
         question: edit.question,
         probabilityPercent: Number(edit.initialProbability),
         liquidityB: Number(edit.liquidityB),
-        resolutionRules: edit.resolutionRules
+        resolutionRules: edit.resolutionRules,
+        category: edit.category
       });
 
       await updateDoc(doc(db, 'marketRequests', request.id), {
         question: edit.question.trim(),
         initialProbability: Number(edit.initialProbability),
         liquidityB: Number(edit.liquidityB),
+        category: normalizeCategory(edit.category, edit.question?.trim() || ''),
         resolutionRules: edit.resolutionRules.trim(),
         resolutionDate: new Date(edit.resolutionDate),
         status: 'APPROVED',
@@ -948,6 +977,40 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error updating resolution rules:', error);
       notifyError('Could not update resolution rules.');
+    }
+  }
+
+  async function handleEditCategory(market) {
+    const currentCategory = getMarketCategoryValue(market);
+    const nextCategory = normalizeCategory(
+      categoryDrafts[market.id] || currentCategory,
+      market.question || ''
+    );
+
+    if (!MARKET_CATEGORY_IDS.has(nextCategory)) {
+      notifyError('Please select a valid category.');
+      return;
+    }
+
+    if (nextCategory === currentCategory) {
+      notifySuccess('Category already set.');
+      return;
+    }
+
+    setSavingCategoryMarketId(market.id);
+    try {
+      await updateDoc(doc(db, 'markets', market.id), { category: nextCategory });
+      await logAdminAction('EDIT', `Category updated on market ${market.id} to ${nextCategory}`);
+
+      setMarkets((prev) => prev.map((entry) => (entry.id === market.id ? { ...entry, category: nextCategory } : entry)));
+      setResolvedMarkets((prev) => prev.map((entry) => (entry.id === market.id ? { ...entry, category: nextCategory } : entry)));
+      setCategoryDrafts((prev) => ({ ...prev, [market.id]: nextCategory }));
+      notifySuccess('Category updated.');
+    } catch (error) {
+      console.error('Error updating category:', error);
+      notifyError('Could not update category.');
+    } finally {
+      setSavingCategoryMarketId(null);
     }
   }
 
@@ -1435,7 +1498,7 @@ export default function AdminPage() {
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">Initial Probability (%)</label>
               <input
@@ -1459,6 +1522,21 @@ export default function AdminPage() {
                 className={INPUT_CLASS}
               />
             </div>
+            <div>
+              <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">Category</label>
+              <select
+                value={newMarketCategory}
+                onChange={(e) => setNewMarketCategory(e.target.value)}
+                className={INPUT_CLASS}
+              >
+                <option value="auto">Auto detect</option>
+                {MARKET_CATEGORY_OPTIONS.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.emoji} {category.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">This market will open at {initialProbability}% and start in status OPEN.</p>
@@ -1473,6 +1551,7 @@ export default function AdminPage() {
                 setNewMarketResolutionRules('');
                 setInitialProbability(50);
                 setBValue(100);
+                setNewMarketCategory('auto');
               }}
               disabled={creating}
               className={BTN_NEUTRAL}
@@ -1559,6 +1638,8 @@ export default function AdminPage() {
     const stats = marketStatsById[market.id] || { betCount: 0, totalVolume: 0 };
     const editingQuestion = editingQuestionMarketId === market.id;
     const editingRules = editingRulesMarketId === market.id;
+    const selectedCategory = categoryDrafts[market.id] || getMarketCategoryValue(market);
+    const categoryChanged = selectedCategory !== getMarketCategoryValue(market);
 
     return (
       <div key={market.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
@@ -1604,11 +1685,46 @@ export default function AdminPage() {
         <p className="mb-1 font-mono text-[0.68rem] text-[var(--text-muted)]">
           {stats.betCount} bets · {formatMoney(stats.totalVolume)} traded
         </p>
+        <p className="mb-3 font-mono text-[0.68rem] text-[var(--text-dim)]">
+          Category: {getCategoryLabel(getMarketCategoryValue(market))}
+        </p>
         {market.resolutionDate && (
           <p className="mb-3 font-mono text-[0.68rem] text-[var(--text-muted)]">
             Resolution date: {formatDate(market.resolutionDate)}
           </p>
         )}
+
+        <div className="mb-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-3">
+          <p className="mb-2 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            Category
+          </p>
+          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+            <select
+              value={selectedCategory}
+              onChange={(e) =>
+                setCategoryDrafts((prev) => ({
+                  ...prev,
+                  [market.id]: e.target.value
+                }))
+              }
+              className={INPUT_CLASS}
+            >
+              {MARKET_CATEGORY_OPTIONS.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.emoji} {category.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => handleEditCategory(market)}
+              disabled={savingCategoryMarketId === market.id || !categoryChanged}
+              className={BTN_NEUTRAL}
+            >
+              {savingCategoryMarketId === market.id ? 'Saving...' : 'Save Category'}
+            </button>
+          </div>
+        </div>
+
         <div className="mb-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2">
           <p className="mb-1 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
             Resolution Rules
@@ -1763,12 +1879,16 @@ export default function AdminPage() {
   }
 
   function renderResolvedMarketCard(market) {
+    const selectedCategory = categoryDrafts[market.id] || getMarketCategoryValue(market);
+    const categoryChanged = selectedCategory !== getMarketCategoryValue(market);
+
     return (
       <div key={market.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm italic text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>{market.question}</p>
             <p className="mt-1 font-mono text-[0.68rem] text-[var(--text-muted)]">Resolved at: {formatDateTime(market.resolvedAt)}</p>
+            <p className="mt-1 font-mono text-[0.68rem] text-[var(--text-dim)]">Category: {getCategoryLabel(getMarketCategoryValue(market))}</p>
           </div>
           <span
             style={getStatusBadgeStyle(MARKET_STATUS.RESOLVED)}
@@ -1776,6 +1896,36 @@ export default function AdminPage() {
           >
             {market.resolution}
           </span>
+        </div>
+        <div className="mt-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-3">
+          <p className="mb-2 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            Category
+          </p>
+          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+            <select
+              value={selectedCategory}
+              onChange={(e) =>
+                setCategoryDrafts((prev) => ({
+                  ...prev,
+                  [market.id]: e.target.value
+                }))
+              }
+              className={INPUT_CLASS}
+            >
+              {MARKET_CATEGORY_OPTIONS.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.emoji} {category.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => handleEditCategory(market)}
+              disabled={savingCategoryMarketId === market.id || !categoryChanged}
+              className={BTN_NEUTRAL}
+            >
+              {savingCategoryMarketId === market.id ? 'Saving...' : 'Save Category'}
+            </button>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -1870,7 +2020,7 @@ export default function AdminPage() {
                         }
                         className={INPUT_CLASS}
                       />
-                      <div className="grid gap-3 md:grid-cols-2">
+                      <div className="grid gap-3 md:grid-cols-3">
                         <input
                           type="number"
                           min="1"
@@ -1898,6 +2048,22 @@ export default function AdminPage() {
                           }
                           className={INPUT_CLASS}
                         />
+                        <select
+                          value={edit.category || 'wildcard'}
+                          onChange={(e) =>
+                            setRequestEdits((prev) => ({
+                              ...prev,
+                              [request.id]: { ...edit, category: e.target.value }
+                            }))
+                          }
+                          className={INPUT_CLASS}
+                        >
+                          {MARKET_CATEGORY_OPTIONS.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.emoji} {category.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <textarea
                         value={edit.resolutionRules || ''}
@@ -1941,6 +2107,7 @@ export default function AdminPage() {
                       <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">Requested by: {request.submitterDisplayName || request.submittedBy}</p>
                       <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">Initial probability: {request.initialProbability}%</p>
                       <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">Liquidity b: {request.liquidityB}</p>
+                      <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">Category: {getCategoryLabel(request.category || categorizeMarket(request.question || ''))}</p>
                       <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">Resolution date: {formatDate(request.resolutionDate)}</p>
                       <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">Rules: {request.resolutionRules}</p>
                     </>

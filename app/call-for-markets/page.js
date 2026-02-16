@@ -5,9 +5,14 @@ import { addDoc, collection, getDocs, orderBy, query, where } from 'firebase/fir
 import Link from 'next/link';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
+import { CATEGORIES } from '@/utils/categorize';
+
+const MARKET_CATEGORY_OPTIONS = CATEGORIES.filter((category) => category.id !== 'all');
+const MARKET_CATEGORY_IDS = new Set(MARKET_CATEGORY_OPTIONS.map((category) => category.id));
 
 const defaultForm = {
   question: '',
+  category: 'wildcard',
   initialProbability: 50,
   liquidityB: 100,
   resolutionRules: '',
@@ -56,6 +61,11 @@ export default function CallForMarketsPage() {
       return;
     }
 
+    if (!MARKET_CATEGORY_IDS.has(form.category)) {
+      notifyError('Please choose a valid category.');
+      return;
+    }
+
     const selectedDate = new Date(`${form.resolutionDate}T00:00:00`);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -70,6 +80,7 @@ export default function CallForMarketsPage() {
         submittedBy: user.uid,
         submitterDisplayName: user.email?.split('@')[0] || 'student',
         question: form.question.trim(),
+        category: form.category,
         initialProbability: Number(form.initialProbability),
         liquidityB: Number(form.liquidityB),
         resolutionRules: form.resolutionRules.trim(),
@@ -125,6 +136,22 @@ export default function CallForMarketsPage() {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-[var(--text)] mb-1">Category *</label>
+              <select
+                value={form.category}
+                onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-[var(--text)]"
+                required
+              >
+                {MARKET_CATEGORY_OPTIONS.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.emoji} {category.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-[var(--text)] mb-1">Resolution Rules *</label>
               <textarea value={form.resolutionRules} onChange={(e) => setForm((prev) => ({ ...prev, resolutionRules: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-[var(--text)]" rows={4} placeholder="Exactly what evidence/source determines YES vs NO" required />
             </div>
@@ -157,6 +184,7 @@ export default function CallForMarketsPage() {
                       <span className={`px-2 py-1 rounded-full text-xs font-bold ${request.status === 'PENDING' ? 'bg-[rgba(217,119,6,0.12)] text-[#f59e0b]' : request.status === 'APPROVED' ? 'bg-[rgba(34,197,94,0.12)] text-[#22c55e]' : 'bg-[rgba(220,38,38,0.12)] text-[var(--red)]'}`}>{request.status}</span>
                     </div>
                     <p className="text-sm text-[var(--text-dim)]">Requested: {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}</p>
+                    <p className="text-sm text-[var(--text-dim)]">Category: {MARKET_CATEGORY_OPTIONS.find((category) => category.id === request.category)?.label || 'Wildcard'}</p>
                     {request.adminNotes && <p className="text-sm text-[var(--text-dim)] mt-2"><span className="font-semibold">Admin note:</span> {request.adminNotes}</p>}
                   </div>
                 ))}

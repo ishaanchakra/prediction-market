@@ -1,10 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
+import { CATEGORIES } from '@/utils/categorize';
 
 function mergeMarkets(primary, secondary) {
   const map = new Map();
@@ -19,8 +20,15 @@ function mergeMarkets(primary, secondary) {
 export default function ClosedMarketsPage() {
   const [markets, setMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
+  const [activeCategory, setActiveCategory] = useState('all');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const filteredMarkets = useMemo(
+    () => (activeCategory === 'all'
+      ? markets
+      : markets.filter((market) => (market.category || 'wildcard') === activeCategory)),
+    [activeCategory, markets]
+  );
 
   useEffect(() => {
     async function fetchMarkets() {
@@ -79,13 +87,54 @@ export default function ClosedMarketsPage() {
       <h1 className="mb-2 font-sans text-3xl font-extrabold text-[var(--text)]">Closed Markets</h1>
       <p className="mb-8 text-[var(--text-dim)]">{markets.length} closed markets</p>
 
+      <div className="hidden md:flex items-center gap-2 mb-6 flex-wrap">
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => setActiveCategory(cat.id)}
+            className={`
+              px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
+              border transition-colors
+              ${activeCategory === cat.id
+                ? 'bg-[var(--red)] border-[var(--red)] text-white'
+                : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
+            `}
+          >
+            {cat.emoji} {cat.label}
+          </button>
+        ))}
+      </div>
+      <div className="md:hidden mb-6">
+        <select
+          value={activeCategory}
+          onChange={(e) => setActiveCategory(e.target.value)}
+          className="
+            w-full bg-[var(--surface)] border border-[var(--border2)]
+            text-[var(--text)] font-mono text-[0.75rem]
+            px-4 py-3 rounded-[4px]
+            appearance-none
+          "
+          style={{ fontSize: '16px' }}
+        >
+          {CATEGORIES.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.emoji} {cat.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {markets.length === 0 ? (
         <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
           <p className="text-[var(--text-muted)]">No closed markets yet.</p>
         </div>
+      ) : filteredMarkets.length === 0 ? (
+        <div className="col-span-full py-16 text-center font-mono text-[0.75rem] text-[var(--text-muted)]">
+          No {activeCategory === 'all' ? '' : CATEGORIES.find((c) => c.id === activeCategory)?.label} markets yet.
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {markets.map((market) => {
+          {filteredMarkets.map((market) => {
             const status = getMarketStatus(market);
             const isCancelled = status === MARKET_STATUS.CANCELLED;
             return (

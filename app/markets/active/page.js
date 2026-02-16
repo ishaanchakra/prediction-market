@@ -1,16 +1,28 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
+import { CATEGORIES } from '@/utils/categorize';
 
 export default function ActiveMarketsPage() {
   const [markets, setMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const searchParams = useSearchParams();
+  const requestedCategory = (searchParams.get('category') || 'all').toLowerCase();
+  const activeCategory = CATEGORIES.some((c) => c.id === requestedCategory) ? requestedCategory : 'all';
+  const filteredMarkets = useMemo(
+    () => (activeCategory === 'all'
+      ? markets
+      : markets.filter((market) => (market.category || 'wildcard') === activeCategory)),
+    [activeCategory, markets]
+  );
+  const selectedLabel = CATEGORIES.find((c) => c.id === activeCategory)?.label || 'All Markets';
 
   useEffect(() => {
     async function fetchMarkets() {
@@ -68,15 +80,22 @@ export default function ActiveMarketsPage() {
         </div>
       )}
       <h1 className="text-3xl font-bold mb-2 text-white">Active Markets</h1>
-      <p className="text-white opacity-90 mb-8">{markets.length} markets currently open or locked</p>
+      <p className="text-white opacity-90 mb-8">
+        {filteredMarkets.length} markets currently open or locked
+        {activeCategory !== 'all' ? ` · ${selectedLabel}` : ''}
+      </p>
 
       {markets.length === 0 ? (
         <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
           <p className="text-[var(--text-muted)]">No active markets right now.</p>
         </div>
+      ) : filteredMarkets.length === 0 ? (
+        <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
+          <p className="text-[var(--text-muted)]">No {selectedLabel} markets right now.</p>
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {markets.map((market) => {
+          {filteredMarkets.map((market) => {
             const status = getMarketStatus(market);
             return (
               <Link key={market.id} href={`/market/${market.id}`} className="block group">

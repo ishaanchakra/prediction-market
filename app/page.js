@@ -5,6 +5,7 @@ import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
+import { CATEGORIES } from '@/utils/categorize';
 
 function probabilityClass(prob) {
   if (prob > 0.65) return 'text-[var(--green-bright)]';
@@ -27,6 +28,7 @@ export default function Home() {
   const [resolvedMarkets, setResolvedMarkets] = useState([]);
   const [tickerMarkets, setTickerMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
+  const [activeCategory, setActiveCategory] = useState('all');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [user, setUser] = useState(null);
@@ -50,6 +52,12 @@ export default function Home() {
 
   const tickerItems = useMemo(() => [...tickerMarkets, ...tickerMarkets], [tickerMarkets]);
   const carouselItems = useMemo(() => [...activeMarkets.slice(0, 5), ...activeMarkets.slice(0, 5)], [activeMarkets]);
+  const filteredActiveMarkets = useMemo(
+    () => (activeCategory === 'all'
+      ? activeMarkets
+      : activeMarkets.filter((market) => (market.category || 'wildcard') === activeCategory)),
+    [activeCategory, activeMarkets]
+  );
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => setUser(currentUser));
@@ -319,24 +327,66 @@ export default function Home() {
           </span>
           <span className="font-mono text-[0.6rem] text-[var(--text-muted)]">{activeMarkets.length} open</span>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {activeMarkets.map((market) => (
-            <Link
-              key={market.id}
-              href={`/market/${market.id}`}
-              className="relative block overflow-hidden rounded-[6px] border border-[var(--border)] border-l-2 border-l-transparent bg-[var(--surface)] p-4 transition-[background,border-color] hover:border-[var(--border2)] hover:border-l-[var(--red)] hover:bg-[var(--surface2)] md:p-5"
+        <div className="hidden md:flex items-center gap-2 mb-6 flex-wrap">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`
+                px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
+                border transition-colors
+                ${activeCategory === cat.id
+                  ? 'bg-[var(--red)] border-[var(--red)] text-white'
+                  : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
+              `}
             >
-              <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">
-                {market.question}
-              </p>
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[0.55rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">{shortTag(market)}</span>
-                <span className={`font-mono text-2xl font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
-                  {Math.round(Number(market.probability || 0) * 100)}%
-                </span>
-              </div>
-            </Link>
+              {cat.emoji} {cat.label}
+            </button>
           ))}
+        </div>
+        <div className="md:hidden mb-6">
+          <select
+            value={activeCategory}
+            onChange={(e) => setActiveCategory(e.target.value)}
+            className="
+              w-full bg-[var(--surface)] border border-[var(--border2)]
+              text-[var(--text)] font-mono text-[0.75rem]
+              px-4 py-3 rounded-[4px]
+              appearance-none
+            "
+            style={{ fontSize: '16px' }}
+          >
+            {CATEGORIES.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.emoji} {cat.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {filteredActiveMarkets.length === 0 ? (
+            <div className="col-span-full py-16 text-center font-mono text-[0.75rem] text-[var(--text-muted)]">
+              No {activeCategory === 'all' ? '' : CATEGORIES.find((c) => c.id === activeCategory)?.label} markets yet.
+            </div>
+          ) : (
+            filteredActiveMarkets.map((market) => (
+              <Link
+                key={market.id}
+                href={`/market/${market.id}`}
+                className="relative block overflow-hidden rounded-[6px] border border-[var(--border)] border-l-2 border-l-transparent bg-[var(--surface)] p-4 transition-[background,border-color] hover:border-[var(--border2)] hover:border-l-[var(--red)] hover:bg-[var(--surface2)] md:p-5"
+              >
+                <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">
+                  {market.question}
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[0.55rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">{shortTag(market)}</span>
+                  <span className={`font-mono text-2xl font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
+                    {Math.round(Number(market.probability || 0) * 100)}%
+                  </span>
+                </div>
+              </Link>
+            ))
+          )}
         </div>
       </section>
 
