@@ -10,10 +10,12 @@ export default function ActiveMarketsPage() {
   const [markets, setMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     async function fetchMarkets() {
       try {
+        setLoadError('');
         const q = query(collection(db, 'markets'), where('resolution', '==', null));
         const snapshot = await getDocs(q);
         const marketData = snapshot.docs
@@ -48,6 +50,7 @@ export default function ActiveMarketsPage() {
         setTrendSeriesByMarket(Object.fromEntries(trendEntries));
       } catch (error) {
         console.error('Error fetching markets:', error);
+        setLoadError('Unable to load active markets right now.');
       } finally {
         setLoading(false);
       }
@@ -59,6 +62,11 @@ export default function ActiveMarketsPage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
+      {loadError && (
+        <div className="mb-4 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
+          {loadError}
+        </div>
+      )}
       <h1 className="text-3xl font-bold mb-2 text-white">Active Markets</h1>
       <p className="text-white opacity-90 mb-8">{markets.length} markets currently open or locked</p>
 

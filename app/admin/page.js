@@ -12,6 +12,7 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -133,6 +134,7 @@ export default function AdminPage() {
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [activeSection, setActiveSection] = useState('Overview');
   const [marketTab, setMarketTab] = useState('Active');
@@ -218,15 +220,22 @@ export default function AdminPage() {
       }
 
       setUser(currentUser);
-      await Promise.all([
-        fetchUnresolvedMarkets(),
-        fetchResolvedMarkets(),
-        fetchPendingRequests(),
-        fetchOverviewStats(),
-        fetchAdminLog(),
-        fetchUsers()
-      ]);
-      setLoading(false);
+      setLoadError('');
+      try {
+        await Promise.all([
+          fetchUnresolvedMarkets(),
+          fetchResolvedMarkets(),
+          fetchPendingRequests(),
+          fetchOverviewStats(),
+          fetchAdminLog(),
+          fetchUsers()
+        ]);
+      } catch (error) {
+        console.error('Error loading admin dashboard:', error);
+        setLoadError('Some admin data failed to load. You can retry by refreshing.');
+      } finally {
+        setLoading(false);
+      }
     });
 
     return () => unsubscribe();
@@ -670,6 +679,31 @@ export default function AdminPage() {
 
     setResolving(marketId);
     try {
+      const marketRef = doc(db, 'markets', marketId);
+      let marketQuestion = 'Market';
+      await runTransaction(db, async (tx) => {
+        const marketSnap = await tx.get(marketRef);
+        if (!marketSnap.exists()) {
+          throw new Error('Market not found.');
+        }
+
+        const marketData = marketSnap.data();
+        const status = getMarketStatus(marketData);
+        if (status === MARKET_STATUS.RESOLVED || marketData.resolution != null) {
+          throw new Error('This market has already been resolved.');
+        }
+        if (status !== MARKET_STATUS.LOCKED) {
+          throw new Error('Lock this market before resolving to prevent last-second trades.');
+        }
+
+        marketQuestion = marketData.question || 'Market';
+        tx.update(marketRef, {
+          status: MARKET_STATUS.RESOLVED,
+          resolution,
+          resolvedAt: new Date()
+        });
+      });
+
       const betsQuery = query(collection(db, 'bets'), where('marketId', '==', marketId));
       const betsSnapshot = await getDocs(betsQuery);
 
@@ -690,9 +724,6 @@ export default function AdminPage() {
           );
         }
       });
-
-      const marketDoc = await getDoc(doc(db, 'markets', marketId));
-      const marketQuestion = marketDoc.exists() ? marketDoc.data().question : 'Market';
 
       const operationFns = [];
 
@@ -744,14 +775,6 @@ export default function AdminPage() {
         }
       }
 
-      operationFns.push((batch) => {
-        batch.update(doc(db, 'markets', marketId), {
-          status: MARKET_STATUS.RESOLVED,
-          resolution,
-          resolvedAt: new Date()
-        });
-      });
-
       await commitOperationChunks(operationFns);
 
       await logAdminAction('RESOLVE', `Market resolved as ${resolution}: ${marketQuestion}`);
@@ -763,7 +786,7 @@ export default function AdminPage() {
       ]);
     } catch (error) {
       console.error('Error resolving market:', error);
-      notifyError('Error resolving market. Check console.');
+      notifyError(error?.message || 'Error resolving market. Check console.');
     } finally {
       setResolving(null);
     }
@@ -2295,7 +2318,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <aside className="fixed left-0 top-14 h-[calc(100vh-56px)] w-[220px] border-r border-[var(--border)] bg-[var(--bg)] px-4 py-6">
+      <aside className="w-full border-b border-[var(--border)] bg-[var(--bg)] px-4 py-4 md:fixed md:left-0 md:top-14 md:h-[calc(100vh-56px)] md:w-[220px] md:border-b-0 md:border-r md:py-6">
         <p className="mb-2 flex items-center gap-2 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
           <span className="inline-block h-px w-3 bg-[var(--red)]" />
           Admin
@@ -2304,20 +2327,25 @@ export default function AdminPage() {
           Predict <span className="text-[var(--red)]">Cornell</span>
         </p>
 
-        <nav className="space-y-1">{SECTIONS.map(renderSectionNavButton)}</nav>
+        <nav className="grid grid-cols-2 gap-1 md:grid-cols-1 md:space-y-1">{SECTIONS.map(renderSectionNavButton)}</nav>
 
-        <p className="absolute bottom-5 left-4 right-4 font-mono text-[0.58rem] text-[var(--text-muted)] break-all">
+        <p className="mt-4 font-mono text-[0.58rem] text-[var(--text-muted)] break-all md:absolute md:bottom-5 md:left-4 md:right-4">
           {user.email}
         </p>
       </aside>
 
-      <main className="ml-[220px] px-8 py-8">
+      <main className="px-4 py-6 md:ml-[220px] md:px-8 md:py-8">
         <h1 className="mb-1 text-2xl text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
           Admin Dashboard
         </h1>
         <p className="mb-6 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
           {activeSection}
         </p>
+        {loadError && (
+          <div className="mb-5 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
+            {loadError}
+          </div>
+        )}
 
         {renderSectionContent()}
       </main>

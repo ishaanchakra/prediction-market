@@ -6,15 +6,12 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
+import { round2 } from '@/utils/round';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function fmtMoney(num) {
   return Number(num || 0).toFixed(2);
-}
-
-function round2(num) {
-  return Math.round(num * 100) / 100;
 }
 
 export default function UserProfilePage() {
@@ -24,6 +21,7 @@ export default function UserProfilePage() {
   const [bets, setBets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -35,6 +33,7 @@ export default function UserProfilePage() {
   useEffect(() => {
     async function fetchUserProfile() {
       try {
+        setProfileError('');
         const userDoc = await getDoc(doc(db, 'users', id));
         if (!userDoc.exists()) {
           setNotFound(true);
@@ -78,6 +77,7 @@ export default function UserProfilePage() {
         );
       } catch (error) {
         console.error('Error fetching user profile:', error);
+        setProfileError('Unable to load this user profile right now.');
       } finally {
         setLoading(false);
       }
@@ -113,19 +113,24 @@ export default function UserProfilePage() {
   const lifetimeNet = Number(user.lifetimeRep || 0);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto bg-[var(--bg)] min-h-screen">
+      {profileError && (
+        <div className="mb-4 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
+          {profileError}
+        </div>
+      )}
       <div className="mb-8">
         <h1 className="mb-2 font-display text-[2rem] leading-[1.2] text-[var(--text)]">{username}&apos;s Profile</h1>
         {viewerIsAdmin && user.email && <p className="text-[var(--text-dim)]">{user.email}</p>}
       </div>
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6">
+        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
           <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Balance</p>
           <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${fmtMoney(user.weeklyRep)}</p>
           <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Resets every Monday</p>
         </div>
-        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6">
+        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
           <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Lifetime Earnings</p>
           <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${fmtMoney(user.lifetimeRep)}</p>
           <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">

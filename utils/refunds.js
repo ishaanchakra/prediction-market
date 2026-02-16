@@ -1,6 +1,5 @@
-export function round2(num) {
-  return Math.round((num + Number.EPSILON) * 100) / 100;
-}
+import { round2 } from './round';
+export { round2 };
 
 export function calculateRefundsByUser(bets) {
   const netByUser = {};

@@ -28,6 +28,7 @@ export default function Home() {
   const [tickerMarkets, setTickerMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [user, setUser] = useState(null);
   const [stats, setStats] = useState({ balance: 1042.5, rank: '#3', totalTraded: 28440 });
   const [displayStats, setDisplayStats] = useState({
@@ -146,7 +147,12 @@ export default function Home() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const activeQuery = query(collection(db, 'markets'), where('resolution', '==', null));
+        setLoadError('');
+        const activeQuery = query(
+          collection(db, 'markets'),
+          where('resolution', '==', null),
+          limit(80)
+        );
         const activeSnapshot = await getDocs(activeQuery);
         const active = activeSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() }))
@@ -171,7 +177,7 @@ export default function Home() {
         );
         setTrendSeriesByMarket(Object.fromEntries(trendEntries));
 
-        const allBets = await getDocs(collection(db, 'bets'));
+        const allBets = await getDocs(query(collection(db, 'bets'), orderBy('timestamp', 'desc'), limit(500)));
         const totalTraded = allBets.docs.reduce((sum, d) => sum + Math.abs(Number(d.data().amount || 0)), 0);
 
         if (user) {
@@ -190,6 +196,7 @@ export default function Home() {
         }
       } catch (error) {
         console.error('Error fetching homepage data:', error);
+        setLoadError('Unable to load latest market data. Showing cached/partial data.');
       } finally {
         setLoading(false);
       }
@@ -207,6 +214,13 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      {loadError && (
+        <div className="mx-auto max-w-[1200px] px-4 pt-4 md:px-8">
+          <div className="rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
+            {loadError}
+          </div>
+        </div>
+      )}
       <div className="relative flex h-7 items-center overflow-hidden border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="flex w-max animate-[ticker-scroll_45s_linear_infinite] whitespace-nowrap">
           {tickerItems.map((market, idx) => (
@@ -222,13 +236,13 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-12 border-b border-[var(--border)] px-8 pb-12 pt-20 lg:grid-cols-[1fr_420px] lg:items-center">
+      <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-8 border-b border-[var(--border)] px-4 pb-10 pt-12 md:gap-12 md:px-8 md:pb-12 md:pt-20 lg:grid-cols-[1fr_420px] lg:items-center">
         <div>
           <div className="mb-5 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[var(--red)]">
             <span className="inline-block h-px w-5 bg-[var(--red)]" />
             Cornell University · Spring 2025
           </div>
-          <h1 className="mb-5 font-display text-[3.8rem] leading-[1.05] tracking-[-0.02em] text-[var(--text)]">
+          <h1 className="mb-5 font-display text-4xl leading-[1.05] tracking-[-0.02em] text-[var(--text)] md:text-6xl">
             What happens
             <br />
             next at <em className="text-[var(--red)]">Cornell</em>
@@ -257,7 +271,7 @@ export default function Home() {
         </div>
       </div>
 
-      <section className="mx-auto max-w-[1200px] px-8 py-10">
+      <section className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-10">
         <div className="mb-6 flex items-baseline justify-between">
           <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
             <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
@@ -270,7 +284,7 @@ export default function Home() {
         <div className="carousel-wrap overflow-hidden">
           <div className="carousel-track gap-4 pb-2">
             {carouselItems.map((market, idx) => (
-              <Link key={`${market.id}-${idx}`} href={`/market/${market.id}`} className="group relative block w-[300px] flex-shrink-0 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-5 transition-all hover:-translate-y-[1px]">
+              <Link key={`${market.id}-${idx}`} href={`/market/${market.id}`} className="group relative block w-[300px] flex-shrink-0 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-4 transition-all hover:-translate-y-[1px] md:p-5">
                 <MutedTrendBackground series={trendSeriesByMarket[market.id]} probability={market.probability} />
                 <span className={`mb-3 inline-block rounded border px-2 py-[0.15rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] ${String(shortTag(market)).toLowerCase() === 'sports' ? 'border-[var(--red-dim)] text-[var(--red)]' : 'border-[var(--border2)] text-[var(--text-muted)]'}`}>
                   {shortTag(market)}
@@ -295,9 +309,9 @@ export default function Home() {
         </div>
       </section>
 
-      <hr className="mx-8 border-0 border-t border-[var(--border)]" />
+      <hr className="mx-4 border-0 border-t border-[var(--border)] md:mx-8" />
 
-      <section className="mx-auto max-w-[1200px] px-8 py-10">
+      <section className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-10">
         <div className="mb-6 flex items-baseline justify-between">
           <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
             <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
@@ -305,19 +319,19 @@ export default function Home() {
           </span>
           <span className="font-mono text-[0.6rem] text-[var(--text-muted)]">{activeMarkets.length} open</span>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {activeMarkets.map((market) => (
             <Link
               key={market.id}
               href={`/market/${market.id}`}
-              className="relative block overflow-hidden rounded-[6px] border border-[var(--border)] border-l-2 border-l-transparent bg-[var(--surface)] px-6 py-5 transition-[background,border-color] hover:border-[var(--border2)] hover:border-l-[var(--red)] hover:bg-[var(--surface2)]"
+              className="relative block overflow-hidden rounded-[6px] border border-[var(--border)] border-l-2 border-l-transparent bg-[var(--surface)] p-4 transition-[background,border-color] hover:border-[var(--border2)] hover:border-l-[var(--red)] hover:bg-[var(--surface2)] md:p-5"
             >
               <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">
                 {market.question}
               </p>
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[0.55rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">{shortTag(market)}</span>
-                <span className={`font-mono text-[1.2rem] font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
+                <span className={`font-mono text-2xl font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
                   {Math.round(Number(market.probability || 0) * 100)}%
                 </span>
               </div>
@@ -326,9 +340,9 @@ export default function Home() {
         </div>
       </section>
 
-      <hr className="mx-8 border-0 border-t border-[var(--border)]" />
+      <hr className="mx-4 border-0 border-t border-[var(--border)] md:mx-8" />
 
-      <section className="mx-auto max-w-[1200px] px-8 py-10">
+      <section className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-10">
         <div className="mb-6 flex items-baseline justify-between">
           <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
             <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
@@ -352,7 +366,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="mx-auto flex max-w-[1200px] items-center justify-between border-t border-[var(--border)] px-8 py-6">
+      <footer className="mx-auto flex max-w-[1200px] flex-col items-start justify-between gap-3 border-t border-[var(--border)] px-4 py-6 md:flex-row md:items-center md:px-8">
         <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Predict Cornell · BETA · Spring 2025</span>
         <ul className="flex list-none gap-6">
           <li>

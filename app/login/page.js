@@ -38,9 +38,9 @@ export default function LoginPage() {
 
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
+      const defaultDisplayName = `Trader ${user.uid.slice(0, 4)}`;
 
       if (!userDoc.exists()) {
-        const defaultDisplayName = `Trader ${user.uid.slice(0, 4)}`;
         await setDoc(userDocRef, {
           email: user.email,
           weeklyRep: 1000,
@@ -49,6 +49,20 @@ export default function LoginPage() {
           displayName: defaultDisplayName,
           displayNameNormalized: normalizeDisplayName(defaultDisplayName)
         });
+      } else {
+        const current = userDoc.data() || {};
+        const patch = {};
+        if (!Number.isFinite(Number(current.weeklyRep))) patch.weeklyRep = 1000;
+        if (!Number.isFinite(Number(current.lifetimeRep))) patch.lifetimeRep = 0;
+        if (!current.displayName || !current.displayNameNormalized) {
+          patch.displayName = current.displayName || defaultDisplayName;
+          patch.displayNameNormalized = normalizeDisplayName(patch.displayName);
+        }
+        if (!current.email && user.email) patch.email = user.email;
+
+        if (Object.keys(patch).length > 0) {
+          await setDoc(userDocRef, patch, { merge: true });
+        }
       }
 
       router.push('/');

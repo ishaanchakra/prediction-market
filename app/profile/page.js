@@ -18,14 +18,11 @@ import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import { isValidDisplayName, normalizeDisplayName, getPublicDisplayName } from '@/utils/displayName';
 
-function round2(num) {
-  return Math.round(num * 100) / 100;
-}
-
 export default function ProfilePage() {
   const [user, setUser] = useState(null);
   const [bets, setBets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
   const [activeTab, setActiveTab] = useState('open');
   const [weeklyRank, setWeeklyRank] = useState(null);
   const [traderCount, setTraderCount] = useState(0);
@@ -44,11 +41,21 @@ export default function ProfilePage() {
       }
 
       try {
+        setProfileError('');
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const data = { uid: currentUser.uid, ...userDoc.data() };
           setUser(data);
           setDisplayNameDraft(data.displayName || getPublicDisplayName({ id: currentUser.uid, ...data }));
+        } else {
+          setUser({
+            uid: currentUser.uid,
+            email: currentUser.email || '',
+            weeklyRep: 1000,
+            lifetimeRep: 0
+          });
+          setDisplayNameDraft(currentUser.email?.split('@')[0] || 'trader');
+          setProfileError('Profile data is still initializing. Some values may be delayed.');
         }
 
         const betsQuery = query(collection(db, 'bets'), where('userId', '==', currentUser.uid));
@@ -103,6 +110,7 @@ export default function ProfilePage() {
         setTraderCount(usersRows.length);
       } catch (error) {
         console.error('Error fetching profile:', error);
+        setProfileError('Unable to load full profile data right now.');
       } finally {
         setLoading(false);
       }
@@ -275,10 +283,15 @@ export default function ProfilePage() {
     : 'Unknown';
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] px-8 py-12">
+    <div className="min-h-screen bg-[var(--bg)] px-4 py-8 md:px-8 md:py-12">
       <div className="mx-auto max-w-[960px]">
-        <div className="mb-10 flex items-end justify-between border-b border-[var(--border)] pb-8">
-          <div className="flex items-center gap-5">
+        {profileError && (
+          <div className="mb-5 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
+            {profileError}
+          </div>
+        )}
+        <div className="mb-10 flex flex-col items-start justify-between gap-5 border-b border-[var(--border)] pb-8 md:flex-row md:items-end">
+          <div className="flex items-center gap-4 md:gap-5">
             <div className="flex h-[52px] w-[52px] items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--surface2)] font-mono text-[1.1rem] font-bold text-[var(--red)]">
               {initials}
             </div>
@@ -338,7 +351,7 @@ export default function ProfilePage() {
           )}
         </div>
 
-        <div className="mb-10 grid gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] md:grid-cols-4">
+        <div className="mb-10 grid gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] grid-cols-1 md:grid-cols-4">
           <StatCell label="Weekly Balance" value={`$${Number(user.weeklyRep || 0).toFixed(2)}`} sub={`${weeklyNet >= 0 ? '+' : '-'}$${Math.abs(weeklyNet).toFixed(2)} this week`} tone="amber" />
           <StatCell label="Lifetime P&L" value={`${lifetimeNet >= 0 ? '+' : '-'}$${Math.abs(lifetimeNet).toFixed(2)}`} sub="across all time" tone="green" />
           <StatCell label="Win Rate" value={`${winRate}%`} sub={`${winCount} of ${resolvedBuys.length} resolved`} tone="dim" />
@@ -402,9 +415,9 @@ function StatCell({ label, value, sub, tone }) {
         ? 'text-[var(--red)]'
         : 'text-[var(--text-dim)]';
   return (
-    <div className="bg-[var(--surface)] px-5 py-4">
+    <div className="bg-[var(--surface)] px-5 py-4 text-center md:text-left">
       <p className="mb-1 font-mono text-[0.55rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">{label}</p>
-      <p className={`font-mono text-[1.4rem] font-bold tracking-[-0.02em] ${toneClass}`}>{value}</p>
+      <p className={`font-mono text-[2rem] font-bold tracking-[-0.02em] md:text-[1.4rem] ${toneClass}`}>{value}</p>
       <p className="mt-1 font-mono text-[0.55rem] text-[var(--text-muted)]">{sub}</p>
     </div>
   );

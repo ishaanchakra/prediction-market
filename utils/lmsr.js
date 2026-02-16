@@ -139,6 +139,5 @@ export function getPrice(outstandingShares, b = DEFAULT_B) {
   const { yes: qYes, no: qNo } = normalizePool(outstandingShares);
   assertPositiveB(b);
   const rawPrice = price(qYes, qNo, b);
-  const EPS = 1e-12;
-  return Math.min(1 - EPS, Math.max(EPS, rawPrice));
+  return Math.max(0, Math.min(1, rawPrice));
 }

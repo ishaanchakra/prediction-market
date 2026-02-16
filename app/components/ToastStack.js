@@ -4,7 +4,7 @@ export default function ToastStack({ toasts = [], onDismiss, onConfirm }) {
   if (!toasts.length) return null;
 
   return (
-    <div className="fixed bottom-5 right-5 z-[1200] flex w-[360px] max-w-[calc(100vw-24px)] flex-col gap-2">
+    <div className="fixed bottom-[calc(1rem+var(--safe-bottom))] left-4 right-4 z-[1200] flex flex-col gap-2 md:bottom-auto md:left-auto md:right-5 md:top-5 md:w-[360px] md:max-w-[calc(100vw-24px)]">
       {toasts.map((toast) => {
         const toneClass =
           toast.type === 'success'

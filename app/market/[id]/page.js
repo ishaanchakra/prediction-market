@@ -11,12 +11,14 @@ import {
   orderBy,
   getDocs,
   limit,
-  deleteDoc
+  deleteDoc,
+  runTransaction
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { calculateBet, calculateSell } from '@/utils/lmsr';
+import { round2 } from '@/utils/round';
 import { MARKET_STATUS, getMarketStatus, isTradeableMarket } from '@/utils/marketStatus';
 import InfoTooltip from '@/app/components/InfoTooltip';
 import ToastStack from '@/app/components/ToastStack';
@@ -37,10 +39,6 @@ import {
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
-function round2(num) {
-  return Math.round(num * 100) / 100;
-}
-
 function getInitials(name) {
   if (!name) return 'PC';
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -59,6 +57,8 @@ export default function MarketPage() {
   const params = useParams();
   const [market, setMarket] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [marketLoadError, setMarketLoadError] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
   const [betAmount, setBetAmount] = useState('');
   const [selectedSide, setSelectedSide] = useState('YES');
   const [preview, setPreview] = useState(null);
@@ -168,15 +168,28 @@ export default function MarketPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 767px)');
+    const apply = () => setIsMobile(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
+
+  useEffect(() => {
     async function fetchMarket() {
       try {
+        setMarketLoadError('');
         const docRef = doc(db, 'markets', params.id);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setMarket({ id: docSnap.id, ...docSnap.data() });
+        } else {
+          setMarket(null);
         }
       } catch (error) {
         console.error('Error fetching market:', error);
+        setMarketLoadError('Unable to load this market right now.');
       } finally {
         setLoading(false);
       }
@@ -270,7 +283,8 @@ export default function MarketPage() {
         const betsQuery = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
-          orderBy('timestamp', 'asc')
+          orderBy('timestamp', 'asc'),
+          limit(500)
         );
         const snapshot = await getDocs(betsQuery);
         const trades = snapshot.docs.map((snapshotDoc) => snapshotDoc.data());
@@ -445,7 +459,8 @@ export default function MarketPage() {
         const commentsQuery = query(
           collection(db, 'comments'),
           where('marketId', '==', params.id),
-          orderBy('timestamp', 'desc')
+          orderBy('timestamp', 'desc'),
+          limit(200)
         );
         const snapshot = await getDocs(commentsQuery);
         setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
@@ -466,7 +481,8 @@ export default function MarketPage() {
         const newsQuery = query(
           collection(db, 'newsItems'),
           where('marketId', '==', params.id),
-          orderBy('timestamp', 'desc')
+          orderBy('timestamp', 'desc'),
+          limit(100)
         );
         const snapshot = await getDocs(newsQuery);
         setNewsItems(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
@@ -531,47 +547,79 @@ export default function MarketPage() {
     setSubmitting(true);
     try {
       const amount = parseFloat(betAmount);
+      const marketRef = doc(db, 'markets', params.id);
+      const userRef = doc(db, 'users', currentUser.uid);
+      let txResult = null;
 
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (!userDoc.exists()) {
-        notifyError('User profile not found. Please log out and log back in.');
-        return;
-      }
+      await runTransaction(db, async (tx) => {
+        const [marketSnap, userSnap] = await Promise.all([
+          tx.get(marketRef),
+          tx.get(userRef)
+        ]);
 
-      const userData = userDoc.data();
-      if (userData.weeklyRep < amount) {
-        notifyError(`Insufficient balance. You have $${userData.weeklyRep.toFixed(2)} available.`);
-        return;
-      }
+        if (!marketSnap.exists()) {
+          throw new Error('Market not found.');
+        }
+        if (!userSnap.exists()) {
+          throw new Error('User profile not found. Please log out and log back in.');
+        }
 
-      const result = calculateBet(market.outstandingShares, amount, selectedSide, market.b);
+        const latestMarket = marketSnap.data();
+        if (!isTradeableMarket(latestMarket)) {
+          throw new Error('Trading is currently locked for this market.');
+        }
 
-      await addDoc(collection(db, 'bets'), {
-        userId: currentUser.uid,
-        marketId: params.id,
-        side: selectedSide,
-        amount,
-        shares: result.shares,
-        probability: result.newProbability,
-        timestamp: new Date(),
-        type: 'BUY'
-      });
+        const userData = userSnap.data();
+        const weeklyRep = Number(userData.weeklyRep || 0);
+        if (weeklyRep < amount) {
+          throw new Error(`Insufficient balance. You have $${weeklyRep.toFixed(2)} available.`);
+        }
 
-      await updateDoc(doc(db, 'markets', params.id), {
-        outstandingShares: result.newPool,
-        probability: result.newProbability
-      });
+        const result = calculateBet(
+          latestMarket.outstandingShares || { yes: 0, no: 0 },
+          amount,
+          selectedSide,
+          latestMarket.b
+        );
 
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        weeklyRep: round2(userData.weeklyRep - amount)
+        const betRef = doc(collection(db, 'bets'));
+        tx.set(betRef, {
+          userId: currentUser.uid,
+          marketId: params.id,
+          side: selectedSide,
+          amount,
+          shares: result.shares,
+          probability: result.newProbability,
+          timestamp: new Date(),
+          type: 'BUY'
+        });
+
+        tx.update(marketRef, {
+          outstandingShares: result.newPool,
+          probability: result.newProbability
+        });
+
+        tx.update(userRef, {
+          weeklyRep: round2(weeklyRep - amount),
+          lifetimeRep: Number(userData.lifetimeRep) || 0
+        });
+
+        txResult = result;
       });
 
       await reloadMarket();
+      if (txResult) {
+        setMarket((prev) => (prev ? {
+          ...prev,
+          outstandingShares: txResult.newPool,
+          probability: txResult.newProbability
+        } : prev));
+      }
       setBetAmount('');
       setPreview(null);
     } catch (error) {
       console.error('Error placing bet:', error);
-      notifyError('Error placing bet. Please try again.');
+      notifyError(error?.message || 'Error placing bet. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -598,37 +646,105 @@ export default function MarketPage() {
 
     setSelling(true);
     try {
-      const result = calculateSell(market.outstandingShares, sharesToSell, sellSide, market.b);
+      const marketRef = doc(db, 'markets', params.id);
+      const userRef = doc(db, 'users', currentUser.uid);
+      let txResult = null;
 
-      await addDoc(collection(db, 'bets'), {
-        userId: currentUser.uid,
-        marketId: params.id,
-        side: sellSide,
-        amount: -result.payout,
-        shares: -sharesToSell,
-        probability: result.newProbability,
-        timestamp: new Date(),
-        type: 'SELL'
-      });
+      await runTransaction(db, async (tx) => {
+        const [marketSnap, userSnap] = await Promise.all([
+          tx.get(marketRef),
+          tx.get(userRef)
+        ]);
 
-      await updateDoc(doc(db, 'markets', params.id), {
-        outstandingShares: result.newPool,
-        probability: result.newProbability
-      });
+        if (!marketSnap.exists()) {
+          throw new Error('Market not found.');
+        }
+        if (!userSnap.exists()) {
+          throw new Error('User profile not found. Please log out and log back in.');
+        }
 
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const userData = userDoc.data();
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        weeklyRep: round2(userData.weeklyRep + result.payout)
+        const latestMarket = marketSnap.data();
+        if (!isTradeableMarket(latestMarket)) {
+          throw new Error('Selling is unavailable while this market is locked or closed.');
+        }
+
+        const userBetsQuery = query(
+          collection(db, 'bets'),
+          where('marketId', '==', params.id),
+          where('userId', '==', currentUser.uid)
+        );
+        const userBetsSnapshot = await tx.get(userBetsQuery);
+
+        let yesSharesHeld = 0;
+        let noSharesHeld = 0;
+        userBetsSnapshot.docs.forEach((betDoc) => {
+          const bet = betDoc.data();
+          const shares = Math.abs(Number(bet.shares || 0));
+          if (bet.side === 'YES') {
+            yesSharesHeld += bet.type === 'SELL' ? -shares : shares;
+          } else if (bet.side === 'NO') {
+            noSharesHeld += bet.type === 'SELL' ? -shares : shares;
+          }
+        });
+
+        const availableNow = sellSide === 'YES' ? Math.max(0, yesSharesHeld) : Math.max(0, noSharesHeld);
+        const safeSharesToSell = Math.min(sharesToSell, availableNow);
+        if (safeSharesToSell <= 0) {
+          throw new Error(`Insufficient shares. You have ${availableNow.toFixed(2)} ${sellSide} shares.`);
+        }
+
+        const result = calculateSell(
+          latestMarket.outstandingShares || { yes: 0, no: 0 },
+          safeSharesToSell,
+          sellSide,
+          latestMarket.b
+        );
+        if (!Number.isFinite(result.payout) || result.payout < 0 || result.payout > 1_000_000) {
+          throw new Error('Invalid sell payout calculated.');
+        }
+
+        const userData = userSnap.data();
+        const weeklyRep = Number(userData.weeklyRep || 0);
+
+        const betRef = doc(collection(db, 'bets'));
+        tx.set(betRef, {
+          userId: currentUser.uid,
+          marketId: params.id,
+          side: sellSide,
+          amount: -result.payout,
+          shares: -safeSharesToSell,
+          probability: result.newProbability,
+          timestamp: new Date(),
+          type: 'SELL'
+        });
+
+        tx.update(marketRef, {
+          outstandingShares: result.newPool,
+          probability: result.newProbability
+        });
+
+        tx.update(userRef, {
+          weeklyRep: round2(weeklyRep + result.payout),
+          lifetimeRep: Number(userData.lifetimeRep) || 0
+        });
+
+        txResult = result;
       });
 
       await reloadMarket();
+      if (txResult) {
+        setMarket((prev) => (prev ? {
+          ...prev,
+          outstandingShares: txResult.newPool,
+          probability: txResult.newProbability
+        } : prev));
+      }
       setSellAmount('');
       setSellPreview(null);
       setShowSellModal(false);
     } catch (error) {
       console.error('Error selling shares:', error);
-      notifyError('Error selling shares. Please try again.');
+      notifyError(error?.message || 'Error selling shares. Please try again.');
     } finally {
       setSelling(false);
     }
@@ -660,7 +776,8 @@ export default function MarketPage() {
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        orderBy('timestamp', 'desc')
+        orderBy('timestamp', 'desc'),
+        limit(200)
       );
       const snapshot = await getDocs(commentsQuery);
       setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
@@ -699,7 +816,8 @@ export default function MarketPage() {
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        orderBy('timestamp', 'desc')
+        orderBy('timestamp', 'desc'),
+        limit(200)
       );
       const snapshot = await getDocs(commentsQuery);
       setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
@@ -956,12 +1074,12 @@ export default function MarketPage() {
   };
 
   if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
-  if (!market) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Market not found</div>;
+  if (!market) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">{marketLoadError || 'Market not found'}</div>;
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      <div className="mx-auto max-w-[1200px]" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 0, minHeight: 'calc(100vh - 56px)' }}>
-        <main style={{ borderRight: '1px solid var(--border)', padding: '2rem' }}>
+      <div className="mx-auto max-w-[1200px] md:grid md:grid-cols-[1fr_320px]" style={{ minHeight: 'calc(100vh - 56px)' }}>
+        <main className="p-4 md:border-r md:border-[var(--border)] md:p-8">
           <div className="mb-6 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">
             <Link href="/markets/active" className="text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
             <span>/</span>
@@ -1030,7 +1148,7 @@ export default function MarketPage() {
           </div>
 
           <div className="mb-7">
-            <ResponsiveContainer width="100%" height={170}>
+            <ResponsiveContainer width="100%" height={isMobile ? 200 : 300}>
               <ComposedChart data={betHistory} margin={{ top: 6, right: 6, left: -14, bottom: 8 }}>
                 <defs>
                   <linearGradient id="probGradientFill" x1="0" y1="0" x2="0" y2="1">
@@ -1042,13 +1160,15 @@ export default function MarketPage() {
                 <XAxis
                   dataKey="timestamp"
                   stroke="#333"
+                  interval={isMobile ? 'preserveStartEnd' : 0}
+                  minTickGap={isMobile ? 28 : 8}
                   tick={{ fill: '#3D3B38', fontSize: 9, fontFamily: 'Space Mono' }}
                   tickFormatter={(timestamp) => new Date(timestamp).toLocaleDateString('en-US', { weekday: 'short' })}
                 />
                 <YAxis
                   domain={[0, 1]}
                   stroke="#333"
-                  ticks={[0.25, 0.5, 0.75]}
+                  ticks={isMobile ? [0.2, 0.5, 0.8] : [0.25, 0.5, 0.75]}
                   tick={{ fill: '#3D3B38', fontSize: 9, fontFamily: 'Space Mono' }}
                   tickFormatter={(value) => `${Math.round(value * 100)}%`}
                 />
@@ -1067,7 +1187,7 @@ export default function MarketPage() {
                   />
                 ))}
                 <Tooltip
-                  content={({ active, payload, label }) => {
+                  content={isMobile ? () => null : ({ active, payload, label }) => {
                     if (!active || !payload?.length) return null;
                     return (
                       <div className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 shadow-lg">
@@ -1129,7 +1249,10 @@ export default function MarketPage() {
             </div>
           )}
 
-          <div className="mb-8 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] px-5 py-5 relative">
+          <div
+            className="sticky bottom-0 z-20 mb-8 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-4 relative md:static md:px-5 md:py-5"
+            style={{ paddingBottom: isMobile ? 'calc(1rem + var(--safe-bottom))' : undefined }}
+          >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-[var(--red)] to-transparent" />
             {isResolved ? (
               <div className="py-3 text-center">
@@ -1155,7 +1278,7 @@ export default function MarketPage() {
                         <button
                           onClick={() => setSelectedSide('YES')}
                           disabled={!canTrade}
-                          className={`rounded-md border px-4 py-3 text-center transition ${
+                          className={`w-full min-h-[52px] rounded-md border px-4 py-3 text-center transition ${
                             selectedSide === 'YES'
                               ? 'border-[var(--green-bright)] bg-[rgba(22,163,74,.08)]'
                               : 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface3)]'
@@ -1168,7 +1291,7 @@ export default function MarketPage() {
                         <button
                           onClick={() => setSelectedSide('NO')}
                           disabled={!canTrade}
-                          className={`rounded-md border px-4 py-3 text-center transition ${
+                          className={`w-full min-h-[52px] rounded-md border px-4 py-3 text-center transition ${
                             selectedSide === 'NO'
                               ? 'border-[var(--red)] bg-[var(--red-glow)]'
                               : 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface3)]'
@@ -1182,20 +1305,22 @@ export default function MarketPage() {
                     );
                   })()}
                 </div>
-                <div className="mb-3 flex gap-2">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row">
                   <input
                     type="number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={betAmount}
                     onChange={(e) => setBetAmount(e.target.value)}
                     placeholder={currentUser ? '$0.00' : 'Sign in to trade'}
-                    className="flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)]"
+                    className="w-full flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)]"
                     min="1"
                     disabled={!canTrade}
                   />
                   <button
                     onClick={handlePlaceBet}
                     disabled={!currentUser || !betAmount || submitting || !isTradeableMarket(market)}
-                    className="whitespace-nowrap rounded bg-[var(--red)] px-5 py-2 font-mono text-[0.7rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
+                    className="min-h-[52px] w-full whitespace-nowrap rounded bg-[var(--red)] px-5 py-2 font-mono text-[0.7rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed sm:w-auto"
                   >
                     {submitting ? 'Placing...' : `Bet ${selectedSide} →`}
                   </button>
@@ -1228,7 +1353,7 @@ export default function MarketPage() {
           ) : timelineItems.length === 0 ? (
             <p className="font-mono text-sm text-[var(--text-muted)]">No timeline items yet.</p>
           ) : (
-            <div className="relative max-h-[560px] space-y-4 overflow-y-auto pl-11">
+            <div className="scroll-container relative max-h-[560px] space-y-4 overflow-y-auto pl-8 md:pl-11">
               <div className="pointer-events-none absolute bottom-0 left-[15px] top-0 w-px bg-[var(--border)]" />
               {timelineItems.map((item) => {
                 if (item.type === 'NEWS') {
@@ -1325,11 +1450,12 @@ export default function MarketPage() {
                     {getInitials(currentDisplayName)}
                   </div>
                   <textarea
+                    inputMode="text"
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     placeholder="What's your take? Your position shows automatically."
                     maxLength={400}
-                    className="min-h-[64px] flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-sm text-[var(--text)]"
+                    className="min-h-[80px] flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[16px] text-[var(--text)]"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -1353,7 +1479,7 @@ export default function MarketPage() {
           </div>
         </main>
 
-        <aside className="space-y-8" style={{ padding: '2rem' }}>
+        <aside className="space-y-8 p-4 md:p-8">
           <div className="grid grid-cols-2 gap-2">
             <button onClick={handleShareMarket} className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-center font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-dim)] hover:text-[var(--text)]">
               ↗ Share

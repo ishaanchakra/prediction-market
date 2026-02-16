@@ -87,7 +87,7 @@ function FAQ({ q, a }) {
 export default function HowItWorksPage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <div style={{ maxWidth: '680px', margin: '0 auto', padding: '4rem 2rem 6rem' }}>
+      <div style={{ maxWidth: '680px', margin: '0 auto', padding: '2.75rem 1rem 5rem' }}>
 
         {/* Header */}
         <p style={{
@@ -106,7 +106,7 @@ export default function HowItWorksPage() {
         </p>
         <h1 style={{
           fontFamily: 'var(--display)',
-          fontSize: '3rem',
+          fontSize: 'clamp(2.2rem, 10vw, 3rem)',
           lineHeight: 1.05,
           letterSpacing: '-0.02em',
           color: 'var(--text)',
@@ -137,11 +137,13 @@ export default function HowItWorksPage() {
             The basics
           </p>
 
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px',
-            background: 'var(--border)', borderRadius: '8px', overflow: 'hidden',
-            border: '1px solid var(--border)', marginBottom: '1rem'
-          }}>
+          <div
+            className="grid grid-cols-1 gap-[1px] sm:grid-cols-2"
+            style={{
+              background: 'var(--border)', borderRadius: '8px', overflow: 'hidden',
+              border: '1px solid var(--border)', marginBottom: '1rem'
+            }}
+          >
             {[
               { step: '01', title: 'Pick a market', body: "Find a question you have an opinion on. Anything from \"Will the men's hockey team make regionals?\" to \"Will Arts Quad construction finish before May.\"" },
               { step: '02', title: 'Bet YES or NO', body: 'Choose your side and drop in how much play money you want to risk. You\'ll see exactly how many shares you get before confirming.' },
