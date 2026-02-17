@@ -261,6 +261,10 @@ export default function ProfilePage() {
   const memberSince = user?.createdAt?.toDate?.()
     ? user.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : 'Unknown';
+  const resolvedBuys = bets.filter((bet) => bet.marketStatus === MARKET_STATUS.RESOLVED && Number(bet.amount || 0) > 0);
+  const wins = resolvedBuys.filter((bet) => bet.side === bet.marketResolution).length;
+  const winRate = resolvedBuys.length > 0 ? Math.round((wins / resolvedBuys.length) * 100) : 0;
+  const tradeCount = bets.length;
 
   return (
     <div className="min-h-screen bg-[var(--bg)] px-4 py-8 md:px-8 md:py-12">
@@ -279,7 +283,7 @@ export default function ProfilePage() {
             <div>
               <p className="font-display text-[1.8rem] leading-none text-[var(--text)]">{displayName}</p>
               <p className="mt-1 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                Cornell · member since {memberSince}
+                joined {memberSince} · {tradeCount} trades · {winRate}% win rate
               </p>
             </div>
           </div>

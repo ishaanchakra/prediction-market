@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 import { CATEGORIES } from '@/utils/categorize';
+import { useRouter } from 'next/navigation';
 
 function probabilityClass(prob) {
   if (prob > 0.65) return 'text-[var(--green-bright)]';
@@ -24,6 +25,7 @@ function asDateLabel(ts) {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [activeMarkets, setActiveMarkets] = useState([]);
   const [resolvedMarkets, setResolvedMarkets] = useState([]);
   const [tickerMarkets, setTickerMarkets] = useState([]);
@@ -60,9 +62,20 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => setUser(currentUser));
+    const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      setUser(currentUser);
+      if (!currentUser) return;
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists() && userDoc.data()?.onboardingComplete === false) {
+          router.push('/onboarding');
+        }
+      } catch (error) {
+        console.error('Error checking onboarding guard:', error);
+      }
+    });
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const latestReal = {

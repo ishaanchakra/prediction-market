@@ -11,70 +11,56 @@ function fmtMoney(value) {
 
 function sectionLabel(text, subtitle) {
   return (
-    <div className="mb-4">
-      <p className="flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-        <span className="inline-block h-px w-[14px] bg-[var(--red)]" />
-        {text}
-      </p>
-      {subtitle ? <p className="mt-1 font-display text-[0.85rem] italic text-[var(--text-dim)]">{subtitle}</p> : null}
+    <div className="mb-3 flex items-center gap-2">
+      <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
+      <span className="font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">{text}</span>
+      {subtitle ? <span className="ml-auto font-display text-[0.85rem] italic text-[var(--text-dim)]">{subtitle}</span> : null}
     </div>
   );
 }
 
-function categoryLabel(category) {
+function categoryBadge(category) {
   const map = {
-    sports: 'Sports',
-    campus: 'Campus Life',
-    academic: 'Academics',
-    admin: 'Admin & Policy',
-    wildcard: 'Wildcard'
+    sports: { label: 'Sports', emoji: '🏒' },
+    campus: { label: 'Campus Life', emoji: '🎓' },
+    academic: { label: 'Academics', emoji: '📚' },
+    admin: { label: 'Admin', emoji: '🏛️' },
+    wildcard: { label: 'Wildcard', emoji: '🎲' }
   };
-  return map[category] || 'Wildcard';
+  return map[category] || map.wildcard;
 }
 
 function sideBadgeClasses(side) {
-  if (side === 'YES') return 'border-[rgba(34,197,94,.25)] bg-[rgba(34,197,94,.12)] text-[var(--green-bright)]';
-  if (side === 'NO') return 'border-[rgba(220,38,38,.25)] bg-[var(--red-glow)] text-[var(--red)]';
-  return 'border-[var(--border2)] bg-[var(--surface3)] text-[var(--text-dim)]';
+  if (side === 'YES') return 'text-[var(--green-bright)] bg-[rgba(34,197,94,0.08)] border-[rgba(34,197,94,0.15)]';
+  if (side === 'NO') return 'text-[var(--red)] bg-[rgba(220,38,38,0.08)] border-[rgba(220,38,38,0.15)]';
+  return 'text-[var(--text-dim)] bg-[var(--surface3)] border-[var(--border2)]';
 }
 
 function outcomeBadge(position) {
   if (position.marketStatus === MARKET_STATUS.CANCELLED) {
-    return { label: 'Refund', cls: 'border-[var(--border2)] bg-[var(--surface3)] text-[var(--text-dim)]' };
-  }
-  if (position.marketStatus !== MARKET_STATUS.RESOLVED) {
-    return { label: 'Open', cls: 'border-[var(--border2)] bg-[var(--surface3)] text-[var(--text-dim)]' };
+    return { label: 'Refund', cls: 'text-[var(--amber-bright)] bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.15)]' };
   }
 
   const won =
-    (position.marketResolution === 'YES' && position.yesShares > position.noShares)
+    (position.marketResolution === 'YES' && position.yesShares >= position.noShares)
     || (position.marketResolution === 'NO' && position.noShares > position.yesShares);
 
-  if (won) return { label: 'Won', cls: 'border-[rgba(34,197,94,.25)] bg-[rgba(34,197,94,.12)] text-[var(--green-bright)]' };
-  return { label: 'Lost', cls: 'border-[rgba(220,38,38,.25)] bg-[var(--red-glow)] text-[var(--red)]' };
+  return won
+    ? { label: 'Won', cls: 'text-[var(--green-bright)] bg-[rgba(34,197,94,0.1)] border-[rgba(34,197,94,0.15)]' }
+    : { label: 'Lost', cls: 'text-[var(--red)] bg-[rgba(220,38,38,0.1)] border-[rgba(220,38,38,0.15)]' };
 }
 
-export default function PortfolioView({ userId, user, bets, isOwnProfile }) {
+export default function PortfolioView({ user, bets }) {
   const positions = aggregatePositions(bets || []);
-
   const activePositions = positions
     .filter((pos) => [MARKET_STATUS.OPEN, MARKET_STATUS.LOCKED].includes(pos.marketStatus))
     .sort((a, b) => b.marketValue - a.marketValue);
 
   const closedPositions = positions
     .filter((pos) => [MARKET_STATUS.RESOLVED, MARKET_STATUS.CANCELLED].includes(pos.marketStatus))
-    .sort((a, b) => (b.resolvedDate || '').localeCompare(a.resolvedDate || ''));
+    .sort((a, b) => b.marketValue - a.marketValue);
 
   const summary = calculatePortfolioSummary(user, activePositions);
-
-  const closedResolved = closedPositions.filter((pos) => pos.marketStatus === MARKET_STATUS.RESOLVED);
-  const wins = closedResolved.filter((pos) => outcomeBadge(pos).label === 'Won').length;
-  const winRate = closedResolved.length > 0 ? round2((wins / closedResolved.length) * 100) : 0;
-
-  const tradeCount = (bets || []).length;
-  const joinedDate = user?.createdAt?.toDate?.()
-    ? user.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-    : 'Unknown';
 
   const total = Math.max(summary.portfolioValue, 1);
   const cashWidth = `${Math.max(0, Math.min(100, (summary.cashBalance / total) * 100))}%`;
@@ -82,203 +68,198 @@ export default function PortfolioView({ userId, user, bets, isOwnProfile }) {
   const noWidth = `${Math.max(0, Math.min(100, (summary.noExposure / total) * 100))}%`;
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-5 py-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Meta label="Profile" value={isOwnProfile ? 'Your Portfolio' : 'Public Portfolio'} />
-          <Meta label="Member Since" value={joinedDate} />
-          <Meta label="Trades" value={String(tradeCount)} />
-          <Meta label="Win Rate" value={`${winRate}%`} />
+    <div>
+      {sectionLabel('Portfolio Overview', 'mark-to-market')}
+      <div className="mb-6 grid grid-cols-2 gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] lg:grid-cols-4">
+        <MetricCell
+          label="Portfolio Value"
+          value={fmtMoney(summary.portfolioValue)}
+          sub="cash + positions"
+          tone="text-[var(--amber-bright)]"
+        />
+        <MetricCell
+          label="Weekly P&L"
+          value={`${summary.weeklyPnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(summary.weeklyPnl)).slice(1)}`}
+          sub="from $1,000 baseline"
+          tone={summary.weeklyPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}
+        />
+        <MetricCell
+          label="Cash Available"
+          value={fmtMoney(summary.cashBalance)}
+          sub={`${round2(summary.cashPct)}% of portfolio`}
+          tone="text-[var(--text-dim)]"
+        />
+        <MetricCell
+          label="In Positions"
+          value={fmtMoney(summary.positionsValue)}
+          sub={`across ${summary.marketCount} markets`}
+          tone="text-[var(--text-dim)]"
+        />
+      </div>
+
+      <div className="mb-8 flex flex-col gap-3 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:flex-row sm:items-center sm:gap-2">
+        <div className="flex h-[6px] flex-1 overflow-hidden rounded-[3px] bg-[var(--surface3)]">
+          <div style={{ width: cashWidth, background: 'var(--amber-bright)' }} />
+          <div style={{ width: yesWidth, background: 'var(--green-bright)' }} />
+          <div style={{ width: noWidth, background: 'var(--red)' }} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <LegendDot color="var(--amber-bright)" label={`Cash ${fmtMoney(summary.cashBalance)}`} />
+          <LegendDot color="var(--green-bright)" label={`Yes ${fmtMoney(summary.yesExposure)}`} />
+          <LegendDot color="var(--red)" label={`No ${fmtMoney(summary.noExposure)}`} />
         </div>
       </div>
 
-      <div>
-        {sectionLabel('Portfolio Overview', 'Cash + mark-to-market value of active positions')}
-        <div className="grid grid-cols-2 gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] lg:grid-cols-4">
-          <MetricCell label="Portfolio Value" value={fmtMoney(summary.portfolioValue)} tone="text-[var(--amber-bright)]" />
-          <MetricCell label="Weekly P&L" value={`${summary.weeklyPnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(summary.weeklyPnl)).slice(1)}`} tone={summary.weeklyPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'} />
-          <MetricCell label="Cash Available" value={fmtMoney(summary.cashBalance)} tone="text-[var(--text)]" />
-          <MetricCell label="In Positions" value={fmtMoney(summary.positionsValue)} tone="text-[var(--text-dim)]" />
+      {sectionLabel('Active Positions', `${activePositions.length} markets`)}
+      {activePositions.length === 0 ? (
+        <div className="mb-10 rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-10 text-center font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+          No active positions
         </div>
-      </div>
+      ) : (
+        <div className="mb-10 flex flex-col gap-[6px]">
+          {activePositions.map((position) => {
+            const category = categoryBadge(position.marketCategory);
+            const probPct = round2(position.marketProbability * 100);
+            const fillColor = probPct > 65 ? 'var(--green-bright)' : probPct < 35 ? 'var(--red)' : 'var(--amber-bright)';
+            const accent =
+              position.side === 'YES'
+                ? 'bg-[var(--green-bright)]'
+                : position.side === 'NO'
+                  ? 'bg-[var(--red)]'
+                  : 'bg-gradient-to-b from-[var(--green-bright)] to-[var(--red)]';
+            const sharesLabel =
+              position.side === 'MIXED'
+                ? `${round2(position.yesShares)}Y / ${round2(position.noShares)}N`
+                : `${round2(position.side === 'NO' ? position.noShares : position.yesShares)}`;
 
-      <div>
-        {sectionLabel('Allocation', 'Current weekly portfolio exposure')}
-        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-4">
-          <div className="h-[6px] overflow-hidden rounded-[3px] bg-[var(--surface3)]">
-            <div className="h-full" style={{ width: cashWidth, background: 'var(--amber-bright)', float: 'left' }} />
-            <div className="h-full" style={{ width: yesWidth, background: 'var(--green-bright)', float: 'left' }} />
-            <div className="h-full" style={{ width: noWidth, background: 'var(--red)', float: 'left' }} />
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-[0.7rem] font-mono text-[var(--text-dim)]">
-            <LegendDot color="var(--amber-bright)" label={`Cash ${round2(summary.cashPct)}%`} />
-            <LegendDot color="var(--green-bright)" label={`YES ${round2(summary.yesPct)}%`} />
-            <LegendDot color="var(--red)" label={`NO ${round2(summary.noPct)}%`} />
-            <span className="text-[var(--text-muted)]">{summary.marketCount} active markets</span>
-          </div>
-        </div>
-      </div>
+            return (
+              <Link
+                key={position.marketId}
+                href={`/market/${position.marketId}`}
+                className="grid cursor-pointer grid-cols-[3px_1fr] overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--surface)] text-inherit transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
+              >
+                <div className={accent} />
+                <div className="p-4 sm:px-5 sm:py-4">
+                  <div className="mb-[0.6rem] flex items-start justify-between gap-3">
+                    <span className="text-[0.88rem] font-semibold leading-[1.35] text-[var(--text)]">{position.marketQuestion}</span>
+                    <span className="shrink-0 whitespace-nowrap rounded-[3px] border border-[var(--border2)] bg-[var(--surface3)] px-2 py-[0.2rem] font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      {category.emoji} {category.label}
+                    </span>
+                  </div>
 
-      <div>
-        {sectionLabel('Active Positions', 'Grouped by market, not individual trades')}
-        {activePositions.length === 0 ? (
-          <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-10 text-center font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-            No active positions
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {activePositions.map((position) => {
-              const probPct = round2(position.marketProbability * 100);
-              const dominantShares = position.side === 'NO' ? position.noShares : position.yesShares;
-              const accent =
-                position.side === 'YES'
-                  ? 'bg-[var(--green-bright)]'
-                  : position.side === 'NO'
-                    ? 'bg-[var(--red)]'
-                    : 'bg-gradient-to-b from-[var(--green-bright)] to-[var(--red)]';
-              const fillColor = probPct > 65 ? 'var(--green-bright)' : probPct < 35 ? 'var(--red)' : 'var(--amber-bright)';
-
-              return (
-                <Link
-                  key={position.marketId}
-                  href={`/market/${position.marketId}`}
-                  className="grid grid-cols-[3px_1fr] overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--surface)] transition-colors hover:bg-[var(--surface2)] hover:border-[var(--border2)]"
-                >
-                  <div className={accent} />
-                  <div className="p-4">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <span className="rounded-[3px] border border-[var(--border2)] bg-[var(--surface3)] px-2 py-[0.2rem] font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                        {categoryLabel(position.marketCategory)}
-                      </span>
-                      <span className={`rounded-[3px] border px-2 py-[0.2rem] font-mono text-[0.5rem] uppercase tracking-[0.08em] ${sideBadgeClasses(position.side)}`}>
+                  <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_auto_1fr_auto_auto]">
+                    <div>
+                      <span className={`inline-flex rounded-[3px] border px-[0.55rem] py-[0.2rem] font-mono text-[0.62rem] font-bold uppercase tracking-[0.06em] ${sideBadgeClasses(position.side)}`}>
                         {position.side}
                       </span>
                     </div>
 
-                    <p className="mb-3 text-[0.9rem] font-semibold text-[var(--text)]">{position.marketQuestion}</p>
-
-                    <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-[0.75rem] sm:grid-cols-4">
-                      <Metric label="Net Shares" value={round2(dominantShares).toFixed(2)} />
-                      <Metric label="Cost Basis" value={fmtMoney(position.totalCost)} tone="text-[var(--amber-bright)]" />
-                      <Metric label="Mkt Value" value={fmtMoney(position.marketValue)} />
-                      <Metric
-                        label="Unrealized"
-                        value={`${position.unrealizedPnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(position.unrealizedPnl)).slice(1)} (${position.unrealizedPnlPct >= 0 ? '+' : ''}${round2(position.unrealizedPnlPct)}%)`}
-                        tone={position.unrealizedPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}
-                      />
+                    <div className="flex flex-col gap-[0.15rem]">
+                      <span className="font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Shares</span>
+                      <span className="font-mono text-[0.82rem] font-bold text-[var(--text)]">{sharesLabel}</span>
+                      <span className="font-mono text-[0.52rem] text-[var(--text-dim)]">cost {fmtMoney(position.totalCost)}</span>
                     </div>
 
-                    <div className="mt-3 hidden items-center gap-2 sm:flex">
-                      <span className="font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Prob</span>
-                      <div className="h-[4px] w-[48px] overflow-hidden rounded-[3px] bg-[var(--surface3)]">
-                        <div className="h-full" style={{ width: `${probPct}%`, background: fillColor }} />
+                    <div className="hidden items-center gap-[0.4rem] sm:flex">
+                      <div className="h-[4px] w-[48px] overflow-hidden rounded-[2px] bg-[var(--surface3)]">
+                        <div className="h-full rounded-[2px]" style={{ width: `${probPct}%`, background: fillColor }} />
                       </div>
-                      <span className="font-mono text-[0.66rem] text-[var(--text-dim)]">{probPct}%</span>
+                      <span className="font-mono text-[0.72rem] font-bold text-[var(--text)]">{probPct}%</span>
+                    </div>
+
+                    <div className="flex flex-col gap-[0.15rem]">
+                      <span className="font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Mkt Value</span>
+                      <span className="font-mono text-[0.82rem] font-bold text-[var(--amber-bright)]">{fmtMoney(position.marketValue)}</span>
+                    </div>
+
+                    <div className="text-right">
+                      <div className={`font-mono text-[0.92rem] font-bold ${position.unrealizedPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+                        {position.unrealizedPnl >= 0 ? '+' : '-'}{fmtMoney(Math.abs(position.unrealizedPnl)).slice(1)}
+                      </div>
+                      <div className={`font-mono text-[0.52rem] ${position.unrealizedPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+                        {position.unrealizedPnlPct >= 0 ? '+' : ''}{round2(position.unrealizedPnlPct)}%
+                      </div>
                     </div>
                   </div>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div>
-        {sectionLabel('Closed Positions', 'Resolved and refunded positions')}
-        {closedPositions.length === 0 ? (
-          <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-10 text-center font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-            No closed positions
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
-            <table className="min-w-full text-left">
-              <thead className="border-b border-[var(--border)] bg-[var(--surface2)]">
-                <tr className="font-mono text-[0.56rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                  <th className="px-4 py-3">Market</th>
-                  <th className="px-4 py-3">Side</th>
-                  <th className="px-4 py-3">Outcome</th>
-                  <th className="px-4 py-3">Resolved</th>
-                  <th className="px-4 py-3 text-right">P&L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {closedPositions.map((position) => {
-                  const outcome = outcomeBadge(position);
-                  return (
-                    <tr key={position.marketId} className="border-b border-[var(--border)] last:border-0">
-                      <td className="px-4 py-3">
-                        <Link href={`/market/${position.marketId}`} className="text-[0.8rem] text-[var(--text)] hover:text-[var(--red)]">
-                          {position.marketQuestion}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-[3px] border px-2 py-[0.2rem] font-mono text-[0.5rem] uppercase tracking-[0.08em] ${sideBadgeClasses(position.side)}`}>
-                          {position.side}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-[3px] border px-2 py-[0.2rem] font-mono text-[0.5rem] uppercase tracking-[0.08em] ${outcome.cls}`}>
-                          {outcome.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[0.65rem] text-[var(--text-dim)]">{position.resolvedDate || '—'}</td>
-                      <td className={`px-4 py-3 text-right font-mono text-[0.82rem] font-bold ${position.unrealizedPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
-                        {position.unrealizedPnl >= 0 ? '+' : '-'}{fmtMoney(Math.abs(position.unrealizedPnl)).slice(1)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {isOwnProfile && user?.weeklyRank ? (
-        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-          <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Current Weekly Rank</p>
-          <p className="mt-1 font-mono text-[1.2rem] font-bold text-[var(--red)]">
-            #{user.weeklyRank}
-            <span className="ml-2 text-[0.7rem] font-normal text-[var(--text-dim)]">of {user.traderCount || 0} traders</span>
-          </p>
+                </div>
+              </Link>
+            );
+          })}
         </div>
-      ) : null}
+      )}
+
+      {sectionLabel('Closed Positions', `${closedPositions.length} markets`) }
+      {closedPositions.length === 0 ? (
+        <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-10 text-center font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+          No closed positions
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-[8px] border border-[var(--border)]">
+          <table className="min-w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="border-b border-[var(--border)]">
+                <th className="bg-[var(--surface)] px-4 py-3 text-left font-mono text-[0.5rem] font-normal uppercase tracking-[0.1em] text-[var(--text-muted)]">Market</th>
+                <th className="bg-[var(--surface)] px-4 py-3 text-left font-mono text-[0.5rem] font-normal uppercase tracking-[0.1em] text-[var(--text-muted)]">Side</th>
+                <th className="bg-[var(--surface)] px-4 py-3 text-left font-mono text-[0.5rem] font-normal uppercase tracking-[0.1em] text-[var(--text-muted)]">Outcome</th>
+                <th className="bg-[var(--surface)] px-4 py-3 text-left font-mono text-[0.5rem] font-normal uppercase tracking-[0.1em] text-[var(--text-muted)]">Resolved</th>
+                <th className="bg-[var(--surface)] px-4 py-3 text-right font-mono text-[0.5rem] font-normal uppercase tracking-[0.1em] text-[var(--text-muted)]">P&L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {closedPositions.map((position) => {
+                const outcome = outcomeBadge(position);
+                return (
+                  <tr key={position.marketId} className="cursor-pointer transition-colors hover:[&>td]:bg-[var(--surface2)]">
+                    <td className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                      <Link
+                        href={`/market/${position.marketId}`}
+                        className="block max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap text-[0.82rem] font-semibold text-[var(--text)]"
+                      >
+                        {position.marketQuestion}
+                      </Link>
+                    </td>
+                    <td className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                      <span className={`inline-flex rounded-[3px] border px-2 py-[0.2rem] font-mono text-[0.52rem] font-bold uppercase tracking-[0.06em] ${sideBadgeClasses(position.side)}`}>
+                        {position.side}
+                      </span>
+                    </td>
+                    <td className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                      <span className={`inline-flex rounded-[3px] border px-2 py-[0.2rem] font-mono text-[0.52rem] font-bold uppercase tracking-[0.06em] ${outcome.cls}`}>
+                        {outcome.label}
+                      </span>
+                    </td>
+                    <td className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3 font-mono text-[0.6rem] text-[var(--text-muted)]">
+                      {position.resolvedDate || '—'}
+                    </td>
+                    <td className={`border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-right font-mono text-[0.82rem] font-bold ${position.unrealizedPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+                      {position.unrealizedPnl >= 0 ? '+' : '-'}{fmtMoney(Math.abs(position.unrealizedPnl)).slice(1)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
-function Meta({ label, value }) {
+function MetricCell({ label, value, sub, tone }) {
   return (
-    <div>
-      <p className="font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
-      <p className="mt-1 font-mono text-[0.82rem] font-bold text-[var(--text)]">{value}</p>
-    </div>
-  );
-}
-
-function MetricCell({ label, value, tone }) {
-  return (
-    <div className="bg-[var(--surface)] px-4 py-4">
-      <p className="font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
-      <p className={`mt-1 font-mono text-[0.92rem] font-bold ${tone}`}>{value}</p>
+    <div className="bg-[var(--surface)] px-5 py-[1.1rem]">
+      <p className="mb-[0.35rem] font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">{label}</p>
+      <p className={`font-mono text-[1.35rem] font-bold tracking-[-0.03em] ${tone}`}>{value}</p>
+      <p className="mt-[0.25rem] font-mono text-[0.55rem] text-[var(--text-muted)]">{sub}</p>
     </div>
   );
 }
 
 function LegendDot({ color, label }) {
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-[0.35rem] font-mono text-[0.55rem] text-[var(--text-dim)]">
       <span className="inline-block h-[6px] w-[6px] rounded-full" style={{ background: color }} />
       {label}
     </span>
-  );
-}
-
-function Metric({ label, value, tone = 'text-[var(--text)]' }) {
-  return (
-    <div>
-      <p className="font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
-      <p className={`font-mono text-[0.82rem] font-bold ${tone}`}>{value}</p>
-    </div>
   );
 }

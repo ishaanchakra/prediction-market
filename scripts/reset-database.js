@@ -88,7 +88,8 @@ async function resetDatabase() {
     usersSnapshot.docs.forEach(doc => {
       usersBatch.update(doc.ref, {
         weeklyRep: round2(1000),
-        lifetimeRep: round2(0)
+        lifetimeRep: round2(0),
+        onboardingComplete: true
       });
     });
     await usersBatch.commit();

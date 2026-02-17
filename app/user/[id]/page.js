@@ -112,6 +112,13 @@ export default function UserProfilePage() {
   const username = getPublicDisplayName({ id, ...user });
   const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
   const weeklyNet = Number(user.weeklyRep || 0) - 1000;
+  const memberSince = user?.createdAt?.toDate?.()
+    ? user.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : 'Unknown';
+  const resolvedBuys = bets.filter((bet) => bet.marketStatus === MARKET_STATUS.RESOLVED && Number(bet.amount || 0) > 0);
+  const wins = resolvedBuys.filter((bet) => bet.side === bet.marketResolution).length;
+  const winRate = resolvedBuys.length > 0 ? Math.round((wins / resolvedBuys.length) * 100) : 0;
+  const tradeCount = bets.length;
 
   return (
     <div className="min-h-screen bg-[var(--bg)] p-4 md:p-8">
@@ -124,6 +131,9 @@ export default function UserProfilePage() {
 
         <div className="mb-8 border-b border-[var(--border)] pb-6">
           <h1 className="mb-2 font-display text-[2rem] leading-[1.2] text-[var(--text)]">{username}&apos;s Profile</h1>
+          <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+            joined {memberSince} · {tradeCount} trades · {winRate}% win rate
+          </p>
           {viewerIsAdmin && user.email && <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">{user.email}</p>}
         </div>
 

@@ -13,10 +13,18 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        router.push('/');
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (!user) return;
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists() && userDoc.data()?.onboardingComplete === false) {
+          router.push('/onboarding');
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking onboarding status:', error);
       }
+      router.push('/');
     });
     return () => unsubscribe();
   }, [router]);
@@ -38,7 +46,8 @@ export default function LoginPage() {
 
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
-      const defaultDisplayName = `Trader ${user.uid.slice(0, 4)}`;
+      const netId = user.email.split('@')[0];
+      const defaultDisplayName = netId;
 
       if (!userDoc.exists()) {
         await setDoc(userDocRef, {
@@ -47,8 +56,11 @@ export default function LoginPage() {
           lifetimeRep: 0,
           createdAt: new Date(),
           displayName: defaultDisplayName,
-          displayNameNormalized: normalizeDisplayName(defaultDisplayName)
+          displayNameNormalized: normalizeDisplayName(defaultDisplayName),
+          onboardingComplete: false
         });
+        router.push('/onboarding');
+        return;
       } else {
         const current = userDoc.data() || {};
         const patch = {};
@@ -62,6 +74,11 @@ export default function LoginPage() {
 
         if (Object.keys(patch).length > 0) {
           await setDoc(userDocRef, patch, { merge: true });
+        }
+
+        if (current.onboardingComplete === false) {
+          router.push('/onboarding');
+          return;
         }
       }
 

@@ -198,6 +198,7 @@ export default function AdminPage() {
   const [userBetCounts, setUserBetCounts] = useState({});
   const [loadingUserBetCounts, setLoadingUserBetCounts] = useState({});
   const [resetting, setResetting] = useState(false);
+  const [launchResetting, setLaunchResetting] = useState(false);
 
   const [commentsModeration, setCommentsModeration] = useState([]);
   const [newsModeration, setNewsModeration] = useState([]);
@@ -1433,6 +1434,70 @@ export default function AdminPage() {
     }
   }
 
+  async function handleHardLaunchReset() {
+    const firstConfirm = await confirmToast(
+      'Hard launch reset will DELETE all users, bets, display names, notifications, and comments. Markets/admin log stay intact. Continue?'
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = await confirmToast(
+      'Final confirmation: this cannot be undone. Run hard launch reset now?'
+    );
+    if (!secondConfirm) return;
+
+    setLaunchResetting(true);
+    try {
+      const [usersSnap, betsSnap, displayNamesSnap, notificationsSnap, commentsSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'bets')),
+        getDocs(collection(db, 'displayNames')),
+        getDocs(collection(db, 'notifications')),
+        getDocs(collection(db, 'comments'))
+      ]);
+
+      const operationFns = [];
+      usersSnap.docs.forEach((snapshotDoc) => {
+        operationFns.push((batch) => batch.delete(snapshotDoc.ref));
+      });
+      betsSnap.docs.forEach((snapshotDoc) => {
+        operationFns.push((batch) => batch.delete(snapshotDoc.ref));
+      });
+      displayNamesSnap.docs.forEach((snapshotDoc) => {
+        operationFns.push((batch) => batch.delete(snapshotDoc.ref));
+      });
+      notificationsSnap.docs.forEach((snapshotDoc) => {
+        operationFns.push((batch) => batch.delete(snapshotDoc.ref));
+      });
+      commentsSnap.docs.forEach((snapshotDoc) => {
+        operationFns.push((batch) => batch.delete(snapshotDoc.ref));
+      });
+
+      await commitOperationChunks(operationFns);
+
+      await addDoc(collection(db, 'adminLog'), {
+        action: 'RESET',
+        detail: `Hard launch reset completed. Deleted users=${usersSnap.size}, bets=${betsSnap.size}, displayNames=${displayNamesSnap.size}, notifications=${notificationsSnap.size}, comments=${commentsSnap.size}.`,
+        adminEmail: user.email,
+        timestamp: new Date()
+      });
+
+      notifySuccess('Hard launch reset complete.');
+      await Promise.all([
+        fetchUsers(),
+        fetchOverviewStats(),
+        fetchPendingRequests(),
+        fetchAdminLog(),
+        fetchUnresolvedMarkets(),
+        fetchResolvedMarkets()
+      ]);
+    } catch (error) {
+      console.error('Error running hard launch reset:', error);
+      notifyError('Hard launch reset failed.');
+    } finally {
+      setLaunchResetting(false);
+    }
+  }
+
   async function fetchModerationComments() {
     setLoadingModeration(true);
     try {
@@ -2314,22 +2379,31 @@ export default function AdminPage() {
               Use weekly reset after markets close for the week
             </p>
           </div>
-          <button
-            onClick={handleWeeklyReset}
-            disabled={resetting}
-            style={{
-              fontFamily: 'var(--mono)', fontSize: '0.68rem',
-              letterSpacing: '0.06em', textTransform: 'uppercase',
-              background: 'rgba(217,119,6,0.15)',
-              color: 'var(--amber-bright)',
-              border: '1px solid rgba(217,119,6,0.3)',
-              borderRadius: '4px', padding: '0.5rem 1.25rem',
-              cursor: resetting ? 'not-allowed' : 'pointer',
-              opacity: resetting ? 0.6 : 1
-            }}
-          >
-            {resetting ? 'Resetting...' : 'Run Weekly Reset →'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleWeeklyReset}
+              disabled={resetting || launchResetting}
+              style={{
+                fontFamily: 'var(--mono)', fontSize: '0.68rem',
+                letterSpacing: '0.06em', textTransform: 'uppercase',
+                background: 'rgba(217,119,6,0.15)',
+                color: 'var(--amber-bright)',
+                border: '1px solid rgba(217,119,6,0.3)',
+                borderRadius: '4px', padding: '0.5rem 1.25rem',
+                cursor: resetting ? 'not-allowed' : 'pointer',
+                opacity: resetting ? 0.6 : 1
+              }}
+            >
+              {resetting ? 'Resetting...' : 'Run Weekly Reset →'}
+            </button>
+            <button
+              onClick={handleHardLaunchReset}
+              disabled={launchResetting || resetting}
+              className={BTN_RED}
+            >
+              {launchResetting ? 'Resetting...' : 'Hard Launch Reset'}
+            </button>
+          </div>
         </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
           <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">

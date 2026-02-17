@@ -94,6 +94,8 @@ export default function Navigation() {
     }
   }
 
+  if (pathname === '/onboarding') return null;
+
   return (
     <nav
       className="sticky top-0 z-50 border-b border-[var(--border)] bg-[rgba(8,8,8,0.92)] backdrop-blur-[16px]"
@@ -179,7 +181,7 @@ export default function Navigation() {
             </Link>
           </li>
           <li>
-            <Link href="/call-for-markets" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+            <Link href="/call-for-markets" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--amber-bright)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--amber-bright)]">
               Call for Markets
             </Link>
           </li>
@@ -303,7 +305,7 @@ export default function Navigation() {
             <Link href="/leaderboard" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
               Leaderboard
             </Link>
-            <Link href="/call-for-markets" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
+            <Link href="/call-for-markets" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
               Call for Markets
             </Link>
             <Link href="/how-it-works" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
