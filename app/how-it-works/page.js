@@ -25,7 +25,7 @@ const faqs = [
   },
   {
     q: "My weekly balance reset and I lost my profits. What happened?",
-    a: "Weekly balances reset every Monday at midnight. This keeps competition fresh each week. Your all-time performance lives in your lifetime earnings, which never resets."
+    a: "Each weekly reset snapshots standings first, then sets everyone back to $1,000 so a new race can start. Weekly rankings include your open-position value. Your all-time performance lives in lifetime earnings, which never resets."
   },
   {
     q: "Can I suggest a market?",

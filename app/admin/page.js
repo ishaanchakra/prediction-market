@@ -24,6 +24,7 @@ import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import { calculateRefundsByUser, round2 } from '@/utils/refunds';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { CATEGORIES, categorizeMarket } from '@/utils/categorize';
+import { calculateAllPortfolioValues } from '@/utils/portfolio';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -80,6 +81,24 @@ function isPastDateString(dateString) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return picked < today;
+}
+
+function mondayIso(date = new Date()) {
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, '0');
+  const d = String(monday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
 }
 
 function getStatusBadgeStyle(status) {
@@ -424,6 +443,17 @@ export default function AdminPage() {
     }
   }
 
+  async function fetchOpenMarketBets(openMarketIds) {
+    if (openMarketIds.length === 0) return [];
+    const chunks = chunkArray(openMarketIds, 10);
+    const snapshots = await Promise.all(
+      chunks.map((chunk) =>
+        getDocs(query(collection(db, 'bets'), where('marketId', 'in', chunk)))
+      )
+    );
+    return snapshots.flatMap((snapshot) => snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+  }
+
   async function ensureUserNames(userIds) {
     const unique = [...new Set(userIds.filter(Boolean))];
     const missing = unique.filter((id) => !userNameCache[id]);
@@ -736,22 +766,47 @@ export default function AdminPage() {
       const betsQuery = query(collection(db, 'bets'), where('marketId', '==', marketId));
       const betsSnapshot = await getDocs(betsQuery);
 
-      const userAdjustments = {};
+      const userPositionState = {};
       betsSnapshot.docs.forEach((betDoc) => {
         const bet = betDoc.data();
-        if (!userAdjustments[bet.userId]) {
-          userAdjustments[bet.userId] = { payout: 0, lostInvestment: 0 };
+        if (!bet?.userId) return;
+        if (!userPositionState[bet.userId]) {
+          userPositionState[bet.userId] = {
+            yesShares: 0,
+            noShares: 0,
+            yesInvested: 0,
+            noInvested: 0
+          };
         }
 
-        if (bet.side === resolution) {
-          userAdjustments[bet.userId].payout = round2(
-            userAdjustments[bet.userId].payout + round2(bet.shares)
-          );
-        } else if (bet.amount > 0) {
-          userAdjustments[bet.userId].lostInvestment = round2(
-            userAdjustments[bet.userId].lostInvestment + round2(bet.amount)
-          );
+        const position = userPositionState[bet.userId];
+        const side = bet.side === 'NO' ? 'NO' : 'YES';
+        const type = bet.type === 'SELL' ? 'SELL' : 'BUY';
+        const sharesAbs = Math.abs(Number(bet.shares || 0));
+        const amount = Number(bet.amount || 0);
+
+        if (side === 'YES') {
+          position.yesShares = round2(position.yesShares + (type === 'SELL' ? -sharesAbs : sharesAbs));
+          position.yesInvested = round2(position.yesInvested + amount);
+        } else {
+          position.noShares = round2(position.noShares + (type === 'SELL' ? -sharesAbs : sharesAbs));
+          position.noInvested = round2(position.noInvested + amount);
         }
+      });
+
+      const userAdjustments = {};
+      Object.entries(userPositionState).forEach(([userId, position]) => {
+        const yesShares = Math.max(0, Number(position.yesShares || 0));
+        const noShares = Math.max(0, Number(position.noShares || 0));
+        const yesInvested = Math.max(0, Number(position.yesInvested || 0));
+        const noInvested = Math.max(0, Number(position.noInvested || 0));
+
+        const payout = resolution === 'YES' ? yesShares : noShares;
+        const lostInvestment = resolution === 'YES' ? noInvested : yesInvested;
+        userAdjustments[userId] = {
+          payout: round2(payout),
+          lostInvestment: round2(lostInvestment)
+        };
       });
 
       const operationFns = [];
@@ -1314,24 +1369,62 @@ export default function AdminPage() {
 
   async function handleWeeklyReset() {
     if (!(await confirmToast(
-      'Reset weekly leaderboard now? This sets all weekly balances to $1,000.00 for all users.'
+      'Snapshot weekly standings and reset now? This saves this week\'s rankings, then sets all weekly balances to $1,000.00.'
     ))) return;
 
     setResetting(true);
     try {
-      const snapshot = await getDocs(collection(db, 'users'));
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersRows = usersSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+
+      const openMarketsSnapshot = await getDocs(query(collection(db, 'markets'), where('resolution', '==', null)));
+      const openMarkets = openMarketsSnapshot.docs
+        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .filter((market) => market.status !== MARKET_STATUS.CANCELLED);
+      const openMarketIds = openMarkets.map((market) => market.id);
+      const openBets = await fetchOpenMarketBets(openMarketIds);
+
+      const weeklyRows = calculateAllPortfolioValues({
+        users: usersRows,
+        bets: openBets,
+        openMarkets
+      })
+        .map((row) => ({
+          ...row,
+          portfolioValue: round2(row.portfolioValue),
+          weeklyNet: round2(row.weeklyNet)
+        }))
+        .sort((a, b) => Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0));
+
+      const rankings = weeklyRows.slice(0, 50).map((row, index) => ({
+        userId: row.id,
+        displayName: getPublicDisplayName(row),
+        portfolioValue: round2(row.portfolioValue),
+        netProfit: round2(row.weeklyNet),
+        rank: index + 1
+      }));
+      const tradedUserIds = new Set(openBets.map((bet) => bet.userId).filter(Boolean));
+
+      await addDoc(collection(db, 'weeklySnapshots'), {
+        weekOf: mondayIso(),
+        snapshotDate: new Date(),
+        rankings,
+        totalParticipants: tradedUserIds.size
+      });
+
       const batch = writeBatch(db);
-      snapshot.docs.forEach((d) =>
+      usersSnapshot.docs.forEach((d) =>
         batch.update(doc(db, 'users', d.id), { weeklyRep: 1000 })
       );
       await batch.commit();
-      notifySuccess('Weekly leaderboard reset. All balances set to $1,000.00.');
+      notifySuccess('Weekly snapshot saved and leaderboard reset. All balances set to $1,000.00.');
       await addDoc(collection(db, 'adminLog'), {
         action: 'RESET',
-        detail: 'Weekly leaderboard reset — all users set to $1,000.00',
+        detail: `Weekly snapshot + reset completed (${rankings.length} ranked, ${tradedUserIds.size} participants). All users set to $1,000.00`,
         adminEmail: user.email,
         timestamp: new Date()
       });
+      await Promise.all([fetchUsers(), fetchOverviewStats()]);
     } catch (error) {
       console.error('Error resetting weekly leaderboard:', error);
       notifyError('Failed to reset weekly leaderboard.');
@@ -2214,11 +2307,11 @@ export default function AdminPage() {
             </p>
             <p style={{ fontFamily: 'var(--sans)', fontSize: '0.9rem',
               fontWeight: 700, color: 'var(--text)' }}>
-              Resets all balances to $1,000.00
+              Snapshots standings, then resets all balances to $1,000.00
             </p>
             <p style={{ fontFamily: 'var(--mono)', fontSize: '0.62rem',
               color: 'var(--text-dim)', marginTop: '0.15rem' }}>
-              Next Monday at midnight · use at start of each week
+              Use weekly reset after markets close for the week
             </p>
           </div>
           <button

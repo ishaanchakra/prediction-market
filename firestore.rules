@@ -70,6 +70,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /weeklySnapshots/{snapshotId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if true;
       allow create: if hasAllowedEmail() && request.auth.uid == userId;
