@@ -81,18 +81,18 @@ async function resetDatabase() {
     await requestBatch.commit();
     console.log(`✅ Deleted ${requestSnapshot.size} market requests\n`);
 
-    // 7. Reset all user rep to 500
-    console.log('Resetting user rep to 500...');
+    // 7. Reset all user rep to 1000
+    console.log('Resetting user rep to 1000...');
     const usersSnapshot = await db.collection('users').get();
     const usersBatch = db.batch();
     usersSnapshot.docs.forEach(doc => {
       usersBatch.update(doc.ref, {
-        weeklyRep: round2(500),
+        weeklyRep: round2(1000),
         lifetimeRep: round2(0)
       });
     });
     await usersBatch.commit();
-    console.log(`✅ Reset ${usersSnapshot.size} users to $500\n`);
+    console.log(`✅ Reset ${usersSnapshot.size} users to $1,000\n`);
 
     console.log('✨ Database reset complete!');
     process.exit(0);
@@ -103,7 +103,7 @@ async function resetDatabase() {
 }
 
 // Confirmation prompt
-console.log('⚠️  WARNING: This will DELETE ALL data and reset user balance to $500!');
+console.log('⚠️  WARNING: This will DELETE ALL data and reset user balance to $1,000!');
 console.log('This action cannot be undone.\n');
 console.log('Type "RESET" to confirm: ');
 

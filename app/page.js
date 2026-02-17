@@ -248,7 +248,7 @@ export default function Home() {
         <div>
           <div className="mb-5 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[var(--red)]">
             <span className="inline-block h-px w-5 bg-[var(--red)]" />
-            Cornell University · Spring 2025
+            Cornell University · Spring 2026
           </div>
           <h1 className="mb-5 font-display text-4xl leading-[1.05] tracking-[-0.02em] text-[var(--text)] md:text-6xl">
             What happens
@@ -417,7 +417,7 @@ export default function Home() {
       </section>
 
       <footer className="mx-auto flex max-w-[1200px] flex-col items-start justify-between gap-3 border-t border-[var(--border)] px-4 py-6 md:flex-row md:items-center md:px-8">
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Predict Cornell · BETA · Spring 2025</span>
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Predict Cornell · BETA · Spring 2026</span>
         <ul className="flex list-none gap-6">
           <li>
             <Link href="/how-it-works" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">How It Works</Link>
