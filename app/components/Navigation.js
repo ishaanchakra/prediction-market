@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { usePathname, useRouter } from 'next/navigation';
-import { collection, query, where, doc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, doc, onSnapshot, orderBy, limit, getDoc } from 'firebase/firestore';
 import { CATEGORIES } from '@/utils/categorize';
+import { toMarketplaceMemberId } from '@/utils/marketplace';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 const MARKET_CATEGORY_LINKS = CATEGORIES;
@@ -28,17 +29,36 @@ export default function Navigation() {
   const [desktopMarketsOpen, setDesktopMarketsOpen] = useState(false);
   const [desktopMenuPath, setDesktopMenuPath] = useState('');
   const [selectedMarketCategoryId, setSelectedMarketCategoryId] = useState('all');
+  const [joinedMarketplaces, setJoinedMarketplaces] = useState([]);
+  const [activeMarketplace, setActiveMarketplace] = useState(null);
+  const [activeMarketplaceBalance, setActiveMarketplaceBalance] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
+
+  const routeMarketplaceId = useMemo(() => {
+    if (!pathname?.startsWith('/marketplace/')) return null;
+    const [, segment, id] = pathname.split('/');
+    if (segment !== 'marketplace') return null;
+    if (!id || id === 'enter') return null;
+    return id;
+  }, [pathname]);
+  const inMarketplaceContext = !!routeMarketplaceId;
 
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
   const activeCategoryId = pathname === '/markets/active'
     ? (MARKET_CATEGORY_IDS.includes(selectedMarketCategoryId) ? selectedMarketCategoryId : 'all')
     : null;
+  const displayBalance = inMarketplaceContext
+    ? Number(activeMarketplaceBalance ?? balance)
+    : Number(balance);
+  const displayBalanceLabel = inMarketplaceContext
+    ? (activeMarketplace?.name || 'marketplace')
+    : 'balance';
 
   useEffect(() => {
     let unsubscribeUnread = null;
     let unsubscribeBalance = null;
+    let unsubscribeMemberships = null;
 
     const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
@@ -50,6 +70,10 @@ export default function Navigation() {
       if (unsubscribeBalance) {
         unsubscribeBalance();
         unsubscribeBalance = null;
+      }
+      if (unsubscribeMemberships) {
+        unsubscribeMemberships();
+        unsubscribeMemberships = null;
       }
 
       if (currentUser) {
@@ -69,21 +93,98 @@ export default function Navigation() {
           (userDoc) => setBalance(userDoc.exists() ? Number(userDoc.data().weeklyRep || 0) : 0),
           (error) => console.error('Error listening to user balance:', error)
         );
+
+        const membershipsQuery = query(
+          collection(db, 'marketplaceMembers'),
+          where('userId', '==', currentUser.uid),
+          orderBy('joinedAt', 'desc'),
+          limit(30)
+        );
+        unsubscribeMemberships = onSnapshot(
+          membershipsQuery,
+          async (snapshot) => {
+            const rows = await Promise.all(
+              snapshot.docs.map(async (membershipDoc) => {
+                const membership = membershipDoc.data();
+                try {
+                  const marketplaceSnap = await getDoc(doc(db, 'marketplaces', membership.marketplaceId));
+                  if (!marketplaceSnap.exists()) return null;
+                  return {
+                    ...membership,
+                    marketplace: { id: marketplaceSnap.id, ...marketplaceSnap.data() }
+                  };
+                } catch (error) {
+                  console.error('Error loading marketplace link:', error);
+                  return null;
+                }
+              })
+            );
+            setJoinedMarketplaces(rows.filter(Boolean));
+          },
+          (error) => console.error('Error listening to marketplace memberships:', error)
+        );
       } else {
         setUnreadCount(0);
         setBalance(0);
+        setJoinedMarketplaces([]);
+        setActiveMarketplace(null);
+        setActiveMarketplaceBalance(null);
       }
     });
 
     return () => {
       if (unsubscribeUnread) unsubscribeUnread();
       if (unsubscribeBalance) unsubscribeBalance();
+      if (unsubscribeMemberships) unsubscribeMemberships();
       unsubscribeAuth();
     };
   }, []);
 
+  useEffect(() => {
+    let unsubscribeActiveMember = null;
+    let cancelled = false;
+
+    async function loadMarketplaceContext() {
+      if (!user || !routeMarketplaceId) {
+        setActiveMarketplace(null);
+        setActiveMarketplaceBalance(null);
+        return;
+      }
+
+      unsubscribeActiveMember = onSnapshot(
+        doc(db, 'marketplaceMembers', toMarketplaceMemberId(routeMarketplaceId, user.uid)),
+        (memberSnap) => setActiveMarketplaceBalance(memberSnap.exists() ? Number(memberSnap.data().balance || 0) : null),
+        (error) => console.error('Error listening to marketplace balance:', error)
+      );
+
+      try {
+        const marketplaceSnap = await getDoc(doc(db, 'marketplaces', routeMarketplaceId));
+        if (!cancelled) {
+          setActiveMarketplace(marketplaceSnap.exists() ? { id: marketplaceSnap.id, ...marketplaceSnap.data() } : null);
+        }
+      } catch (error) {
+        console.error('Error loading active marketplace:', error);
+      }
+    }
+
+    loadMarketplaceContext();
+    return () => {
+      cancelled = true;
+      if (unsubscribeActiveMember) unsubscribeActiveMember();
+    };
+  }, [routeMarketplaceId, user]);
+
   const menuVisible = mobileMenuOpen && mobileMenuPath === pathname;
   const desktopMenuVisible = desktopMarketsOpen && desktopMenuPath === pathname && !menuVisible;
+
+  useEffect(() => {
+    if (menuVisible) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [menuVisible]);
 
   async function handleLogout() {
     try {
@@ -135,7 +236,7 @@ export default function Navigation() {
                 });
               }}
               className={`inline-flex items-center gap-1 rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] transition-colors ${
-                pathname === '/markets/active'
+                pathname === '/markets/active' || pathname?.startsWith('/marketplace/')
                   ? 'bg-[var(--surface2)] text-[var(--text)]'
                   : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
               }`}
@@ -145,7 +246,10 @@ export default function Navigation() {
             </button>
             {desktopMenuVisible && (
               <div className="absolute left-0 top-full pt-1">
-                <div className="min-w-[210px] overflow-hidden rounded border border-[var(--border2)] bg-[var(--surface)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                <div className="min-w-[240px] overflow-hidden rounded border border-[var(--border2)] bg-[var(--surface)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                  <div className="border-b border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                    Global
+                  </div>
                   {MARKET_CATEGORY_LINKS.map((category) => {
                     const href = category.id === 'all'
                       ? '/markets/active'
@@ -159,7 +263,7 @@ export default function Navigation() {
                           setSelectedMarketCategoryId(category.id);
                           setDesktopMarketsOpen(false);
                         }}
-                        className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors last:border-b-0 ${
+                        className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors ${
                           isActiveCategory
                             ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
                             : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
@@ -171,6 +275,31 @@ export default function Navigation() {
                       </Link>
                     );
                   })}
+
+                  <div className="border-b border-t border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                    Joined Marketplaces
+                  </div>
+                  {joinedMarketplaces.length === 0 ? (
+                    <span className="flex min-h-[42px] items-center px-3 font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                      none yet
+                    </span>
+                  ) : joinedMarketplaces.map((entry) => {
+                    const isActive = pathname?.startsWith(`/marketplace/${entry.marketplace.id}`);
+                    return (
+                      <Link
+                        key={entry.marketplace.id}
+                        href={`/marketplace/${entry.marketplace.id}`}
+                        onClick={() => setDesktopMarketsOpen(false)}
+                        className={`flex min-h-[42px] items-center border-t border-[var(--border)] px-3 font-mono text-[0.62rem] uppercase tracking-[0.06em] ${
+                          isActive
+                            ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
+                            : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
+                        }`}
+                      >
+                        {entry.marketplace.name}
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -178,6 +307,11 @@ export default function Navigation() {
           <li>
             <Link href="/leaderboard" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
               Leaderboard
+            </Link>
+          </li>
+          <li>
+            <Link href="/marketplace/enter" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
+              Enter Marketplace
             </Link>
           </li>
           <li>
@@ -196,9 +330,9 @@ export default function Navigation() {
           {user ? (
             <>
               <div className="flex items-center gap-1 rounded border border-[var(--border2)] px-2 py-[0.3rem] font-mono text-[0.65rem] text-[var(--text-dim)] md:gap-2 md:px-3 md:text-[0.7rem]">
-                <span className="hidden sm:inline">balance</span>
+                <span className="hidden sm:inline">{displayBalanceLabel}</span>
                 <strong className="text-[0.75rem] text-[var(--amber-bright)] md:text-[0.8rem]">
-                  ${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${displayBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </strong>
               </div>
               <Link
@@ -252,6 +386,10 @@ export default function Navigation() {
 
           <button
             onClick={() => {
+              if (mobileMenuOpen && mobileMenuPath !== (pathname || '')) {
+                setMobileMenuPath(pathname || '');
+                return;
+              }
               setMobileMenuOpen((prev) => {
                 const next = !prev;
                 if (next) {
@@ -302,17 +440,37 @@ export default function Navigation() {
                 );
               })}
             </div>
-            <Link href="/leaderboard" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
+            <Link onClick={() => setMobileMenuOpen(false)} href="/leaderboard" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
               Leaderboard
             </Link>
-            <Link href="/call-for-markets" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
+            <Link onClick={() => setMobileMenuOpen(false)} href="/marketplace/enter" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
+              Enter Marketplace
+            </Link>
+            {joinedMarketplaces.length > 0 && (
+              <div className="border-b border-[var(--border)] py-1">
+                <div className="px-1 pb-1 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                  Joined Marketplaces
+                </div>
+                {joinedMarketplaces.map((entry) => (
+                  <Link
+                    key={entry.marketplace.id}
+                    href={`/marketplace/${entry.marketplace.id}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex min-h-[48px] items-center px-1 font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
+                  >
+                    {entry.marketplace.name}
+                  </Link>
+                ))}
+              </div>
+            )}
+            <Link onClick={() => setMobileMenuOpen(false)} href="/call-for-markets" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
               Call for Markets
             </Link>
-            <Link href="/how-it-works" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
+            <Link onClick={() => setMobileMenuOpen(false)} href="/how-it-works" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
               How It Works
             </Link>
             {user && isAdmin && (
-              <Link href="/admin" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
+              <Link onClick={() => setMobileMenuOpen(false)} href="/admin" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
                 Admin
               </Link>
             )}

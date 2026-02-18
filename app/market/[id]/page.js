@@ -15,7 +15,7 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { calculateBet, calculateSell } from '@/utils/lmsr';
 import { round2 } from '@/utils/round';
@@ -24,6 +24,7 @@ import InfoTooltip from '@/app/components/InfoTooltip';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 import { getPublicDisplayName } from '@/utils/displayName';
+import { toMarketplaceMemberId } from '@/utils/marketplace';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -55,6 +56,7 @@ function safeDate(value) {
 
 export default function MarketPage() {
   const params = useParams();
+  const router = useRouter();
   const [market, setMarket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [marketLoadError, setMarketLoadError] = useState('');
@@ -86,10 +88,14 @@ export default function MarketPage() {
   const [marketStats, setMarketStats] = useState({ totalTraded: 0, bettors: 0 });
   const [topBettors, setTopBettors] = useState([]);
   const [relatedMarkets, setRelatedMarkets] = useState([]);
+  const [marketplaceMembership, setMarketplaceMembership] = useState(null);
+  const [likedCommentIds, setLikedCommentIds] = useState(new Set());
   const { toasts, notifyError, notifySuccess, confirmToast, removeToast, resolveConfirm } = useToastQueue();
 
   const marketStatus = getMarketStatus(market);
-  const canTrade = currentUser && isTradeableMarket(market);
+  const canTrade = currentUser
+    && isTradeableMarket(market)
+    && (!market?.marketplaceId || !!marketplaceMembership);
   const isLocked = marketStatus === MARKET_STATUS.LOCKED;
   const isResolved = marketStatus === MARKET_STATUS.RESOLVED;
   const isCancelled = marketStatus === MARKET_STATUS.CANCELLED;
@@ -168,6 +174,38 @@ export default function MarketPage() {
   }, []);
 
   useEffect(() => {
+    async function verifyMarketplaceAccess() {
+      if (!market?.marketplaceId) {
+        setMarketplaceMembership(null);
+        return;
+      }
+
+      if (!currentUser) {
+        setMarketplaceMembership(null);
+        router.push(`/marketplace/enter?marketplace=${market.marketplaceId}`);
+        return;
+      }
+
+      try {
+        const memberSnap = await getDoc(
+          doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
+        );
+        if (!memberSnap.exists()) {
+          setMarketplaceMembership(null);
+          notifyError('This market belongs to a private marketplace. Join to view and trade.');
+          router.push(`/marketplace/enter?marketplace=${market.marketplaceId}`);
+          return;
+        }
+        setMarketplaceMembership({ id: memberSnap.id, ...memberSnap.data() });
+      } catch (error) {
+        console.error('Error checking marketplace membership:', error);
+      }
+    }
+
+    verifyMarketplaceAccess();
+  }, [market?.marketplaceId, currentUser, notifyError, router]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const media = window.matchMedia('(max-width: 767px)');
     const apply = () => setIsMobile(media.matches);
@@ -189,13 +227,18 @@ export default function MarketPage() {
         }
       } catch (error) {
         console.error('Error fetching market:', error);
+        if (error?.code === 'permission-denied') {
+          setMarketLoadError('This market is private to a marketplace. Join the marketplace to view it.');
+          router.push('/marketplace/enter');
+          return;
+        }
         setMarketLoadError('Unable to load this market right now.');
       } finally {
         setLoading(false);
       }
     }
     fetchMarket();
-  }, [params.id]);
+  }, [params.id, router]);
 
   useEffect(() => {
     async function fetchUserPosition() {
@@ -436,12 +479,25 @@ export default function MarketPage() {
         );
         setTopBettors(bettorRows);
 
-        const relatedQ = query(collection(db, 'markets'), where('resolution', '==', null), orderBy('createdAt', 'desc'), limit(6));
+        const relatedQ = market?.marketplaceId
+          ? query(
+            collection(db, 'markets'),
+            where('marketplaceId', '==', market.marketplaceId),
+            orderBy('createdAt', 'desc'),
+            limit(18)
+          )
+          : query(
+            collection(db, 'markets'),
+            where('marketplaceId', '==', null),
+            orderBy('createdAt', 'desc'),
+            limit(18)
+          );
         const relatedSnap = await getDocs(relatedQ);
         setRelatedMarkets(
           relatedSnap.docs
             .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
             .filter((entry) => entry.id !== params.id)
+            .filter((entry) => entry.resolution == null && entry.status !== MARKET_STATUS.CANCELLED)
             .slice(0, 3)
         );
       } catch (error) {
@@ -449,7 +505,7 @@ export default function MarketPage() {
       }
     }
     fetchSidebarData();
-  }, [params.id, market?.probability]);
+  }, [params.id, market?.probability, market?.marketplaceId]);
 
   useEffect(() => {
     async function fetchComments() {
@@ -548,13 +604,16 @@ export default function MarketPage() {
     try {
       const amount = parseFloat(betAmount);
       const marketRef = doc(db, 'markets', params.id);
-      const userRef = doc(db, 'users', currentUser.uid);
+      const isMarketplaceMarket = !!market?.marketplaceId;
+      const walletRef = isMarketplaceMarket
+        ? doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
+        : doc(db, 'users', currentUser.uid);
       let txResult = null;
 
       await runTransaction(db, async (tx) => {
         const [marketSnap, userSnap] = await Promise.all([
           tx.get(marketRef),
-          tx.get(userRef)
+          tx.get(walletRef)
         ]);
 
         if (!marketSnap.exists()) {
@@ -570,9 +629,11 @@ export default function MarketPage() {
         }
 
         const userData = userSnap.data();
-        const weeklyRep = Number(userData.weeklyRep || 0);
-        if (weeklyRep < amount) {
-          throw new Error(`Insufficient balance. You have $${weeklyRep.toFixed(2)} available.`);
+        const availableBalance = isMarketplaceMarket
+          ? Number(userData.balance || 0)
+          : Number(userData.weeklyRep || 0);
+        if (availableBalance < amount) {
+          throw new Error(`Insufficient balance. You have $${availableBalance.toFixed(2)} available.`);
         }
 
         const result = calculateBet(
@@ -586,6 +647,7 @@ export default function MarketPage() {
         tx.set(betRef, {
           userId: currentUser.uid,
           marketId: params.id,
+          marketplaceId: latestMarket.marketplaceId || null,
           side: selectedSide,
           amount,
           shares: result.shares,
@@ -599,10 +661,18 @@ export default function MarketPage() {
           probability: result.newProbability
         });
 
-        tx.update(userRef, {
-          weeklyRep: round2(weeklyRep - amount),
-          lifetimeRep: Number(userData.lifetimeRep) || 0
-        });
+        if (isMarketplaceMarket) {
+          tx.update(walletRef, {
+            balance: round2(availableBalance - amount),
+            lifetimeRep: Number(userData.lifetimeRep) || 0,
+            updatedAt: new Date()
+          });
+        } else {
+          tx.update(walletRef, {
+            weeklyRep: round2(availableBalance - amount),
+            lifetimeRep: Number(userData.lifetimeRep) || 0
+          });
+        }
 
         txResult = result;
       });
@@ -647,13 +717,16 @@ export default function MarketPage() {
     setSelling(true);
     try {
       const marketRef = doc(db, 'markets', params.id);
-      const userRef = doc(db, 'users', currentUser.uid);
+      const isMarketplaceMarket = !!market?.marketplaceId;
+      const walletRef = isMarketplaceMarket
+        ? doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
+        : doc(db, 'users', currentUser.uid);
       let txResult = null;
 
       await runTransaction(db, async (tx) => {
         const [marketSnap, userSnap] = await Promise.all([
           tx.get(marketRef),
-          tx.get(userRef)
+          tx.get(walletRef)
         ]);
 
         if (!marketSnap.exists()) {
@@ -704,12 +777,15 @@ export default function MarketPage() {
         }
 
         const userData = userSnap.data();
-        const weeklyRep = Number(userData.weeklyRep || 0);
+        const currentBalance = isMarketplaceMarket
+          ? Number(userData.balance || 0)
+          : Number(userData.weeklyRep || 0);
 
         const betRef = doc(collection(db, 'bets'));
         tx.set(betRef, {
           userId: currentUser.uid,
           marketId: params.id,
+          marketplaceId: latestMarket.marketplaceId || null,
           side: sellSide,
           amount: -result.payout,
           shares: -safeSharesToSell,
@@ -723,10 +799,18 @@ export default function MarketPage() {
           probability: result.newProbability
         });
 
-        tx.update(userRef, {
-          weeklyRep: round2(weeklyRep + result.payout),
-          lifetimeRep: Number(userData.lifetimeRep) || 0
-        });
+        if (isMarketplaceMarket) {
+          tx.update(walletRef, {
+            balance: round2(currentBalance + result.payout),
+            lifetimeRep: Number(userData.lifetimeRep) || 0,
+            updatedAt: new Date()
+          });
+        } else {
+          tx.update(walletRef, {
+            weeklyRep: round2(currentBalance + result.payout),
+            lifetimeRep: Number(userData.lifetimeRep) || 0
+          });
+        }
 
         txResult = result;
       });
@@ -760,6 +844,7 @@ export default function MarketPage() {
       const displayName = userDoc.exists() ? getPublicDisplayName({ id: currentUser.uid, ...userDoc.data() }) : (currentUser.email?.split('@')[0] || 'user');
       await addDoc(collection(db, 'comments'), {
         marketId: params.id,
+        marketplaceId: market?.marketplaceId || null,
         userId: currentUser.uid,
         username: displayName,
         userName: displayName,
@@ -799,6 +884,7 @@ export default function MarketPage() {
       const displayName = userDoc.exists() ? getPublicDisplayName({ id: currentUser.uid, ...userDoc.data() }) : (currentUser.email?.split('@')[0] || 'user');
       await addDoc(collection(db, 'comments'), {
         marketId: params.id,
+        marketplaceId: market?.marketplaceId || null,
         userId: currentUser.uid,
         username: displayName,
         userName: displayName,
@@ -868,10 +954,12 @@ export default function MarketPage() {
   }
 
   async function handleLikeComment(comment) {
+    if (likedCommentIds.has(comment.id)) return;
     try {
       const nextLikes = Number(comment.likes || 0) + 1;
       await updateDoc(doc(db, 'comments', comment.id), { likes: nextLikes });
       setComments((prev) => prev.map((item) => (item.id === comment.id ? { ...item, likes: nextLikes } : item)));
+      setLikedCommentIds((prev) => new Set(prev).add(comment.id));
     } catch (error) {
       console.error('Error liking comment:', error);
       notifyError('Unable to like comment.');
@@ -1034,7 +1122,7 @@ export default function MarketPage() {
           )}
 
           <div className="mt-3 flex items-center gap-3">
-            <button onClick={() => handleLikeComment(comment)} className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]">
+            <button onClick={() => handleLikeComment(comment)} className={`font-mono text-[0.58rem] ${likedCommentIds.has(comment.id) ? 'text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'}`}>
               ♥ {Number(comment.likes || 0)}
             </button>
             <button
@@ -1088,6 +1176,17 @@ export default function MarketPage() {
             <span>{truncatedQuestion}</span>
           </div>
 
+          {market.marketplaceId && (
+            <div className="mb-4 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+              <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                Private marketplace market
+              </p>
+              <p className="font-mono text-[0.64rem] text-[var(--text-dim)]">
+                Wallet balance: ${Number(marketplaceMembership?.balance || 0).toFixed(2)}
+              </p>
+            </div>
+          )}
+
           <div className="mb-4 flex flex-wrap gap-2">
             {market?.category && (
               <span className="rounded border border-[var(--red-dim)] bg-[var(--red-glow)] px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">{market.category}</span>
@@ -1097,15 +1196,15 @@ export default function MarketPage() {
 
           <h1 className="mb-7 max-w-[640px] font-display text-[2rem] leading-tight tracking-[-0.015em] text-[var(--text)]">{market.question}</h1>
 
-          <div className="mb-6 flex flex-wrap items-end gap-8 border-b border-[var(--border)] pb-6">
+          <div className="mb-6 flex flex-col gap-4 border-b border-[var(--border)] pb-6 md:flex-row md:flex-wrap md:items-end md:gap-8">
             <div>
-              <span className={`block font-mono text-[4.5rem] font-bold leading-none tracking-[-0.06em] ${probabilityColor}`}>
+              <span className={`block font-mono text-[3rem] font-bold leading-none tracking-[-0.06em] md:text-[4.5rem] ${probabilityColor}`}>
                 {Math.round(currentProbability * 100)}%
               </span>
               <span className={`mt-1 block font-mono text-[0.68rem] ${deltaClass}`}>{deltaText}</span>
               <span className="mt-1 block font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">chance YES</span>
             </div>
-            <div className="ml-auto grid grid-cols-3 gap-6 pb-2">
+            <div className="grid grid-cols-3 gap-4 md:ml-auto md:gap-6 md:pb-2">
               <div>
                 <span className="block font-mono text-lg font-bold text-[var(--text)]">${marketStats.totalTraded.toFixed(0)}</span>
                 <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">traded</span>
@@ -1530,8 +1629,8 @@ export default function MarketPage() {
       </div>
 
       {showSellModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[var(--surface)] rounded-xl p-6 max-w-md w-full shadow-xl border border-[var(--border)]">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 p-0 md:p-4">
+          <div className="bg-[var(--surface)] rounded-t-xl md:rounded-xl p-6 max-w-md w-full shadow-xl border border-[var(--border)]" style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))' }}>
             <h2 className="text-2xl font-bold mb-4 text-[var(--text)]">Sell {sellSide} Shares</h2>
 
             <div className="bg-[var(--surface2)] rounded-lg p-4 mb-4">

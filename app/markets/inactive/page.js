@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
@@ -34,13 +34,27 @@ export default function ClosedMarketsPage() {
     async function fetchMarkets() {
       try {
         setLoadError('');
-        const resolvedQuery = query(collection(db, 'markets'), where('resolution', '!=', null), orderBy('resolvedAt', 'desc'), limit(100));
-        const cancelledQuery = query(collection(db, 'markets'), where('status', '==', MARKET_STATUS.CANCELLED), orderBy('cancelledAt', 'desc'), limit(100));
+        const resolvedQuery = query(
+          collection(db, 'markets'),
+          where('marketplaceId', '==', null),
+          where('resolution', '!=', null),
+          limit(100)
+        );
+        const cancelledQuery = query(
+          collection(db, 'markets'),
+          where('marketplaceId', '==', null),
+          where('status', '==', MARKET_STATUS.CANCELLED),
+          limit(100)
+        );
 
         const [resolvedSnapshot, cancelledSnapshot] = await Promise.all([getDocs(resolvedQuery), getDocs(cancelledQuery)]);
 
-        const resolvedData = resolvedSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
-        const cancelledData = cancelledSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+        const resolvedData = resolvedSnapshot.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => !market.marketplaceId);
+        const cancelledData = cancelledSnapshot.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => !market.marketplaceId);
 
         const marketData = mergeMarkets(resolvedData, cancelledData);
         setMarkets(marketData);
@@ -78,7 +92,7 @@ export default function ClosedMarketsPage() {
   if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
       {loadError && (
         <div className="mb-4 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
           {loadError}

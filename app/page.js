@@ -172,19 +172,32 @@ export default function Home() {
         const activeQuery = query(
           collection(db, 'markets'),
           where('resolution', '==', null),
+          where('marketplaceId', '==', null),
           limit(80)
         );
         const activeSnapshot = await getDocs(activeQuery);
         const active = activeSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((m) => !m.marketplaceId)
           .filter((m) => getMarketStatus(m) !== MARKET_STATUS.CANCELLED)
           .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
         setActiveMarkets(active);
         setTickerMarkets(active.slice(0, 7));
 
-        const resolvedQuery = query(collection(db, 'markets'), where('resolution', '!=', null), orderBy('resolvedAt', 'desc'), limit(12));
+        const resolvedQuery = query(
+          collection(db, 'markets'),
+          where('marketplaceId', '==', null),
+          where('resolution', '!=', null),
+          orderBy('resolvedAt', 'desc'),
+          limit(12)
+        );
         const resolvedSnapshot = await getDocs(resolvedQuery);
-        setResolvedMarkets(resolvedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })).slice(0, 3));
+        setResolvedMarkets(
+          resolvedSnapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((market) => !market.marketplaceId)
+            .slice(0, 3)
+        );
 
         const trendEntries = await Promise.all(
           active.slice(0, 20).map(async (market) => {
@@ -198,8 +211,19 @@ export default function Home() {
         );
         setTrendSeriesByMarket(Object.fromEntries(trendEntries));
 
-        const allBets = await getDocs(query(collection(db, 'bets'), orderBy('timestamp', 'desc'), limit(500)));
-        const totalTraded = allBets.docs.reduce((sum, d) => sum + Math.abs(Number(d.data().amount || 0)), 0);
+        const allBets = await getDocs(
+          query(
+            collection(db, 'bets'),
+            where('marketplaceId', '==', null),
+            orderBy('timestamp', 'desc'),
+            limit(500)
+          )
+        );
+        const totalTraded = allBets.docs.reduce((sum, d) => {
+          const bet = d.data();
+          if (bet.marketplaceId) return sum;
+          return sum + Math.abs(Number(bet.amount || 0));
+        }, 0);
 
         if (user) {
           const usersQuery = query(collection(db, 'users'), orderBy('weeklyRep', 'desc'), limit(300));

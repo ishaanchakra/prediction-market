@@ -101,10 +101,15 @@ export default function LeaderboardPage() {
         const usersData = usersSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
         setUsers(usersData);
 
-        const openQ = query(collection(db, 'markets'), where('resolution', '==', null));
+        const openQ = query(
+          collection(db, 'markets'),
+          where('resolution', '==', null),
+          where('marketplaceId', '==', null)
+        );
         const openSnap = await getDocs(openQ);
         const openMarkets = openSnap.docs
           .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => !market.marketplaceId)
           .filter((market) => market.status !== 'CANCELLED');
         setOpenMarketsCount(openMarkets.length);
 
@@ -124,9 +129,13 @@ export default function LeaderboardPage() {
         }));
         setWeeklyRows(weeklyRowsData);
 
-        const allBetsSnap = await getDocs(collection(db, 'bets'));
+        const allBetsSnap = await getDocs(query(collection(db, 'bets'), where('marketplaceId', '==', null)));
         setTotalTraded(
-          round2(allBetsSnap.docs.reduce((sum, snapshotDoc) => sum + Math.abs(Number(snapshotDoc.data().amount || 0)), 0))
+          round2(allBetsSnap.docs.reduce((sum, snapshotDoc) => {
+            const bet = snapshotDoc.data();
+            if (bet.marketplaceId) return sum;
+            return sum + Math.abs(Number(bet.amount || 0));
+          }, 0))
         );
 
         const snapshotsQ = query(collection(db, 'weeklySnapshots'), orderBy('snapshotDate', 'desc'), limit(12));

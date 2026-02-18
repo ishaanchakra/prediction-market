@@ -154,7 +154,14 @@ export default function OnboardingPage() {
           )
         );
       } catch {
-        marketSnapshot = await getDocs(query(collection(db, 'markets'), where('resolution', '==', null), limit(50)));
+        marketSnapshot = await getDocs(
+          query(
+            collection(db, 'markets'),
+            where('resolution', '==', null),
+            where('marketplaceId', '==', null),
+            limit(50)
+          )
+        );
       }
 
       const candidates = marketSnapshot.docs
@@ -302,6 +309,7 @@ export default function OnboardingPage() {
       tx.set(betRef, {
         userId: authUser.uid,
         marketId: market.id,
+        marketplaceId: null,
         side,
         amount: BET_AMOUNT,
         shares: result.shares,

@@ -42,7 +42,11 @@ export default function UserProfilePage() {
         }
         setUser({ uid: id, ...userDoc.data() });
 
-        const betsQuery = query(collection(db, 'bets'), where('userId', '==', id));
+        const betsQuery = query(
+          collection(db, 'bets'),
+          where('userId', '==', id),
+          where('marketplaceId', '==', null)
+        );
         const betsSnapshot = await getDocs(betsQuery);
 
         const betsWithMarkets = await Promise.all(

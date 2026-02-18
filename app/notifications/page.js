@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs, doc, updateDoc, limit } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, updateDoc, limit, writeBatch } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -50,7 +50,14 @@ export default function NotificationsPage() {
   async function markAllAsRead() {
     try {
       const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
-      await Promise.all(unreadIds.map((id) => updateDoc(doc(db, 'notifications', id), { read: true })));
+      // Firestore batches support max 500 writes
+      for (let i = 0; i < unreadIds.length; i += 500) {
+        const batch = writeBatch(db);
+        unreadIds.slice(i, i + 500).forEach((id) => {
+          batch.update(doc(db, 'notifications', id), { read: true });
+        });
+        await batch.commit();
+      }
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch (error) {
       console.error('Error marking all as read:', error);

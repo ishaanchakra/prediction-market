@@ -229,6 +229,7 @@ async function seedSportsMarkets() {
         lockedAt: null,
         cancelledAt: null,
         createdAt: new Date(),
+        marketplaceId: null,
         espnGameId: game.id,
         sport: sportFlag,
         category,

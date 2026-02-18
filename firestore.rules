@@ -19,19 +19,112 @@ service cloud.firestore {
       return signedIn() || isAdmin();
     }
 
+    function isGlobalScope(marketplaceId) {
+      return !(marketplaceId is string) || marketplaceId == null;
+    }
+
+    function marketplaceMemberDocId(marketplaceId, userId) {
+      return marketplaceId + '_' + userId;
+    }
+
+    function isMarketplaceMember(marketplaceId) {
+      return signedIn()
+        && marketplaceId is string
+        && exists(/databases/$(database)/documents/marketplaceMembers/$(marketplaceMemberDocId(marketplaceId, request.auth.uid)));
+    }
+
+    function isMarketplaceCreator(marketplaceId) {
+      return signedIn()
+        && marketplaceId is string
+        && exists(/databases/$(database)/documents/marketplaces/$(marketplaceId))
+        && get(/databases/$(database)/documents/marketplaces/$(marketplaceId)).data.creatorUserId == request.auth.uid;
+    }
+
+    function canReadMarketplaceScoped(marketplaceId) {
+      return isGlobalScope(marketplaceId)
+        || isAdmin()
+        || isMarketplaceMember(marketplaceId)
+        || isMarketplaceCreator(marketplaceId);
+    }
+
     function marketIsOpen(marketId) {
       return get(/databases/$(database)/documents/markets/$(marketId)).data.status == 'OPEN'
         || (!('status' in get(/databases/$(database)/documents/markets/$(marketId)).data)
         && get(/databases/$(database)/documents/markets/$(marketId)).data.resolution == null);
     }
 
+    match /marketplaces/{marketplaceId} {
+      allow read: if hasAllowedEmail();
+      allow create: if hasAllowedEmail()
+        && request.resource.data.creatorUserId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.slug is string
+        && request.resource.data.startingBalance is number
+        && request.resource.data.defaultB is number;
+      allow update, delete: if isAdmin() || isMarketplaceCreator(marketplaceId);
+    }
+
+    match /marketplaceSecrets/{marketplaceId} {
+      allow read: if isAdmin() || isMarketplaceCreator(marketplaceId);
+      allow create: if hasAllowedEmail()
+        && (isAdmin()
+          || (exists(/databases/$(database)/documents/marketplaces/$(marketplaceId))
+            && get(/databases/$(database)/documents/marketplaces/$(marketplaceId)).data.creatorUserId == request.auth.uid));
+      allow update, delete: if isAdmin() || isMarketplaceCreator(marketplaceId);
+    }
+
+    match /marketplaceMembers/{membershipId} {
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == resource.data.userId)
+        || isMarketplaceCreator(resource.data.marketplaceId);
+
+      allow create: if hasAllowedEmail()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.marketplaceId is string
+        && membershipId == marketplaceMemberDocId(request.resource.data.marketplaceId, request.auth.uid)
+        && request.resource.data.role in ['CREATOR', 'MEMBER']
+        && request.resource.data.balance is number
+        && request.resource.data.lifetimeRep is number
+        && (
+          (request.resource.data.role == 'CREATOR'
+            && exists(/databases/$(database)/documents/marketplaces/$(request.resource.data.marketplaceId))
+            && get(/databases/$(database)/documents/marketplaces/$(request.resource.data.marketplaceId)).data.creatorUserId == request.auth.uid)
+          ||
+          (request.resource.data.role == 'MEMBER'
+            && request.resource.data.joinProofHash is string
+            && exists(/databases/$(database)/documents/marketplaceSecrets/$(request.resource.data.marketplaceId))
+            && request.resource.data.joinProofHash == get(/databases/$(database)/documents/marketplaceSecrets/$(request.resource.data.marketplaceId)).data.passwordHash)
+        );
+
+      allow update: if isAdmin()
+        || isMarketplaceCreator(resource.data.marketplaceId)
+        || (signedIn() && request.auth.uid == resource.data.userId);
+      allow delete: if isAdmin()
+        || isMarketplaceCreator(resource.data.marketplaceId)
+        || (signedIn() && request.auth.uid == resource.data.userId);
+    }
+
+    match /marketplaceWeeklySnapshots/{snapshotId} {
+      allow read: if isAdmin()
+        || (resource.data.marketplaceId is string && (isMarketplaceMember(resource.data.marketplaceId) || isMarketplaceCreator(resource.data.marketplaceId)));
+      allow write: if isAdmin()
+        || (request.resource.data.marketplaceId is string && isMarketplaceCreator(request.resource.data.marketplaceId));
+    }
+
     match /markets/{marketId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow read: if canReadMarketplaceScoped(resource.data.marketplaceId);
+      allow create: if (
+        isGlobalScope(request.resource.data.marketplaceId) && isAdmin()
+      ) || (
+        !isGlobalScope(request.resource.data.marketplaceId)
+        && (isAdmin() || isMarketplaceCreator(request.resource.data.marketplaceId))
+      );
+      allow update, delete: if isAdmin()
+        || (!isGlobalScope(resource.data.marketplaceId) && isMarketplaceCreator(resource.data.marketplaceId));
     }
 
     match /bets/{betId} {
-      allow read: if true;
+      allow read: if canReadMarketplaceScoped(resource.data.marketplaceId);
       allow create: if hasAllowedEmail()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.marketId is string
@@ -51,19 +144,36 @@ service cloud.firestore {
             && request.resource.data.amount < 0
             && request.resource.data.shares < 0)
         )
+        && (
+          (
+            isGlobalScope(get(/databases/$(database)/documents/markets/$(request.resource.data.marketId)).data.marketplaceId)
+            && isGlobalScope(request.resource.data.marketplaceId)
+          )
+          ||
+          (
+            request.resource.data.marketplaceId is string
+            && request.resource.data.marketplaceId == get(/databases/$(database)/documents/markets/$(request.resource.data.marketId)).data.marketplaceId
+            && isMarketplaceMember(request.resource.data.marketplaceId)
+          )
+        )
         && marketIsOpen(request.resource.data.marketId);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     match /comments/{commentId} {
-      allow read: if true;
-      allow write: if hasAllowedEmail();
+      allow read: if canReadMarketplaceScoped(resource.data.marketplaceId);
+      allow write: if hasAllowedEmail()
+        && canReadMarketplaceScoped(request.resource.data.marketplaceId);
     }
 
     match /newsItems/{newsId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read: if canReadMarketplaceScoped(resource.data.marketplaceId);
+      allow write: if isAdmin()
+        || (
+          request.resource.data.marketplaceId is string
+          && isMarketplaceCreator(request.resource.data.marketplaceId)
+        );
     }
 
     match /adminLog/{id} {

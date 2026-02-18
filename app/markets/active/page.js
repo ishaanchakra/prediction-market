@@ -28,10 +28,15 @@ function ActiveMarketsContent() {
     async function fetchMarkets() {
       try {
         setLoadError('');
-        const q = query(collection(db, 'markets'), where('resolution', '==', null));
+        const q = query(
+          collection(db, 'markets'),
+          where('resolution', '==', null),
+          where('marketplaceId', '==', null)
+        );
         const snapshot = await getDocs(q);
         const marketData = snapshot.docs
           .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => !market.marketplaceId)
           .filter((market) => getMarketStatus(market) !== MARKET_STATUS.CANCELLED)
           .sort((a, b) => {
             const aTime = a.createdAt?.toDate?.()?.getTime?.() || 0;
@@ -73,7 +78,7 @@ function ActiveMarketsContent() {
   if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
       {loadError && (
         <div className="mb-4 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
           {loadError}
@@ -122,7 +127,7 @@ function ActiveMarketsContent() {
                       <div
                         className="h-2 rounded-full transition-all duration-300"
                         style={{
-                          width: `${market.probability * 100}%`,
+                          width: `${Math.max(0, Math.min(100, market.probability * 100))}%`,
                           background: market.probability > 0.65
                             ? 'var(--green-bright, #22c55e)'
                             : market.probability < 0.35

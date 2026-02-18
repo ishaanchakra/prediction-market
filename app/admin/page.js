@@ -379,6 +379,7 @@ export default function AdminPage() {
       const snapshot = await getDocs(q);
       const marketData = snapshot.docs
         .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .filter((market) => !market.marketplaceId)
         .filter((market) => {
           const status = getMarketStatus(market);
           return status === MARKET_STATUS.OPEN || status === MARKET_STATUS.LOCKED;
@@ -405,6 +406,7 @@ export default function AdminPage() {
 
       const rows = [...yesSnap.docs, ...noSnap.docs]
         .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .filter((market) => !market.marketplaceId)
         .sort((a, b) => {
           const aTime = a.resolvedAt?.toDate?.()?.getTime?.() || 0;
           const bTime = b.resolvedAt?.toDate?.()?.getTime?.() || 0;
@@ -523,7 +525,8 @@ export default function AdminPage() {
       status: MARKET_STATUS.OPEN,
       resolution: null,
       createdAt: new Date(),
-      category: normalizedCategory
+      category: normalizedCategory,
+      marketplaceId: null
     });
   }
 
@@ -1381,6 +1384,7 @@ export default function AdminPage() {
       const openMarketsSnapshot = await getDocs(query(collection(db, 'markets'), where('resolution', '==', null)));
       const openMarkets = openMarketsSnapshot.docs
         .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .filter((market) => !market.marketplaceId)
         .filter((market) => market.status !== MARKET_STATUS.CANCELLED);
       const openMarketIds = openMarkets.map((market) => market.id);
       const openBets = await fetchOpenMarketBets(openMarketIds);

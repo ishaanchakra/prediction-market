@@ -1,11 +1,24 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function InfoTooltip({ label = 'Info', text }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function handleOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('pointerdown', handleOutside);
+    return () => document.removeEventListener('pointerdown', handleOutside);
+  }, [open]);
 
   return (
     <span
+      ref={ref}
       className="relative inline-flex items-center"
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
@@ -13,14 +26,13 @@ export default function InfoTooltip({ label = 'Info', text }) {
       <button
         type="button"
         aria-label={label}
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-bold text-gray-600 hover:bg-gray-100"
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--border2)] text-[10px] font-bold text-[var(--text-muted)] hover:border-[var(--text-dim)] hover:text-[var(--text-dim)]"
       >
         i
       </button>
       {open && (
-        <span className="absolute left-1/2 top-6 z-20 w-64 -translate-x-1/2 rounded-md border border-gray-200 bg-white p-2 text-xs font-normal text-gray-700 shadow-lg">
+        <span className="absolute left-1/2 top-7 z-20 w-64 -translate-x-1/2 rounded-md border border-[var(--border2)] bg-[var(--surface)] p-2 text-xs font-normal text-[var(--text-dim)] shadow-lg">
           {text}
         </span>
       )}
