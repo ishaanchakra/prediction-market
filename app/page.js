@@ -24,6 +24,11 @@ function asDateLabel(ts) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function isPermissionDenied(error) {
+  return error?.code === 'permission-denied'
+    || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
+}
+
 export default function Home() {
   const router = useRouter();
   const [activeMarkets, setActiveMarkets] = useState([]);
@@ -167,6 +172,7 @@ export default function Home() {
 
   useEffect(() => {
     async function fetchData() {
+      let active = [];
       try {
         setLoadError('');
         const activeQuery = query(
@@ -176,55 +182,85 @@ export default function Home() {
           limit(80)
         );
         const activeSnapshot = await getDocs(activeQuery);
-        const active = activeSnapshot.docs
+        active = activeSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((m) => !m.marketplaceId)
           .filter((m) => getMarketStatus(m) !== MARKET_STATUS.CANCELLED)
           .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
         setActiveMarkets(active);
         setTickerMarkets(active.slice(0, 7));
+      } catch (error) {
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching active markets for homepage:', error);
+        }
+        setLoadError('Unable to load latest market data. Showing cached/partial data.');
+      }
 
+      try {
         const resolvedQuery = query(
           collection(db, 'markets'),
           where('marketplaceId', '==', null),
-          where('resolution', '!=', null),
-          orderBy('resolvedAt', 'desc'),
-          limit(12)
+          limit(80)
         );
         const resolvedSnapshot = await getDocs(resolvedQuery);
         setResolvedMarkets(
           resolvedSnapshot.docs
             .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((market) => !market.marketplaceId)
+            .filter((market) => !market.marketplaceId && market.resolution != null)
+            .sort((a, b) => (b.resolvedAt?.toDate?.()?.getTime?.() || 0) - (a.resolvedAt?.toDate?.()?.getTime?.() || 0))
             .slice(0, 3)
         );
+      } catch (error) {
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching resolved markets for homepage:', error);
+        }
+      }
 
-        const trendEntries = await Promise.all(
-          active.slice(0, 20).map(async (market) => {
-            const betQuery = query(collection(db, 'bets'), where('marketId', '==', market.id), orderBy('timestamp', 'asc'));
-            const betSnapshot = await getDocs(betQuery);
-            const probs = betSnapshot.docs.map((d) => Number(d.data().probability)).filter((v) => Number.isFinite(v));
-            const initial = typeof market.initialProbability === 'number' ? market.initialProbability : (probs[0] ?? market.probability ?? 0.5);
-            const series = probs.length ? [initial, ...probs] : [initial, initial];
-            return [market.id, series];
-          })
-        );
-        setTrendSeriesByMarket(Object.fromEntries(trendEntries));
+      try {
+        if (user) {
+          const trendEntries = await Promise.all(
+            active.slice(0, 20).map(async (market) => {
+              const betQuery = query(collection(db, 'bets'), where('marketId', '==', market.id), orderBy('timestamp', 'asc'));
+              const betSnapshot = await getDocs(betQuery);
+              const probs = betSnapshot.docs.map((d) => Number(d.data().probability)).filter((v) => Number.isFinite(v));
+              const initial = typeof market.initialProbability === 'number' ? market.initialProbability : (probs[0] ?? market.probability ?? 0.5);
+              const series = probs.length ? [initial, ...probs] : [initial, initial];
+              return [market.id, series];
+            })
+          );
+          setTrendSeriesByMarket(Object.fromEntries(trendEntries));
+        } else {
+          setTrendSeriesByMarket({});
+        }
+      } catch (error) {
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching trend data for homepage:', error);
+        }
+      }
 
-        const allBets = await getDocs(
-          query(
-            collection(db, 'bets'),
-            where('marketplaceId', '==', null),
-            orderBy('timestamp', 'desc'),
-            limit(500)
-          )
-        );
-        const totalTraded = allBets.docs.reduce((sum, d) => {
-          const bet = d.data();
-          if (bet.marketplaceId) return sum;
-          return sum + Math.abs(Number(bet.amount || 0));
-        }, 0);
+      let totalTraded = 28440;
+      try {
+        if (user) {
+          const allBets = await getDocs(
+            query(
+              collection(db, 'bets'),
+              where('marketplaceId', '==', null),
+              limit(500)
+            )
+          );
+          totalTraded = allBets.docs.reduce((sum, d) => {
+            const bet = d.data();
+            if (bet.marketplaceId) return sum;
+            return sum + Math.abs(Number(bet.amount || 0));
+          }, 0);
+        }
+      } catch (error) {
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching total traded stats for homepage:', error);
+        }
+      }
 
+      try {
         if (user) {
           const usersQuery = query(collection(db, 'users'), orderBy('weeklyRep', 'desc'), limit(300));
           const usersSnapshot = await getDocs(usersQuery);
@@ -240,8 +276,10 @@ export default function Home() {
           setStats((prev) => ({ ...prev, totalTraded: Math.round(totalTraded || 28440) }));
         }
       } catch (error) {
-        console.error('Error fetching homepage data:', error);
-        setLoadError('Unable to load latest market data. Showing cached/partial data.');
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching leaderboard stats for homepage:', error);
+        }
+        setStats((prev) => ({ ...prev, totalTraded: Math.round(totalTraded || 28440) }));
       } finally {
         setLoading(false);
       }

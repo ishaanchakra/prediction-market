@@ -64,12 +64,14 @@ export default function ClosedMarketsPage() {
             const tradeQuery = query(
               collection(db, 'bets'),
               where('marketId', '==', market.id),
-              orderBy('timestamp', 'asc')
+              where('marketplaceId', '==', null),
+              orderBy('timestamp', 'desc')
             );
             const tradeSnapshot = await getDocs(tradeQuery);
             const tradeProbabilities = tradeSnapshot.docs
               .map((snapshotDoc) => Number(snapshotDoc.data().probability))
-              .filter((value) => Number.isFinite(value));
+              .filter((value) => Number.isFinite(value))
+              .reverse();
 
             const initial = typeof market.initialProbability === 'number'
               ? market.initialProbability

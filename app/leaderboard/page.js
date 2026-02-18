@@ -48,12 +48,23 @@ function chunkArray(items, size) {
   return chunks;
 }
 
+function isPermissionDenied(error) {
+  return error?.code === 'permission-denied'
+    || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
+}
+
 async function fetchOpenMarketBets(openMarketIds) {
   if (openMarketIds.length === 0) return [];
   const chunks = chunkArray(openMarketIds, 10);
   const snapshots = await Promise.all(
     chunks.map((chunk) =>
-      getDocs(query(collection(db, 'bets'), where('marketId', 'in', chunk)))
+      getDocs(
+        query(
+          collection(db, 'bets'),
+          where('marketplaceId', '==', null),
+          where('marketId', 'in', chunk)
+        )
+      )
     )
   );
   return snapshots.flatMap((snapshot) => snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
@@ -142,7 +153,9 @@ export default function LeaderboardPage() {
         const snapshotsSnap = await getDocs(snapshotsQ);
         setWeeklySnapshots(snapshotsSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
       } catch (error) {
-        console.error('Error fetching leaderboard:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching leaderboard:', error);
+        }
       } finally {
         setLoading(false);
       }

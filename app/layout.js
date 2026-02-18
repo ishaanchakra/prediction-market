@@ -2,6 +2,7 @@ import { Syne, Space_Mono, Instrument_Serif } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import Navigation from "./components/Navigation";
+import LaunchGate from "./components/LaunchGate";
 
 const syne = Syne({
   subsets: ["latin"],
@@ -49,7 +50,7 @@ export default function RootLayout({ children }) {
         <Suspense fallback={null}>
           <Navigation />
         </Suspense>
-        {children}
+        <LaunchGate>{children}</LaunchGate>
       </body>
     </html>
   );

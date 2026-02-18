@@ -54,6 +54,18 @@ function safeDate(value) {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
+function isPermissionDenied(error) {
+  return error?.code === 'permission-denied'
+    || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
+}
+
+function toMillis(value) {
+  if (value?.toDate) return value.toDate().getTime();
+  const parsed = new Date(value);
+  const ts = parsed.getTime();
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
 export default function MarketPage() {
   const params = useParams();
   const router = useRouter();
@@ -93,6 +105,8 @@ export default function MarketPage() {
   const { toasts, notifyError, notifySuccess, confirmToast, removeToast, resolveConfirm } = useToastQueue();
 
   const marketStatus = getMarketStatus(market);
+  const marketScopeId = market?.marketplaceId || null;
+  const canReadScopedMarketData = !!market && (!market?.marketplaceId || !!marketplaceMembership);
   const canTrade = currentUser
     && isTradeableMarket(market)
     && (!market?.marketplaceId || !!marketplaceMembership);
@@ -198,7 +212,9 @@ export default function MarketPage() {
         }
         setMarketplaceMembership({ id: memberSnap.id, ...memberSnap.data() });
       } catch (error) {
-        console.error('Error checking marketplace membership:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error checking marketplace membership:', error);
+        }
       }
     }
 
@@ -226,8 +242,10 @@ export default function MarketPage() {
           setMarket(null);
         }
       } catch (error) {
-        console.error('Error fetching market:', error);
-        if (error?.code === 'permission-denied') {
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching market:', error);
+        }
+        if (isPermissionDenied(error)) {
           setMarketLoadError('This market is private to a marketplace. Join the marketplace to view it.');
           router.push('/marketplace/enter');
           return;
@@ -242,12 +260,13 @@ export default function MarketPage() {
 
   useEffect(() => {
     async function fetchUserPosition() {
-      if (!currentUser || !params.id) return;
+      if (!currentUser || !params.id || !market || !canReadScopedMarketData) return;
 
       try {
         const betsQuery = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
+          where('marketplaceId', '==', marketScopeId),
           where('userId', '==', currentUser.uid)
         );
         const snapshot = await getDocs(betsQuery);
@@ -288,12 +307,14 @@ export default function MarketPage() {
           noInvested: clean(noInvested)
         });
       } catch (error) {
-        console.error('Error fetching user position:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching user position:', error);
+        }
       }
     }
 
     fetchUserPosition();
-  }, [currentUser, params.id, market?.probability]);
+  }, [canReadScopedMarketData, currentUser, market, market?.probability, marketScopeId, params.id]);
 
   useEffect(() => {
     if (!market?.outstandingShares) return;
@@ -320,17 +341,18 @@ export default function MarketPage() {
 
   useEffect(() => {
     async function fetchBetHistory() {
-      if (!params.id || !market) return;
+      if (!params.id || !market || !canReadScopedMarketData) return;
 
       try {
         const betsQuery = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
-          orderBy('timestamp', 'asc'),
+          where('marketplaceId', '==', marketScopeId),
+          orderBy('timestamp', 'desc'),
           limit(500)
         );
         const snapshot = await getDocs(betsQuery);
-        const trades = snapshot.docs.map((snapshotDoc) => snapshotDoc.data());
+        const trades = snapshot.docs.map((snapshotDoc) => snapshotDoc.data()).reverse();
         const totalTraded = trades.reduce((sum, trade) => sum + Math.abs(Number(trade.amount || 0)), 0);
         const bettors = new Set(trades.map((trade) => trade.userId)).size;
         setMarketStats({ totalTraded, bettors });
@@ -373,20 +395,23 @@ export default function MarketPage() {
 
         setBetHistory(chartData);
       } catch (error) {
-        console.error('Error fetching bet history:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching bet history:', error);
+        }
       }
     }
 
     fetchBetHistory();
-  }, [params.id, market]);
+  }, [canReadScopedMarketData, market, marketScopeId, params.id]);
 
   useEffect(() => {
     async function fetchRecentTrades() {
-      if (!params.id) return;
+      if (!params.id || !market || !canReadScopedMarketData) return;
       try {
         const q = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
+          where('marketplaceId', '==', marketScopeId),
           orderBy('timestamp', 'desc'),
           limit(15)
         );
@@ -411,18 +436,24 @@ export default function MarketPage() {
 
         setRecentTrades(trades);
       } catch (error) {
-        console.error('Error fetching recent trades:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching recent trades:', error);
+        }
       }
     }
 
     fetchRecentTrades();
-  }, [params.id, market?.probability]);
+  }, [canReadScopedMarketData, market, market?.probability, marketScopeId, params.id]);
 
   useEffect(() => {
     async function fetchSidebarData() {
-      if (!params.id) return;
+      if (!params.id || !market || !canReadScopedMarketData) return;
       try {
-        const betsQ = query(collection(db, 'bets'), where('marketId', '==', params.id));
+        const betsQ = query(
+          collection(db, 'bets'),
+          where('marketId', '==', params.id),
+          where('marketplaceId', '==', marketScopeId)
+        );
         const betsSnap = await getDocs(betsQ);
 
         const positionMap = new Map();
@@ -501,53 +532,74 @@ export default function MarketPage() {
             .slice(0, 3)
         );
       } catch (error) {
-        console.error('Error fetching sidebar data:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error fetching sidebar data:', error);
+        }
       }
     }
     fetchSidebarData();
-  }, [params.id, market?.probability, market?.marketplaceId]);
+  }, [canReadScopedMarketData, market, market?.marketplaceId, market?.probability, marketScopeId, params.id]);
 
   useEffect(() => {
     async function fetchComments() {
-      if (!params.id) return;
+      if (!params.id || !market || !canReadScopedMarketData) {
+        setComments([]);
+        setCommentsLoading(false);
+        return;
+      }
       setCommentsLoading(true);
       try {
         const commentsQuery = query(
           collection(db, 'comments'),
           where('marketId', '==', params.id),
-          orderBy('timestamp', 'desc'),
+          where('marketplaceId', '==', marketScopeId),
           limit(200)
         );
         const snapshot = await getDocs(commentsQuery);
-        setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+        setComments(
+          snapshot.docs
+            .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+            .sort((a, b) => toMillis(b.timestamp || b.createdAt) - toMillis(a.timestamp || a.createdAt))
+        );
       } catch (error) {
-        console.error('Error loading comments:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error loading comments:', error);
+        }
       } finally {
         setCommentsLoading(false);
       }
     }
 
     fetchComments();
-  }, [params.id]);
+  }, [canReadScopedMarketData, market, marketScopeId, params.id]);
 
   useEffect(() => {
     async function fetchNewsItems() {
-      if (!params.id) return;
+      if (!params.id || !market || !canReadScopedMarketData) {
+        setNewsItems([]);
+        return;
+      }
       try {
         const newsQuery = query(
           collection(db, 'newsItems'),
           where('marketId', '==', params.id),
-          orderBy('timestamp', 'desc'),
+          where('marketplaceId', '==', marketScopeId),
           limit(100)
         );
         const snapshot = await getDocs(newsQuery);
-        setNewsItems(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+        setNewsItems(
+          snapshot.docs
+            .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+            .sort((a, b) => toMillis(b.timestamp || b.createdAt) - toMillis(a.timestamp || a.createdAt))
+        );
       } catch (error) {
-        console.error('Error loading news items:', error);
+        if (!isPermissionDenied(error)) {
+          console.error('Error loading news items:', error);
+        }
       }
     }
     fetchNewsItems();
-  }, [params.id]);
+  }, [canReadScopedMarketData, market, marketScopeId, params.id]);
 
   useEffect(() => {
     if (market && betAmount && parseFloat(betAmount) > 0 && currentUser) {
@@ -744,6 +796,7 @@ export default function MarketPage() {
         const userBetsQuery = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
+          where('marketplaceId', '==', latestMarket.marketplaceId || null),
           where('userId', '==', currentUser.uid)
         );
         const userBetsSnapshot = await tx.get(userBetsQuery);
@@ -861,11 +914,15 @@ export default function MarketPage() {
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        orderBy('timestamp', 'desc'),
+        where('marketplaceId', '==', marketScopeId),
         limit(200)
       );
       const snapshot = await getDocs(commentsQuery);
-      setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+      setComments(
+        snapshot.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .sort((a, b) => toMillis(b.timestamp || b.createdAt) - toMillis(a.timestamp || a.createdAt))
+      );
     } catch (error) {
       console.error('Error posting comment:', error);
       notifyError('Unable to post comment right now.');
@@ -902,11 +959,15 @@ export default function MarketPage() {
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        orderBy('timestamp', 'desc'),
+        where('marketplaceId', '==', marketScopeId),
         limit(200)
       );
       const snapshot = await getDocs(commentsQuery);
-      setComments(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+      setComments(
+        snapshot.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .sort((a, b) => toMillis(b.timestamp || b.createdAt) - toMillis(a.timestamp || a.createdAt))
+      );
     } catch (error) {
       console.error('Error posting reply:', error);
       notifyError('Unable to post reply right now.');
@@ -1444,7 +1505,6 @@ export default function MarketPage() {
 
           <div className="mb-5 flex border-b border-[var(--border)]">
             <span className="mb-[-1px] border-b-2 border-[var(--red)] px-4 py-2 font-mono text-[0.65rem] uppercase tracking-[0.06em] text-[var(--text)]">Timeline</span>
-            <span className="mb-[-1px] border-b-2 border-transparent px-4 py-2 font-mono text-[0.65rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Activity</span>
           </div>
 
           {commentsLoading ? (
