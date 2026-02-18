@@ -12,7 +12,9 @@ import {
   getDocs,
   limit,
   deleteDoc,
-  runTransaction
+  runTransaction,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
@@ -101,7 +103,6 @@ export default function MarketPage() {
   const [topBettors, setTopBettors] = useState([]);
   const [relatedMarkets, setRelatedMarkets] = useState([]);
   const [marketplaceMembership, setMarketplaceMembership] = useState(null);
-  const [likedCommentIds, setLikedCommentIds] = useState(new Set());
   const { toasts, notifyError, notifySuccess, confirmToast, removeToast, resolveConfirm } = useToastQueue();
 
   const marketStatus = getMarketStatus(market);
@@ -904,7 +905,7 @@ export default function MarketPage() {
         text: newComment.trim(),
         createdAt: new Date(),
         timestamp: new Date(),
-        likes: 0,
+        likedBy: [],
         replyTo: null,
         userSide
       });
@@ -948,7 +949,7 @@ export default function MarketPage() {
         text: replyText.trim(),
         createdAt: new Date(),
         timestamp: new Date(),
-        likes: 0,
+        likedBy: [],
         replyTo: parentId,
         userSide
       });
@@ -1015,12 +1016,21 @@ export default function MarketPage() {
   }
 
   async function handleLikeComment(comment) {
-    if (likedCommentIds.has(comment.id)) return;
+    if (!currentUser) { notifyError('Sign in to like comments.'); return; }
+    const uid = currentUser.uid;
+    const isLiked = Array.isArray(comment.likedBy) && comment.likedBy.includes(uid);
     try {
-      const nextLikes = Number(comment.likes || 0) + 1;
-      await updateDoc(doc(db, 'comments', comment.id), { likes: nextLikes });
-      setComments((prev) => prev.map((item) => (item.id === comment.id ? { ...item, likes: nextLikes } : item)));
-      setLikedCommentIds((prev) => new Set(prev).add(comment.id));
+      if (isLiked) {
+        await updateDoc(doc(db, 'comments', comment.id), { likedBy: arrayRemove(uid) });
+        setComments((prev) => prev.map((item) =>
+          item.id === comment.id ? { ...item, likedBy: (item.likedBy || []).filter((id) => id !== uid) } : item
+        ));
+      } else {
+        await updateDoc(doc(db, 'comments', comment.id), { likedBy: arrayUnion(uid) });
+        setComments((prev) => prev.map((item) =>
+          item.id === comment.id ? { ...item, likedBy: [...(item.likedBy || []), uid] } : item
+        ));
+      }
     } catch (error) {
       console.error('Error liking comment:', error);
       notifyError('Unable to like comment.');
@@ -1183,8 +1193,8 @@ export default function MarketPage() {
           )}
 
           <div className="mt-3 flex items-center gap-3">
-            <button onClick={() => handleLikeComment(comment)} className={`font-mono text-[0.58rem] ${likedCommentIds.has(comment.id) ? 'text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'}`}>
-              ♥ {Number(comment.likes || 0)}
+            <button onClick={() => handleLikeComment(comment)} className={`font-mono text-[0.58rem] ${Array.isArray(comment.likedBy) && comment.likedBy.includes(currentUser?.uid) ? 'text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'}`}>
+              ♥ {Array.isArray(comment.likedBy) ? comment.likedBy.length : Number(comment.likes || 0)}
             </button>
             <button
               onClick={() => {

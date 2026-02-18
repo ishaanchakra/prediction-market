@@ -5,12 +5,9 @@ import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { usePathname, useRouter } from 'next/navigation';
 import { collection, query, where, doc, onSnapshot, orderBy, limit, getDoc } from 'firebase/firestore';
-import { CATEGORIES } from '@/utils/categorize';
 import { toMarketplaceMemberId } from '@/utils/marketplace';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
-const MARKET_CATEGORY_LINKS = CATEGORIES;
-const MARKET_CATEGORY_IDS = MARKET_CATEGORY_LINKS.map((category) => category.id);
 
 function initialsFor(user) {
   if (!user?.email) return 'PC';
@@ -28,7 +25,6 @@ export default function Navigation() {
   const [mobileMenuPath, setMobileMenuPath] = useState('');
   const [desktopMarketsOpen, setDesktopMarketsOpen] = useState(false);
   const [desktopMenuPath, setDesktopMenuPath] = useState('');
-  const [selectedMarketCategoryId, setSelectedMarketCategoryId] = useState('all');
   const [joinedMarketplaces, setJoinedMarketplaces] = useState([]);
   const [activeMarketplace, setActiveMarketplace] = useState(null);
   const [activeMarketplaceBalance, setActiveMarketplaceBalance] = useState(null);
@@ -45,9 +41,6 @@ export default function Navigation() {
   const inMarketplaceContext = !!routeMarketplaceId;
 
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
-  const activeCategoryId = pathname === '/markets/active'
-    ? (MARKET_CATEGORY_IDS.includes(selectedMarketCategoryId) ? selectedMarketCategoryId : 'all')
-    : null;
   const displayBalance = inMarketplaceContext
     ? Number(activeMarketplaceBalance ?? balance)
     : Number(balance);
@@ -247,34 +240,19 @@ export default function Navigation() {
             {desktopMenuVisible && (
               <div className="absolute left-0 top-full pt-1">
                 <div className="min-w-[240px] overflow-hidden rounded border border-[var(--border2)] bg-[var(--surface)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-                  <div className="border-b border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                    Global
-                  </div>
-                  {MARKET_CATEGORY_LINKS.map((category) => {
-                    const href = category.id === 'all'
-                      ? '/markets/active'
-                      : `/markets/active?category=${category.id}`;
-                    const isActiveCategory = activeCategoryId === category.id;
-                    return (
-                      <Link
-                        key={category.id}
-                        href={href}
-                        onClick={() => {
-                          setSelectedMarketCategoryId(category.id);
-                          setDesktopMarketsOpen(false);
-                        }}
-                        className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors ${
-                          isActiveCategory
-                            ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
-                            : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
-                        }`}
-                      >
-                        <span className="mr-2">{category.emoji}</span>
-                        {category.label}
-                        {isActiveCategory && <span className="ml-auto text-[var(--red)]">✓</span>}
-                      </Link>
-                    );
-                  })}
+                  <Link
+                    href="/markets/active"
+                    onClick={() => setDesktopMarketsOpen(false)}
+                    className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors ${
+                      pathname === '/markets/active'
+                        ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
+                        : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    <span className="mr-2">📊</span>
+                    Global Markets
+                    {pathname === '/markets/active' && <span className="ml-auto text-[var(--red)]">✓</span>}
+                  </Link>
 
                   <div className="border-b border-t border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
                     Joined Marketplaces
@@ -412,34 +390,13 @@ export default function Navigation() {
           style={{ top: 'calc(56px + var(--safe-top))', paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
         >
           <div className="flex flex-col px-4 py-2">
-            <div className="border-b border-[var(--border)] py-1">
-              <div className="px-1 pb-1 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                Markets
-              </div>
-              {MARKET_CATEGORY_LINKS.map((category) => {
-                const href = category.id === 'all'
-                  ? '/markets/active'
-                  : `/markets/active?category=${category.id}`;
-                const isActiveCategory = activeCategoryId === category.id;
-                return (
-                  <Link
-                    key={category.id}
-                    href={href}
-                    onClick={() => {
-                      setSelectedMarketCategoryId(category.id);
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`flex min-h-[48px] items-center px-1 font-mono text-[0.68rem] uppercase tracking-[0.08em] ${
-                      isActiveCategory ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'
-                    }`}
-                  >
-                    <span className="mr-2">{category.emoji}</span>
-                    {category.label}
-                    {isActiveCategory && <span className="ml-auto text-[var(--red)]">✓</span>}
-                  </Link>
-                );
-              })}
-            </div>
+            <Link
+              href="/markets/active"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
+            >
+              📊 Global Markets
+            </Link>
             <Link onClick={() => setMobileMenuOpen(false)} href="/leaderboard" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
               Leaderboard
             </Link>

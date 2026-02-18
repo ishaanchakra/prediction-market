@@ -3,25 +3,51 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 import { CATEGORIES } from '@/utils/categorize';
 
+const SORT_OPTIONS = [
+  { id: 'newest',    label: 'Newest' },
+  { id: 'active',    label: 'Most Active' },
+  { id: 'prob-high', label: 'Prob: High → Low' },
+  { id: 'prob-low',  label: 'Prob: Low → High' },
+  { id: 'toss-up',   label: 'Toss-Up' },
+];
+
 function ActiveMarketsContent() {
   const [markets, setMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
+  const [betCountByMarket, setBetCountByMarket] = useState({});
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const searchParams = useSearchParams();
-  const requestedCategory = (searchParams.get('category') || 'all').toLowerCase();
-  const activeCategory = CATEGORIES.some((c) => c.id === requestedCategory) ? requestedCategory : 'all';
-  const filteredMarkets = useMemo(
-    () => (activeCategory === 'all'
+
+  const sortedFilteredMarkets = useMemo(() => {
+    let result = activeCategory === 'all'
       ? markets
-      : markets.filter((market) => (market.category || 'wildcard') === activeCategory)),
-    [activeCategory, markets]
-  );
+      : markets.filter((m) => (m.category || 'wildcard') === activeCategory);
+
+    return [...result].sort((a, b) => {
+      switch (sortBy) {
+        case 'active':
+          return (betCountByMarket[b.id] || 0) - (betCountByMarket[a.id] || 0);
+        case 'prob-high':
+          return (b.probability || 0) - (a.probability || 0);
+        case 'prob-low':
+          return (a.probability || 0) - (b.probability || 0);
+        case 'toss-up':
+          return Math.abs((a.probability || 0.5) - 0.5) - Math.abs((b.probability || 0.5) - 0.5);
+        default: { // 'newest'
+          const aTime = a.createdAt?.toDate?.()?.getTime?.() || 0;
+          const bTime = b.createdAt?.toDate?.()?.getTime?.() || 0;
+          return bTime - aTime;
+        }
+      }
+    });
+  }, [activeCategory, sortBy, markets, betCountByMarket]);
+
   const selectedLabel = CATEGORIES.find((c) => c.id === activeCategory)?.label || 'All Markets';
 
   useEffect(() => {
@@ -54,6 +80,7 @@ function ActiveMarketsContent() {
               orderBy('timestamp', 'desc')
             );
             const tradeSnapshot = await getDocs(tradeQuery);
+            const count = tradeSnapshot.docs.length;
             const tradeProbabilities = tradeSnapshot.docs
               .map((snapshotDoc) => Number(snapshotDoc.data().probability))
               .filter((value) => Number.isFinite(value))
@@ -63,10 +90,11 @@ function ActiveMarketsContent() {
               ? market.initialProbability
               : (tradeProbabilities[0] ?? market.probability ?? 0.5);
             const series = tradeProbabilities.length > 0 ? [initial, ...tradeProbabilities] : [initial, initial];
-            return [market.id, series];
+            return [market.id, series, count];
           })
         );
-        setTrendSeriesByMarket(Object.fromEntries(trendEntries));
+        setTrendSeriesByMarket(Object.fromEntries(trendEntries.map(([id, series]) => [id, series])));
+        setBetCountByMarket(Object.fromEntries(trendEntries.map(([id, , count]) => [id, count])));
       } catch (error) {
         console.error('Error fetching markets:', error);
         setLoadError('Unable to load active markets right now.');
@@ -87,22 +115,103 @@ function ActiveMarketsContent() {
         </div>
       )}
       <h1 className="text-3xl font-bold mb-2 text-white">Active Markets</h1>
-      <p className="text-white opacity-90 mb-8">
-        {filteredMarkets.length} markets currently open or locked
+      <p className="text-white opacity-90 mb-6">
+        {sortedFilteredMarkets.length} markets currently open or locked
         {activeCategory !== 'all' ? ` · ${selectedLabel}` : ''}
       </p>
+
+      {/* Category filter — desktop pills */}
+      <div className="hidden md:flex items-center gap-2 mb-4 flex-wrap">
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => setActiveCategory(cat.id)}
+            className={`
+              px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
+              border transition-colors
+              ${activeCategory === cat.id
+                ? 'bg-[var(--red)] border-[var(--red)] text-white'
+                : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
+            `}
+          >
+            {cat.emoji} {cat.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sort controls — desktop pills */}
+      <div className="hidden md:flex items-center gap-2 mb-6 flex-wrap">
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">Sort:</span>
+        {SORT_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            onClick={() => setSortBy(opt.id)}
+            className={`
+              px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
+              border transition-colors
+              ${sortBy === opt.id
+                ? 'bg-[var(--red)] border-[var(--red)] text-white'
+                : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
+            `}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Category filter — mobile select */}
+      <div className="md:hidden mb-3">
+        <select
+          value={activeCategory}
+          onChange={(e) => setActiveCategory(e.target.value)}
+          className="
+            w-full bg-[var(--surface)] border border-[var(--border2)]
+            text-[var(--text)] font-mono text-[0.75rem]
+            px-4 py-3 rounded-[4px]
+            appearance-none
+          "
+          style={{ fontSize: '16px' }}
+        >
+          {CATEGORIES.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.emoji} {cat.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Sort controls — mobile select */}
+      <div className="md:hidden mb-6">
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="
+            w-full bg-[var(--surface)] border border-[var(--border2)]
+            text-[var(--text)] font-mono text-[0.75rem]
+            px-4 py-3 rounded-[4px]
+            appearance-none
+          "
+          style={{ fontSize: '16px' }}
+        >
+          {SORT_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {markets.length === 0 ? (
         <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
           <p className="text-[var(--text-muted)]">No active markets right now.</p>
         </div>
-      ) : filteredMarkets.length === 0 ? (
+      ) : sortedFilteredMarkets.length === 0 ? (
         <div className="text-center py-12 bg-[var(--surface)] border-2 border-[var(--border)] rounded-lg">
           <p className="text-[var(--text-muted)]">No {selectedLabel} markets right now.</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredMarkets.map((market) => {
+          {sortedFilteredMarkets.map((market) => {
             const status = getMarketStatus(market);
             return (
               <Link key={market.id} href={`/market/${market.id}`} className="block group">

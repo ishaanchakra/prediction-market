@@ -79,7 +79,9 @@ export default function LaunchGate({ children }) {
     return (
       <div
         style={{
-          minHeight: '100vh',
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
           background: 'var(--bg, #111111)',
           display: 'flex',
           alignItems: 'center',
@@ -134,7 +136,9 @@ function LaunchGateUI({ password, setPassword, error, timeRemaining, onSubmit, d
   return (
     <div
       style={{
-        minHeight: '100vh',
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
         background: 'var(--bg, #111111)',
         color: 'var(--text, #F0EDE8)',
         display: 'flex',
@@ -143,7 +147,6 @@ function LaunchGateUI({ password, setPassword, error, timeRemaining, onSubmit, d
         justifyContent: 'center',
         padding: '2rem',
         fontFamily: 'var(--sans, sans-serif)',
-        position: 'relative',
         overflow: 'hidden'
       }}
     >
@@ -180,18 +183,6 @@ function LaunchGateUI({ password, setPassword, error, timeRemaining, onSubmit, d
           Predict Cornell
         </h1>
 
-        <p
-          style={{
-            fontFamily: 'var(--mono, monospace)',
-            fontSize: '0.65rem',
-            textTransform: 'uppercase',
-            letterSpacing: '0.12em',
-            color: 'var(--text-muted, #4a4845)',
-            marginBottom: '3rem'
-          }}
-        >
-          Campus Prediction Markets
-        </p>
 
         {timeRemaining && (
           <div

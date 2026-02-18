@@ -1,0 +1,1272 @@
+[
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "#5 Quinnipiac University",
+    "date": "2026-02-20",
+    "dateText": "Fri, Feb 20, 2026",
+    "homeAway": "away",
+    "location": "Hamden, Conn. Hamden, Conn.",
+    "isTournament": false
+  },
+  {
+    "sport": "wrestling",
+    "sportName": "Wrestling",
+    "opponent": "NC State University",
+    "date": "2026-02-20",
+    "dateText": "Fri, Feb 20, 2026",
+    "homeAway": "away",
+    "location": "Raleigh, NC Raleigh, NC",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Northwestern University (DH)",
+    "date": "2026-02-20",
+    "dateText": "Fri, Feb 20, 2026",
+    "homeAway": "home",
+    "location": "Spartanburg, S.C. Spartanburg, S.C.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Boston College (DH)",
+    "date": "2026-02-20",
+    "dateText": "Fri, Feb 20, 2026",
+    "homeAway": "home",
+    "location": "Spartanburg, S.C. Spartanburg, S.C.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "UIC",
+    "date": "2026-02-20",
+    "dateText": "Fri, Feb 20, 2026",
+    "homeAway": "home",
+    "location": "Chattanooga, TN Chattanooga, TN",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "University of Tennessee at Chattanooga",
+    "date": "2026-02-20",
+    "dateText": "Fri, Feb 20, 2026",
+    "homeAway": "away",
+    "location": "Chattanooga, TN Chattanooga, TN",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-basketball",
+    "sportName": "Men's Basketball",
+    "opponent": "Harvard University",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Newman Arena at Bartels Hall Ithaca, N.Y. Newman Arena at Bartels Hall",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-basketball",
+    "sportName": "Women's Basketball",
+    "opponent": "Harvard University",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "away",
+    "location": "Cambridge, MA Cambridge, MA",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "Princeton University",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "away",
+    "location": "Princeton, N.J. Princeton, N.J.",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "#17/#16 University of Denver",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "away",
+    "location": "Denver, CO Denver, CO",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Northwestern University",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "home",
+    "location": "Spartanburg, S.C. Spartanburg, S.C.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "UIC",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "home",
+    "location": "Chattanooga, TN Chattanooga, TN",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "University of Tennessee at Chattanooga",
+    "date": "2026-02-21",
+    "dateText": "Sat, Feb 21, 2026",
+    "homeAway": "away",
+    "location": "Chattanooga, TN Chattanooga, TN",
+    "isTournament": false
+  },
+  {
+    "sport": "wrestling",
+    "sportName": "Wrestling",
+    "opponent": "Duke University",
+    "date": "2026-02-22",
+    "dateText": "Sun, Feb 22, 2026",
+    "homeAway": "away",
+    "location": "Durham, NC Durham, NC",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "James Madison University",
+    "date": "2026-02-22",
+    "dateText": "Sun, Feb 22, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Boston College",
+    "date": "2026-02-22",
+    "dateText": "Sun, Feb 22, 2026",
+    "homeAway": "home",
+    "location": "Spartanburg, S.C. Spartanburg, S.C.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "UIC",
+    "date": "2026-02-22",
+    "dateText": "Sun, Feb 22, 2026",
+    "homeAway": "home",
+    "location": "Chattanooga, TN Chattanooga, TN",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Hobart College",
+    "date": "2026-02-24",
+    "dateText": "Tue, Feb 24, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, NY Schoellkopf Field Ithaca, NY Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-basketball",
+    "sportName": "Men's Basketball",
+    "opponent": "Yale University",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Newman Arena at Bartels Hall Ithaca, N.Y. Newman Arena at Bartels Hall",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-basketball",
+    "sportName": "Women's Basketball",
+    "opponent": "Brown University",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "away",
+    "location": "Providence, RI Providence, RI",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "St. Lawrence University",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Lynah Rink Ithaca, N.Y. Lynah Rink",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-ice-hockey",
+    "sportName": "Women's Ice Hockey",
+    "opponent": "ECAC Hockey Quarterfinals",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Lynah Rink Ithaca, N.Y. Lynah Rink",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "University of Richmond",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "away",
+    "location": "Richmond, Va. Richmond, Va.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Merrimack College",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "home",
+    "location": "Towson, MD Towson, MD",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Towson University",
+    "date": "2026-02-27",
+    "dateText": "Fri, Feb 27, 2026",
+    "homeAway": "away",
+    "location": "Towson, MD Towson, MD",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-basketball",
+    "sportName": "Men's Basketball",
+    "opponent": "Brown University",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Newman Arena at Bartels Hall Ithaca, N.Y. Newman Arena at Bartels Hall",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-basketball",
+    "sportName": "Women's Basketball",
+    "opponent": "Yale University",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "away",
+    "location": "New Haven, CT New Haven, CT",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "Clarkson University",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Lynah Rink Ithaca, N.Y. Lynah Rink",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-ice-hockey",
+    "sportName": "Women's Ice Hockey",
+    "opponent": "ECAC Hockey Quarterfinals",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Lynah Rink Ithaca, N.Y. Lynah Rink",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "University of Richmond",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, NY Schoellkopf Field Ithaca, NY Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Penn State University",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "University of Richmond",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "away",
+    "location": "Richmond, Va. Richmond, Va.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Merrimack College",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Towson, MD Towson, MD",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Morgan State University",
+    "date": "2026-02-28",
+    "dateText": "Sat, Feb 28, 2026",
+    "homeAway": "home",
+    "location": "Towson, MD Towson, MD",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-ice-hockey",
+    "sportName": "Women's Ice Hockey",
+    "opponent": "ECAC Hockey Quarterfinals",
+    "date": "2026-03-01",
+    "dateText": "Sun, Mar 1, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Lynah Rink Ithaca, N.Y. Lynah Rink",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "University of Richmond",
+    "date": "2026-03-01",
+    "dateText": "Sun, Mar 1, 2026",
+    "homeAway": "away",
+    "location": "Richmond, Va. Richmond, Va.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Morgan State University",
+    "date": "2026-03-01",
+    "dateText": "Sun, Mar 1, 2026",
+    "homeAway": "home",
+    "location": "Towson, MD Towson, MD",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Binghamton University",
+    "date": "2026-03-03",
+    "dateText": "Tue, Mar 3, 2026",
+    "homeAway": "away",
+    "location": "Vestal, NY Vestal, NY",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "ECAC Hockey Opening Round",
+    "date": "2026-03-06",
+    "dateText": "Fri, Mar 6, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Lynah Rink Ithaca, N.Y. Lynah Rink",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-basketball",
+    "sportName": "Men's Basketball",
+    "opponent": "Dartmouth College",
+    "date": "2026-03-07",
+    "dateText": "Sat, Mar 7, 2026",
+    "homeAway": "away",
+    "location": "Hanover, NH Hanover, NH",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-basketball",
+    "sportName": "Women's Basketball",
+    "opponent": "Dartmouth College",
+    "date": "2026-03-07",
+    "dateText": "Sat, Mar 7, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Newman Arena at Bartels Hall Ithaca, N.Y. Newman Arena at Bartels Hall",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Penn State University",
+    "date": "2026-03-07",
+    "dateText": "Sat, Mar 7, 2026",
+    "homeAway": "away",
+    "location": "University Park, PA University Park, PA",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Brown University",
+    "date": "2026-03-07",
+    "dateText": "Sat, Mar 7, 2026",
+    "homeAway": "away",
+    "location": "Providence, RI Providence, RI",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Fordham University (DH)",
+    "date": "2026-03-07",
+    "dateText": "Sat, Mar 7, 2026",
+    "homeAway": "away",
+    "location": "Bronx, N.Y. Bronx, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Fordham University (DH)",
+    "date": "2026-03-07",
+    "dateText": "Sat, Mar 7, 2026",
+    "homeAway": "away",
+    "location": "Bronx, N.Y. Bronx, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "wrestling",
+    "sportName": "Wrestling",
+    "opponent": "Ivy League Tournament",
+    "date": "2026-03-08",
+    "dateText": "Sun, Mar 8, 2026",
+    "homeAway": "home",
+    "location": "New York, NY New York, NY",
+    "isTournament": true
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Fordham University",
+    "date": "2026-03-08",
+    "dateText": "Sun, Mar 8, 2026",
+    "homeAway": "away",
+    "location": "Bronx, N.Y. Bronx, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "St. Bonaventure University",
+    "date": "2026-03-11",
+    "dateText": "Wed, Mar 11, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-basketball",
+    "sportName": "Women's Basketball",
+    "opponent": "Ivy League Tournament",
+    "date": "2026-03-13",
+    "dateText": "Fri, Mar 13, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Newman Arena at Bartels Hall Ithaca, N.Y. Newman Arena at Bartels Hall",
+    "isTournament": true
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "ECAC Hockey Quarterfinals",
+    "date": "2026-03-13",
+    "dateText": "Fri, Mar 13, 2026",
+    "homeAway": "home",
+    "location": "At Higher Seed At Higher Seed",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-basketball",
+    "sportName": "Men's Basketball",
+    "opponent": "Ivy League Tournament",
+    "date": "2026-03-14",
+    "dateText": "Sat, Mar 14, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Newman Arena at Bartels Hall Ithaca, N.Y. Newman Arena at Bartels Hall",
+    "isTournament": true
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Brown University",
+    "date": "2026-03-14",
+    "dateText": "Sat, Mar 14, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, NY Schoellkopf Field Ithaca, NY Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Virginia Military Institute (DH)",
+    "date": "2026-03-14",
+    "dateText": "Sat, Mar 14, 2026",
+    "homeAway": "away",
+    "location": "Lexington, Va. Lexington, Va.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Virginia Military Institute (DH)",
+    "date": "2026-03-14",
+    "dateText": "Sat, Mar 14, 2026",
+    "homeAway": "away",
+    "location": "Lexington, Va. Lexington, Va.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Yale University (DH)",
+    "date": "2026-03-14",
+    "dateText": "Sat, Mar 14, 2026",
+    "homeAway": "away",
+    "location": "New Haven, CT New Haven, CT",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Virginia Military Institute",
+    "date": "2026-03-15",
+    "dateText": "Sun, Mar 15, 2026",
+    "homeAway": "away",
+    "location": "Lexington, Va. Lexington, Va.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Yale University",
+    "date": "2026-03-15",
+    "dateText": "Sun, Mar 15, 2026",
+    "homeAway": "away",
+    "location": "New Haven, CT New Haven, CT",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Boston University",
+    "date": "2026-03-17",
+    "dateText": "Tue, Mar 17, 2026",
+    "homeAway": "away",
+    "location": "Boston, MA Boston, MA",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Bucknell University",
+    "date": "2026-03-18",
+    "dateText": "Wed, Mar 18, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "wrestling",
+    "sportName": "Wrestling",
+    "opponent": "NCAA Wrestling Championships",
+    "date": "2026-03-19",
+    "dateText": "Thu, Mar 19, 2026",
+    "homeAway": "home",
+    "location": "Cleveland, OH Cleveland, OH",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "ECAC Hockey Semifinals",
+    "date": "2026-03-20",
+    "dateText": "Fri, Mar 20, 2026",
+    "homeAway": "home",
+    "location": "Lake Placid, N.Y. Lake Placid, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "ECAC Hockey Championship Game",
+    "date": "2026-03-21",
+    "dateText": "Sat, Mar 21, 2026",
+    "homeAway": "home",
+    "location": "Lake Placid, N.Y. Lake Placid, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Princeton University",
+    "date": "2026-03-21",
+    "dateText": "Sat, Mar 21, 2026",
+    "homeAway": "away",
+    "location": "Princeton, NJ Princeton, NJ",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Columbia University",
+    "date": "2026-03-21",
+    "dateText": "Sat, Mar 21, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Princeton University (DH)",
+    "date": "2026-03-21",
+    "dateText": "Sat, Mar 21, 2026",
+    "homeAway": "away",
+    "location": "Princeton, N.J. Princeton, N.J.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Princeton University (DH)",
+    "date": "2026-03-21",
+    "dateText": "Sat, Mar 21, 2026",
+    "homeAway": "away",
+    "location": "Princeton, N.J. Princeton, N.J.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Princeton University (DH)",
+    "date": "2026-03-21",
+    "dateText": "Sat, Mar 21, 2026",
+    "homeAway": "away",
+    "location": "Princeton, NJ Princeton, NJ",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Princeton University",
+    "date": "2026-03-22",
+    "dateText": "Sun, Mar 22, 2026",
+    "homeAway": "away",
+    "location": "Princeton, N.J. Princeton, N.J.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Princeton University",
+    "date": "2026-03-22",
+    "dateText": "Sun, Mar 22, 2026",
+    "homeAway": "away",
+    "location": "Princeton, NJ Princeton, NJ",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "Regional Semifinals",
+    "date": "2026-03-26",
+    "dateText": "Thu, Mar 26, 2026",
+    "homeAway": "home",
+    "location": "Regional Sites Regional Sites",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "Regional Championship",
+    "date": "2026-03-28",
+    "dateText": "Sat, Mar 28, 2026",
+    "homeAway": "home",
+    "location": "Regional Sites Regional Sites",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Yale University",
+    "date": "2026-03-28",
+    "dateText": "Sat, Mar 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, NY Schoellkopf Field Ithaca, NY Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Dartmouth College",
+    "date": "2026-03-28",
+    "dateText": "Sat, Mar 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Harvard University (DH)",
+    "date": "2026-03-28",
+    "dateText": "Sat, Mar 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Harvard University (DH)",
+    "date": "2026-03-28",
+    "dateText": "Sat, Mar 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "University of Pennsylvania (DH)",
+    "date": "2026-03-28",
+    "dateText": "Sat, Mar 28, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, PA Philadelphia, PA",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Harvard University",
+    "date": "2026-03-29",
+    "dateText": "Sun, Mar 29, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "University of Pennsylvania",
+    "date": "2026-03-29",
+    "dateText": "Sun, Mar 29, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, PA Philadelphia, PA",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Drexel University (DH)",
+    "date": "2026-03-30",
+    "dateText": "Mon, Mar 30, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, PA Philadelphia, PA",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Syracuse University",
+    "date": "2026-03-31",
+    "dateText": "Tue, Mar 31, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Army West Point",
+    "date": "2026-03-31",
+    "dateText": "Tue, Mar 31, 2026",
+    "homeAway": "away",
+    "location": "West Point, N.Y. West Point, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Le Moyne College (DH)",
+    "date": "2026-04-01",
+    "dateText": "Wed, Apr 1, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "University of Pennsylvania",
+    "date": "2026-04-04",
+    "dateText": "Sat, Apr 4, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, PA Philadelphia, PA",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Princeton University",
+    "date": "2026-04-04",
+    "dateText": "Sat, Apr 4, 2026",
+    "homeAway": "away",
+    "location": "Princeton, NJ Princeton, NJ",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Dartmouth College (DH)",
+    "date": "2026-04-04",
+    "dateText": "Sat, Apr 4, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Dartmouth College (DH)",
+    "date": "2026-04-04",
+    "dateText": "Sat, Apr 4, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Harvard University (DH)",
+    "date": "2026-04-04",
+    "dateText": "Sat, Apr 4, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Dartmouth College",
+    "date": "2026-04-05",
+    "dateText": "Sun, Apr 5, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Harvard University",
+    "date": "2026-04-05",
+    "dateText": "Sun, Apr 5, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Colgate University (DH)",
+    "date": "2026-04-08",
+    "dateText": "Wed, Apr 8, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "National Semifinals",
+    "date": "2026-04-09",
+    "dateText": "Thu, Apr 9, 2026",
+    "homeAway": "home",
+    "location": "Las Vegas, Nev. Las Vegas, Nev.",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-ice-hockey",
+    "sportName": "Men's Ice Hockey",
+    "opponent": "National Championship",
+    "date": "2026-04-11",
+    "dateText": "Sat, Apr 11, 2026",
+    "homeAway": "home",
+    "location": "Las Vegas, Nev. Las Vegas, Nev.",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Duke University",
+    "date": "2026-04-11",
+    "dateText": "Sat, Apr 11, 2026",
+    "homeAway": "home",
+    "location": "Long Island, NY Long Island, NY",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Harvard University",
+    "date": "2026-04-11",
+    "dateText": "Sat, Apr 11, 2026",
+    "homeAway": "away",
+    "location": "Cambridge, MA Cambridge, MA",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "University of Pennsylvania (DH)",
+    "date": "2026-04-11",
+    "dateText": "Sat, Apr 11, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, Pa. Philadelphia, Pa.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "University of Pennsylvania (DH)",
+    "date": "2026-04-11",
+    "dateText": "Sat, Apr 11, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, Pa. Philadelphia, Pa.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Dartmouth College (DH)",
+    "date": "2026-04-11",
+    "dateText": "Sat, Apr 11, 2026",
+    "homeAway": "away",
+    "location": "Hanover, NH Hanover, NH",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "University of Pennsylvania",
+    "date": "2026-04-12",
+    "dateText": "Sun, Apr 12, 2026",
+    "homeAway": "away",
+    "location": "Philadelphia, Pa. Philadelphia, Pa.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Dartmouth College",
+    "date": "2026-04-12",
+    "dateText": "Sun, Apr 12, 2026",
+    "homeAway": "away",
+    "location": "Hanover, NH Hanover, NH",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "High Point University",
+    "date": "2026-04-13",
+    "dateText": "Mon, Apr 13, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, NY Schoellkopf Field Ithaca, NY Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Binghamton University",
+    "date": "2026-04-14",
+    "dateText": "Tue, Apr 14, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Dartmouth College",
+    "date": "2026-04-18",
+    "dateText": "Sat, Apr 18, 2026",
+    "homeAway": "away",
+    "location": "Hanover, NH Hanover, NH",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "University of Pennsylvania",
+    "date": "2026-04-18",
+    "dateText": "Sat, Apr 18, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Yale University (DH)",
+    "date": "2026-04-18",
+    "dateText": "Sat, Apr 18, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Yale University (DH)",
+    "date": "2026-04-18",
+    "dateText": "Sat, Apr 18, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Columbia University (DH)",
+    "date": "2026-04-18",
+    "dateText": "Sat, Apr 18, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Yale University",
+    "date": "2026-04-19",
+    "dateText": "Sun, Apr 19, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Columbia University",
+    "date": "2026-04-19",
+    "dateText": "Sun, Apr 19, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Binghamton University",
+    "date": "2026-04-21",
+    "dateText": "Tue, Apr 21, 2026",
+    "homeAway": "away",
+    "location": "Vestal, N.Y. Vestal, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Binghamton University",
+    "date": "2026-04-21",
+    "dateText": "Tue, Apr 21, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "mens-lacrosse",
+    "sportName": "Men's Lacrosse",
+    "opponent": "Harvard University",
+    "date": "2026-04-25",
+    "dateText": "Sat, Apr 25, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, NY Schoellkopf Field Ithaca, NY Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Yale University",
+    "date": "2026-04-25",
+    "dateText": "Sat, Apr 25, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Schoellkopf Field Ithaca, N.Y. Schoellkopf Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Brown University (DH)",
+    "date": "2026-04-25",
+    "dateText": "Sat, Apr 25, 2026",
+    "homeAway": "away",
+    "location": "Providence, R.I. Providence, R.I.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Brown University (DH)",
+    "date": "2026-04-25",
+    "dateText": "Sat, Apr 25, 2026",
+    "homeAway": "away",
+    "location": "Providence, R.I. Providence, R.I.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Brown University (DH)",
+    "date": "2026-04-25",
+    "dateText": "Sat, Apr 25, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Brown University",
+    "date": "2026-04-26",
+    "dateText": "Sun, Apr 26, 2026",
+    "homeAway": "away",
+    "location": "Providence, R.I. Providence, R.I.",
+    "isTournament": false
+  },
+  {
+    "sport": "softball",
+    "sportName": "Softball",
+    "opponent": "Brown University",
+    "date": "2026-04-26",
+    "dateText": "Sun, Apr 26, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Niemand-Robison Softball Field Ithaca, N.Y. Niemand-Robison Softball Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Bucknell University",
+    "date": "2026-04-28",
+    "dateText": "Tue, Apr 28, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "womens-lacrosse",
+    "sportName": "Women's Lacrosse",
+    "opponent": "Ivy League Tournament",
+    "date": "2026-05-01",
+    "dateText": "Fri, May 1, 2026",
+    "homeAway": "home",
+    "location": "TBA TBA",
+    "isTournament": true
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Columbia University (DH)",
+    "date": "2026-05-02",
+    "dateText": "Sat, May 2, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Columbia University (DH)",
+    "date": "2026-05-02",
+    "dateText": "Sat, May 2, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Columbia University",
+    "date": "2026-05-03",
+    "dateText": "Sun, May 3, 2026",
+    "homeAway": "home",
+    "location": "Ithaca, N.Y. Booth Field Ithaca, N.Y. Booth Field",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Binghamton University",
+    "date": "2026-05-05",
+    "dateText": "Tue, May 5, 2026",
+    "homeAway": "away",
+    "location": "Vestal, N.Y. Vestal, N.Y.",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "Ivy League Tournament",
+    "date": "2026-05-15",
+    "dateText": "Fri, May 15, 2026",
+    "homeAway": "home",
+    "location": "At No. 1 Seed At No. 1 Seed",
+    "isTournament": true
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "NCAA Regionals",
+    "date": "2026-05-29",
+    "dateText": "Fri, May 29, 2026",
+    "homeAway": "home",
+    "location": "Regional Sites Regional Sites",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "NCAA Super Regionals",
+    "date": "2026-06-05",
+    "dateText": "Fri, Jun 5, 2026",
+    "homeAway": "home",
+    "location": "Super Regional Sites Super Regional Sites",
+    "isTournament": false
+  },
+  {
+    "sport": "baseball",
+    "sportName": "Baseball",
+    "opponent": "College World Series",
+    "date": "2026-06-12",
+    "dateText": "Fri, Jun 12, 2026",
+    "homeAway": "home",
+    "location": "Omaha, Neb. Omaha, Neb.",
+    "isTournament": false
+  }
+]
