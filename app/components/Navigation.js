@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { collection, query, where, doc, onSnapshot, orderBy, limit, getDoc } from 'firebase/firestore';
 import { toMarketplaceMemberId } from '@/utils/marketplace';
+import { CATEGORIES } from '@/utils/categorize';
 
 const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
@@ -35,6 +36,7 @@ export default function Navigation() {
   const [activeMarketplaceBalance, setActiveMarketplaceBalance] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const routeMarketplaceId = useMemo(() => {
     if (!pathname?.startsWith('/marketplace/')) return null;
@@ -53,6 +55,17 @@ export default function Navigation() {
   const [marketRouteMarketplaceId, setMarketRouteMarketplaceId] = useState(null);
   const activeMarketplaceId = routeMarketplaceId || marketRouteMarketplaceId;
   const inMarketplaceContext = !!activeMarketplaceId;
+  const validMarketStatuses = useMemo(() => new Set(['all', 'active', 'resolved', 'cancelled']), []);
+  const activeGlobalCategory = useMemo(() => {
+    if (pathname !== '/markets') return 'all';
+    const raw = searchParams.get('category');
+    return CATEGORIES.some((category) => category.id === raw) ? raw : 'all';
+  }, [pathname, searchParams]);
+  const activeGlobalStatus = useMemo(() => {
+    if (pathname !== '/markets') return 'all';
+    const raw = searchParams.get('status');
+    return validMarketStatuses.has(raw) ? raw : 'all';
+  }, [pathname, searchParams, validMarketStatuses]);
 
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
   const displayBalance = inMarketplaceContext
@@ -268,14 +281,11 @@ export default function Navigation() {
           >
             <button
               onClick={() => {
-                setDesktopMarketsOpen((prev) => {
-                  const next = !prev;
-                  if (next) setDesktopMenuPath(pathname || '');
-                  return next;
-                });
+                setDesktopMarketsOpen(false);
+                router.push('/markets');
               }}
               className={`inline-flex items-center gap-1 rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] transition-colors ${
-                pathname === '/markets/active' || pathname?.startsWith('/marketplace/')
+                pathname === '/markets' || pathname?.startsWith('/marketplace/')
                   ? 'bg-[var(--surface2)] text-[var(--text)]'
                   : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
               }`}
@@ -287,18 +297,43 @@ export default function Navigation() {
               <div className="absolute left-0 top-full pt-1">
                 <div className="min-w-[240px] overflow-hidden rounded border border-[var(--border2)] bg-[var(--surface)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
                   <Link
-                    href="/markets/active"
+                    href="/markets"
                     onClick={() => setDesktopMarketsOpen(false)}
                     className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors ${
-                      pathname === '/markets/active'
+                      pathname === '/markets'
                         ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
                         : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
                     }`}
                   >
                     <span className="mr-2">📊</span>
-                    Global Markets
-                    {pathname === '/markets/active' && <span className="ml-auto text-[var(--red)]">✓</span>}
+                    All Markets
+                    {pathname === '/markets' && <span className="ml-auto text-[var(--red)]">✓</span>}
                   </Link>
+                  <div className="border-b border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                    Global Categories
+                  </div>
+                  {CATEGORIES.filter((category) => category.id !== 'all').map((category) => {
+                    const href = `/markets?status=active&category=${category.id}`;
+                    const isCategoryActive = pathname === '/markets'
+                      && activeGlobalStatus === 'active'
+                      && activeGlobalCategory === category.id;
+                    return (
+                      <Link
+                        key={`global-category-${category.id}`}
+                        href={href}
+                        onClick={() => setDesktopMarketsOpen(false)}
+                        className={`flex min-h-[40px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.62rem] uppercase tracking-[0.06em] transition-colors ${
+                          isCategoryActive
+                            ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
+                            : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
+                        }`}
+                      >
+                        <span className="mr-2">{category.emoji}</span>
+                        {category.label}
+                        {isCategoryActive && <span className="ml-auto text-[var(--red)]">✓</span>}
+                      </Link>
+                    );
+                  })}
 
                   <div className="border-b border-t border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
                     Joined Marketplaces
@@ -445,12 +480,36 @@ export default function Navigation() {
         >
           <div className="flex flex-col px-4 py-2">
             <Link
-              href="/markets/active"
+              href="/markets"
               onClick={() => setMobileMenuOpen(false)}
               className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
             >
-              📊 Global Markets
+              📊 All Markets
             </Link>
+            <div className="border-b border-[var(--border)] py-1">
+              <div className="px-1 pb-1 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                Global Categories
+              </div>
+              {CATEGORIES.filter((category) => category.id !== 'all').map((category) => {
+                const href = `/markets?status=active&category=${category.id}`;
+                const isCategoryActive = pathname === '/markets'
+                  && activeGlobalStatus === 'active'
+                  && activeGlobalCategory === category.id;
+                return (
+                  <Link
+                    key={`mobile-global-category-${category.id}`}
+                    href={href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex min-h-[46px] items-center px-1 font-mono text-[0.66rem] uppercase tracking-[0.08em] ${
+                      isCategoryActive ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'
+                    }`}
+                  >
+                    <span className="mr-2">{category.emoji}</span>
+                    {category.label}
+                  </Link>
+                );
+              })}
+            </div>
             <Link onClick={() => setMobileMenuOpen(false)} href="/leaderboard" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
               Leaderboard
             </Link>

@@ -5,7 +5,6 @@ import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
-import { CATEGORIES } from '@/utils/categorize';
 import { useRouter } from 'next/navigation';
 
 function probabilityClass(prob) {
@@ -35,7 +34,6 @@ export default function Home() {
   const [resolvedMarkets, setResolvedMarkets] = useState([]);
   const [tickerMarkets, setTickerMarkets] = useState([]);
   const [trendSeriesByMarket, setTrendSeriesByMarket] = useState({});
-  const [activeCategory, setActiveCategory] = useState('all');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [user, setUser] = useState(null);
@@ -58,13 +56,11 @@ export default function Home() {
   });
 
   const tickerItems = useMemo(() => [...tickerMarkets, ...tickerMarkets], [tickerMarkets]);
+  const resolvedTickerItems = useMemo(() => {
+    const base = resolvedMarkets.slice(0, 7);
+    return [...base, ...base];
+  }, [resolvedMarkets]);
   const carouselItems = useMemo(() => [...activeMarkets.slice(0, 5), ...activeMarkets.slice(0, 5)], [activeMarkets]);
-  const filteredActiveMarkets = useMemo(
-    () => (activeCategory === 'all'
-      ? activeMarkets
-      : activeMarkets.filter((market) => (market.category || 'wildcard') === activeCategory)),
-    [activeCategory, activeMarkets]
-  );
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -336,14 +332,14 @@ export default function Home() {
             Campus prediction markets. Bet on course outcomes, sports, construction timelines, and everything Cornell. The crowd is usually right.
           </p>
           <div className="flex items-center gap-3">
-            <Link href="/markets/active" className="rounded-[5px] bg-[var(--red)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)]">
+            <Link href="/markets?status=active" className="rounded-[5px] bg-[var(--red)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)]">
               Start Trading
             </Link>
             <Link href="/how-it-works" className="rounded-[5px] border border-[var(--border2)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]">
               How It Works
             </Link>
           </div>
-          <p className="mt-4 font-mono text-[0.6rem] tracking-[0.04em] text-[var(--text-muted)]">@cornell.edu required · play money only · BETA</p>
+          <p className="mt-4 font-mono text-[0.6rem] tracking-[0.04em] text-[var(--text-muted)]">@cornell.edu required · weekly reset leaderboard · BETA</p>
         </div>
 
         <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
@@ -360,7 +356,7 @@ export default function Home() {
             <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
             🔥 Hot Right Now
           </span>
-          <Link href="/markets/active" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
+          <Link href="/markets?status=active" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
             View all markets →
           </Link>
         </div>
@@ -398,97 +394,44 @@ export default function Home() {
         <div className="mb-6 flex items-baseline justify-between">
           <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
             <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
-            All Active Markets
+            Recently Resolved Markets
           </span>
-          <span className="font-mono text-[0.6rem] text-[var(--text-muted)]">{activeMarkets.length} open</span>
-        </div>
-        <div className="hidden md:flex items-center gap-2 mb-6 flex-wrap">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`
-                px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
-                border transition-colors
-                ${activeCategory === cat.id
-                  ? 'bg-[var(--red)] border-[var(--red)] text-white'
-                  : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
-              `}
-            >
-              {cat.emoji} {cat.label}
-            </button>
-          ))}
-        </div>
-        <div className="md:hidden mb-6">
-          <select
-            value={activeCategory}
-            onChange={(e) => setActiveCategory(e.target.value)}
-            className="
-              w-full bg-[var(--surface)] border border-[var(--border2)]
-              text-[var(--text)] font-mono text-[0.75rem]
-              px-4 py-3 rounded-[4px]
-              appearance-none
-            "
-            style={{ fontSize: '16px' }}
-          >
-            {CATEGORIES.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.emoji} {cat.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {filteredActiveMarkets.length === 0 ? (
-            <div className="col-span-full py-16 text-center font-mono text-[0.75rem] text-[var(--text-muted)]">
-              No {activeCategory === 'all' ? '' : CATEGORIES.find((c) => c.id === activeCategory)?.label} markets yet.
-            </div>
-          ) : (
-            filteredActiveMarkets.map((market) => (
-              <Link
-                key={market.id}
-                href={`/market/${market.id}`}
-                className="relative block overflow-hidden rounded-[6px] border border-[var(--border)] border-l-2 border-l-transparent bg-[var(--surface)] p-4 transition-[background,border-color] hover:border-[var(--border2)] hover:border-l-[var(--red)] hover:bg-[var(--surface2)] md:p-5"
-              >
-                <p className="mb-3 text-[0.87rem] font-medium leading-[1.4] text-[var(--text)]">
-                  {market.question}
-                </p>
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[0.55rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">{shortTag(market)}</span>
-                  <span className={`font-mono text-2xl font-bold tracking-[-0.03em] ${probabilityClass(Number(market.probability || 0))}`}>
-                    {Math.round(Number(market.probability || 0) * 100)}%
-                  </span>
-                </div>
-              </Link>
-            ))
-          )}
-        </div>
-      </section>
-
-      <hr className="mx-4 border-0 border-t border-[var(--border)] md:mx-8" />
-
-      <section className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-10">
-        <div className="mb-6 flex items-baseline justify-between">
-          <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-            <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
-            Recently Resolved
-          </span>
-          <Link href="/markets/inactive" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
-            View all →
+          <Link href="/markets?status=resolved" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:text-[var(--text)]">
+            View all resolved →
           </Link>
         </div>
-        <div className="flex flex-col gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
-          {resolvedMarkets.slice(0, 5).map((market) => (
-            <Link key={market.id} href={`/market/${market.id}`} className="flex items-center gap-4 bg-[var(--surface)] px-5 py-3 transition-colors hover:bg-[var(--surface2)]">
-              <span className="text-sm">{market.resolution === 'YES' ? '✅' : '❌'}</span>
-              <span className="flex-1 text-[0.82rem] font-medium text-[var(--text-dim)]">{market.question}</span>
-              <span className={`rounded px-2 py-1 font-mono text-[0.58rem] font-bold uppercase tracking-[0.06em] ${market.resolution === 'YES' ? 'border border-[rgba(22,163,74,.2)] bg-[rgba(22,163,74,.12)] text-[var(--green-bright)]' : 'border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] text-[var(--red)]'}`}>
-                {market.resolution}
-              </span>
-              <span className="whitespace-nowrap font-mono text-[0.58rem] text-[var(--text-muted)]">{asDateLabel(market.resolvedAt)}</span>
-            </Link>
-          ))}
-        </div>
+        {resolvedMarkets.length === 0 ? (
+          <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-5 py-4 font-mono text-[0.68rem] text-[var(--text-muted)]">
+            No resolved global markets yet.
+          </div>
+        ) : (
+          <div className="relative flex h-9 items-center overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
+            <div
+              className="flex w-max animate-[ticker-scroll_45s_linear_infinite] whitespace-nowrap"
+              style={{ animationDirection: 'reverse' }}
+            >
+              {resolvedTickerItems.map((market, idx) => (
+                <Link
+                  key={`${market.id}-resolved-${idx}`}
+                  href={`/market/${market.id}`}
+                  className="inline-flex h-9 items-center gap-2 border-r border-[var(--border)] px-6 hover:bg-[var(--surface2)]"
+                >
+                  <span className="max-w-[280px] overflow-hidden text-ellipsis font-mono text-[0.6rem] text-[var(--text-dim)]">
+                    {market.question}
+                  </span>
+                  <span className={`rounded px-1.5 py-[0.15rem] font-mono text-[0.56rem] font-bold uppercase tracking-[0.06em] ${
+                    market.resolution === 'YES'
+                      ? 'border border-[rgba(22,163,74,.2)] bg-[rgba(22,163,74,.12)] text-[var(--green-bright)]'
+                      : 'border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] text-[var(--red)]'
+                  }`}>
+                    {market.resolution}
+                  </span>
+                  <span className="font-mono text-[0.56rem] text-[var(--text-muted)]">{asDateLabel(market.resolvedAt)}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <footer className="mx-auto flex max-w-[1200px] flex-col items-start justify-between gap-3 border-t border-[var(--border)] px-4 py-6 md:flex-row md:items-center md:px-8">

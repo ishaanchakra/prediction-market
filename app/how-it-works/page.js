@@ -5,7 +5,7 @@ import { useState } from 'react';
 const faqs = [
   {
     q: "Is this real money?",
-    a: "No. Everyone starts with $1,000 of play money each week. You can't deposit, withdraw, or lose anything real. The only thing at stake is your spot on the leaderboard."
+    a: "No. Everyone starts with $1,000 each week. You can't deposit, withdraw, or lose anything real. The only thing at stake is your spot on the leaderboard."
   },
   {
     q: "Why does my $50 bet only move the price by 2%?",
@@ -146,7 +146,7 @@ export default function HowItWorksPage() {
           >
             {[
               { step: '01', title: 'Pick a market', body: "Find a question you have an opinion on. Anything from \"Will the men's hockey team make regionals?\" to \"Will Arts Quad construction finish before May.\"" },
-              { step: '02', title: 'Bet YES or NO', body: 'Choose your side and drop in how much play money you want to risk. You\'ll see exactly how many shares you get before confirming.' },
+              { step: '02', title: 'Bet YES or NO', body: 'Choose your side and decide how much of your weekly balance you want to risk. You\'ll see exactly how many shares you get before confirming.' },
               { step: '03', title: 'Watch the price', body: 'Every trade moves the probability. If more people bet YES after you, the price goes up and your position gains value.' },
               { step: '04', title: 'Collect your payout', body: 'When the market resolves, winning shares pay out 1:1. Your balance updates instantly and your rank on the leaderboard shifts.' },
             ].map(({ step, title, body }) => (
@@ -240,7 +240,7 @@ export default function HowItWorksPage() {
           </div>
         </section>
 
-        <Link href="/markets/active" style={{
+        <Link href="/markets?status=active" style={{
           display: 'inline-block',
           background: 'var(--red)',
           color: 'white',

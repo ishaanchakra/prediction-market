@@ -769,7 +769,36 @@ export default function MarketPage() {
 
     setSelling(true);
     try {
-      const marketRef = doc(db, 'markets', params.id);
+      const marketId = params?.id;
+      if (!marketId) {
+        throw new Error('Market not found.');
+      }
+      const scopedMarketplaceId = market?.marketplaceId || null;
+      const userBetsQuery = query(
+        collection(db, 'bets'),
+        where('marketId', '==', marketId),
+        where('marketplaceId', '==', scopedMarketplaceId),
+        where('userId', '==', currentUser.uid)
+      );
+      const userBetsSnapshot = await getDocs(userBetsQuery);
+      let yesSharesHeld = 0;
+      let noSharesHeld = 0;
+      userBetsSnapshot.docs.forEach((betDoc) => {
+        const bet = betDoc.data();
+        const shares = Math.abs(Number(bet.shares || 0));
+        if (bet.side === 'YES') {
+          yesSharesHeld += bet.type === 'SELL' ? -shares : shares;
+        } else if (bet.side === 'NO') {
+          noSharesHeld += bet.type === 'SELL' ? -shares : shares;
+        }
+      });
+      const availableNow = sellSide === 'YES' ? Math.max(0, yesSharesHeld) : Math.max(0, noSharesHeld);
+      const safeSharesToSell = Math.min(sharesToSell, availableNow);
+      if (safeSharesToSell <= 0) {
+        throw new Error(`Insufficient shares. You have ${availableNow.toFixed(2)} ${sellSide} shares.`);
+      }
+
+      const marketRef = doc(db, 'markets', marketId);
       const isMarketplaceMarket = !!market?.marketplaceId;
       const walletRef = isMarketplaceMarket
         ? doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
@@ -794,32 +823,6 @@ export default function MarketPage() {
           throw new Error('Selling is unavailable while this market is locked or closed.');
         }
 
-        const userBetsQuery = query(
-          collection(db, 'bets'),
-          where('marketId', '==', params.id),
-          where('marketplaceId', '==', latestMarket.marketplaceId || null),
-          where('userId', '==', currentUser.uid)
-        );
-        const userBetsSnapshot = await tx.get(userBetsQuery);
-
-        let yesSharesHeld = 0;
-        let noSharesHeld = 0;
-        userBetsSnapshot.docs.forEach((betDoc) => {
-          const bet = betDoc.data();
-          const shares = Math.abs(Number(bet.shares || 0));
-          if (bet.side === 'YES') {
-            yesSharesHeld += bet.type === 'SELL' ? -shares : shares;
-          } else if (bet.side === 'NO') {
-            noSharesHeld += bet.type === 'SELL' ? -shares : shares;
-          }
-        });
-
-        const availableNow = sellSide === 'YES' ? Math.max(0, yesSharesHeld) : Math.max(0, noSharesHeld);
-        const safeSharesToSell = Math.min(sharesToSell, availableNow);
-        if (safeSharesToSell <= 0) {
-          throw new Error(`Insufficient shares. You have ${availableNow.toFixed(2)} ${sellSide} shares.`);
-        }
-
         const result = calculateSell(
           latestMarket.outstandingShares || { yes: 0, no: 0 },
           safeSharesToSell,
@@ -838,7 +841,7 @@ export default function MarketPage() {
         const betRef = doc(collection(db, 'bets'));
         tx.set(betRef, {
           userId: currentUser.uid,
-          marketId: params.id,
+          marketId,
           marketplaceId: latestMarket.marketplaceId || null,
           side: sellSide,
           amount: -result.payout,
@@ -1240,7 +1243,7 @@ export default function MarketPage() {
       <div className="mx-auto max-w-[1200px] md:grid md:grid-cols-[1fr_320px]" style={{ minHeight: 'calc(100vh - 56px)' }}>
         <main className="p-4 md:border-r md:border-[var(--border)] md:p-8">
           <div className="mb-6 flex flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[0.62rem] leading-none text-[var(--text-muted)]">
-            <Link href="/markets/active" className="uppercase tracking-[0.08em] text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
+            <Link href="/markets" className="uppercase tracking-[0.08em] text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
             <span>/</span>
             <span className="uppercase tracking-[0.08em] text-[var(--text-dim)]">{categoryLabel}</span>
             <span>/</span>

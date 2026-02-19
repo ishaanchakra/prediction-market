@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 const LAUNCH_PASSWORD = process.env.NEXT_PUBLIC_LAUNCH_PASSWORD || 'Hayek';
 const LAUNCH_TIMESTAMP = parseInt(process.env.NEXT_PUBLIC_LAUNCH_TIMESTAMP || '1771855200000', 10);
 const STORAGE_KEY = 'predictcornell_launch_auth';
 
 export default function LaunchGate({ children }) {
+  const router = useRouter();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -69,6 +71,7 @@ export default function LaunchGate({ children }) {
         // localStorage unavailable
       }
       setIsUnlocked(true);
+      router.replace('/login');
     } else {
       setError('Incorrect password');
       setPassword('');

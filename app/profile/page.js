@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import {
   doc,
@@ -57,7 +58,11 @@ export default function ProfilePage() {
           setProfileError('Profile data is still initializing. Some values may be delayed.');
         }
 
-        const betsQuery = query(collection(db, 'bets'), where('userId', '==', currentUser.uid));
+        const betsQuery = query(
+          collection(db, 'bets'),
+          where('userId', '==', currentUser.uid),
+          where('marketplaceId', '==', null)
+        );
         const betsSnapshot = await getDocs(betsQuery);
 
         const betsWithMarkets = await Promise.all(
@@ -283,7 +288,7 @@ export default function ProfilePage() {
             <div>
               <p className="font-display text-[1.8rem] leading-none text-[var(--text)]">{displayName}</p>
               <p className="mt-1 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                joined {memberSince} · {tradeCount} trades · {winRate}% win rate
+                joined {memberSince} · {tradeCount} global trades · {winRate}% global win rate
               </p>
             </div>
           </div>
@@ -337,14 +342,24 @@ export default function ProfilePage() {
           )}
         </div>
 
+        <div className="mb-6 rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Global Profile Scope</p>
+          <p className="mt-1 text-sm text-[var(--text-dim)]">
+            This profile shows global market performance by default. View marketplace wallets on each marketplace dashboard.
+          </p>
+          <Link href="/marketplace/enter" className="mt-2 inline-block font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--red)] hover:text-[var(--red-dim)]">
+            Open marketplaces →
+          </Link>
+        </div>
+
         <div className="mb-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
-            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Weekly Balance</p>
+            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Global Weekly Balance</p>
             <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${Number(user.weeklyRep || 0).toFixed(2)}</p>
             <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Resets every Monday</p>
           </div>
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
-            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Lifetime Earnings</p>
+            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Global Lifetime Earnings</p>
             <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${Number(user.lifetimeRep || 0).toFixed(2)}</p>
             <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Cumulative resolved-market net</p>
           </div>

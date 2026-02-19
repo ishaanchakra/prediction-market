@@ -532,7 +532,7 @@ export default function OnboardingPage() {
           <div className="w-full max-w-[400px]">
             <div className="mb-6 text-center">
               <h2 className="mb-1 font-display text-[1.6rem]">Quick-fire round</h2>
-              <p className="font-mono text-[0.55rem] tracking-[0.06em] text-[var(--text-muted)]">5 hot markets. swipe right for yes, left for no, up to skip.</p>
+              <p className="font-mono text-[0.55rem] tracking-[0.06em] text-[var(--text-muted)]">5 hot markets. swipe right for yes, left for no, up to skip, or tap the buttons below.</p>
             </div>
 
             <div className="mb-5 flex justify-center gap-[6px]">
@@ -584,16 +584,17 @@ export default function OnboardingPage() {
                           ? { transform: `translate(${dragState.dx}px, ${Math.min(dragState.dy, 0)}px) rotate(${dragState.dx * 0.08}deg)` }
                           : {}
                   : {};
+                const cardStyle = isTop ? { ...dynamicStyle, touchAction: 'none' } : dynamicStyle;
 
                 return (
                   <div
                     key={market.id}
                     className={`absolute inset-0 flex flex-col overflow-hidden rounded-[12px] border border-[var(--border)] bg-[var(--surface)] transition-all duration-[450ms] [transition-timing-function:cubic-bezier(0.22,1,0.36,1)] ${behindClass}`}
-                    style={dynamicStyle}
                     onPointerDown={isTop ? handlePointerDown : undefined}
                     onPointerMove={isTop ? handlePointerMove : undefined}
                     onPointerUp={isTop ? handlePointerUp : undefined}
                     onPointerCancel={isTop ? handlePointerUp : undefined}
+                    style={cardStyle}
                   >
                     <div className="pointer-events-none absolute left-5 top-1/2 z-10 -translate-y-1/2 rounded-[6px] border-[2.5px] border-[var(--red)] bg-[rgba(220,38,38,0.08)] px-5 py-2 font-mono text-[1.4rem] font-bold uppercase tracking-[0.06em] text-[var(--red)]" style={{ opacity: noOpacity }}>
                       ← No
@@ -657,6 +658,9 @@ export default function OnboardingPage() {
               <span className="inline-flex items-center gap-1.5"><span className="h-[5px] w-[5px] rounded-full bg-[var(--text-muted)]" />↑ Skip</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-[5px] w-[5px] rounded-full bg-[var(--green-bright)]" />Yes →</span>
             </div>
+            <p className="mt-2 text-center font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              Swipe the card or tap a decision button
+            </p>
           </div>
         </section>
 

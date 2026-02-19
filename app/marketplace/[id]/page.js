@@ -200,6 +200,28 @@ export default function MarketplaceDashboardPage() {
           </div>
         </div>
 
+        <div className="mb-8 rounded-[8px] border border-[var(--red-dim)] bg-[var(--red-glow)] px-5 py-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--red)]">Your Marketplace Wallet</p>
+              <p className="mt-1 font-mono text-[0.65rem] text-[var(--text-dim)]">
+                Scoped to {marketplace.name}. This balance is separate from your global wallet.
+              </p>
+            </div>
+            <p className="font-mono text-[1.7rem] font-bold tracking-[-0.03em] text-[var(--amber-bright)]">
+              ${Number(membership?.balance || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[rgba(220,38,38,0.2)] pt-3">
+            <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">
+              Lifetime in this marketplace: ${Number(membership?.lifetimeRep || 0).toFixed(2)}
+            </p>
+            <Link href={`/marketplace/${marketplaceId}/leaderboard`} className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--red)] hover:text-[var(--red-dim)]">
+              View wallet rankings →
+            </Link>
+          </div>
+        </div>
+
         <div className="mb-8 grid gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)] md:grid-cols-4">
           <StatCell label="Active Markets" value={stats.activeCount} tone="red" />
           <StatCell label="Avg YES" value={`${Math.round(stats.averageProbability * 100)}%`} tone="amber" />
