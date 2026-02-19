@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   orderBy,
   query,
@@ -18,6 +19,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
+import { calculateMarketContribution } from '@/utils/oracleScore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
@@ -864,6 +866,31 @@ export default function AdminPage() {
       }
 
       await commitOperationChunks(operationFns);
+
+      // Update Oracle Scores for users who had positions in this market.
+      // Group non-refunded bets by userId and compute each user's contribution.
+      const oracleOps = [];
+      const betsByUser = {};
+      betsSnapshot.docs.forEach((betDoc) => {
+        const bet = betDoc.data();
+        if (!bet?.userId || bet.refunded === true) return;
+        if (!betsByUser[bet.userId]) betsByUser[bet.userId] = [];
+        betsByUser[bet.userId].push(bet);
+      });
+
+      for (const [userId, userBets] of Object.entries(betsByUser)) {
+        const result = calculateMarketContribution({ userBets, resolution });
+        if (result && result.contribution > 0) {
+          const userRef = doc(db, 'users', userId);
+          oracleOps.push((batch) => {
+            batch.update(userRef, { oracleScore: increment(result.contribution) });
+          });
+        }
+      }
+
+      if (oracleOps.length > 0) {
+        await commitOperationChunks(oracleOps);
+      }
 
       await logAdminAction('RESOLVE', `Market resolved as ${resolution}: ${marketQuestion}`);
       notifySuccess(`Market resolved as ${resolution}. Payouts distributed.`);

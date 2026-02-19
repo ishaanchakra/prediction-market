@@ -54,6 +54,7 @@ export default function LoginPage() {
           email: user.email,
           weeklyRep: 1000,
           lifetimeRep: 0,
+          oracleScore: 0,
           createdAt: new Date(),
           displayName: defaultDisplayName,
           displayNameNormalized: normalizeDisplayName(defaultDisplayName),

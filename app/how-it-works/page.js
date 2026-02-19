@@ -33,7 +33,7 @@ const faqs = [
   },
   {
     q: "What's the leaderboard actually measuring?",
-    a: "Weekly: your net P&L from $1,000 since Monday. If you're at $1,340 you're up $340 for the week. Lifetime: cumulative net across all time — winnings minus losses. The oracle badge goes to whoever's on top all-time."
+    a: "Weekly: your net P&L from $1,000 since Monday. If you're at $1,340 you're up $340 for the week. Lifetime: cumulative net across all time — winnings minus losses. The oracle badge goes to whoever's on top all-time. Oracle Score: measures prediction accuracy across all resolved markets. You earn more points for being right when the crowd was wrong — buying YES at 20% on something that happens is worth more than buying YES at 90%."
   }
 ];
 

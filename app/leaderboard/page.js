@@ -80,10 +80,19 @@ export default function LeaderboardPage() {
   const [viewer, setViewer] = useState(null);
   const [openMarketsCount, setOpenMarketsCount] = useState(0);
   const [totalTraded, setTotalTraded] = useState(0);
+  const [allTimeMode, setAllTimeMode] = useState('pnl');
   const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
   const lifetimeUsers = useMemo(
     () => [...users].sort((a, b) => Number(b.lifetimeRep || 0) - Number(a.lifetimeRep || 0)).slice(0, 50),
+    [users]
+  );
+  const oracleUsers = useMemo(
+    () =>
+      [...users]
+        .filter((u) => Number(u.oracleScore || 0) > 0)
+        .sort((a, b) => Number(b.oracleScore || 0) - Number(a.oracleScore || 0))
+        .slice(0, 50),
     [users]
   );
   const weeklyUsers = useMemo(
@@ -238,15 +247,13 @@ export default function LeaderboardPage() {
           detailsFn={(user) => `Portfolio $${fmtMoney(user.portfolioValue)} · Cash $${fmtMoney(user.cashBalance)} · Pos $${fmtMoney(user.positionsValue)}`}
         />
 
-        <TableBlock
-          title="All-Time Rankings"
-          subtitle="the oracles of ithaca"
-          users={lifetimeUsers}
+        <AllTimeSection
+          allTimeMode={allTimeMode}
+          setAllTimeMode={setAllTimeMode}
+          lifetimeUsers={lifetimeUsers}
+          oracleUsers={oracleUsers}
           viewerId={viewer?.uid}
           router={router}
-          metricFn={(user) => Number(user.lifetimeRep || 0)}
-          detailsFn={() => ''}
-          lifetime
         />
 
         <PastWeeksSection
@@ -347,6 +354,140 @@ function TableBlock({ title, subtitle, users, viewerId, router, metricFn, detail
                       style={{ width: `${barWidth}px` }}
                     />
                   </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AllTimeSection({ allTimeMode, setAllTimeMode, lifetimeUsers, oracleUsers, viewerId, router }) {
+  const isPnl = allTimeMode === 'pnl';
+  const activeUsers = isPnl ? lifetimeUsers : oracleUsers;
+  const maxScore = Math.max(...oracleUsers.map((u) => Number(u.oracleScore || 0)), 1);
+  const maxPnl = Math.max(...lifetimeUsers.map((u) => Math.abs(Number(u.lifetimeRep || 0))), 1);
+
+  return (
+    <section className="mb-12">
+      <div className="mb-4 flex items-baseline justify-between">
+        <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+          <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
+          All-Time Rankings
+        </span>
+        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">the oracles of ithaca</span>
+      </div>
+
+      {/* Mode toggle tabs */}
+      <div className="mb-3 flex items-center gap-4 border-b border-[var(--border)]">
+        <button
+          onClick={() => setAllTimeMode('pnl')}
+          className={`pb-2 font-mono text-[0.62rem] uppercase tracking-[0.12em] transition-colors ${
+            isPnl
+              ? 'border-b-2 border-[var(--red)] text-[var(--red)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+          }`}
+        >
+          Lifetime P&L
+        </button>
+        <button
+          onClick={() => setAllTimeMode('oracle')}
+          className={`pb-2 font-mono text-[0.62rem] uppercase tracking-[0.12em] transition-colors ${
+            !isPnl
+              ? 'border-b-2 border-[var(--red)] text-[var(--red)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+          }`}
+        >
+          Oracle Score
+        </button>
+      </div>
+
+      {!isPnl && (
+        <p className="mb-3 font-mono text-[0.65rem] text-[var(--text-dim)]">
+          Rewards correct predictions, weighted by conviction and how contrarian you were at entry.
+        </p>
+      )}
+
+      <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
+        <thead>
+          <tr className="border-b border-[var(--border)]">
+            <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Rank</th>
+            <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
+            <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">
+              {isPnl ? 'Net Profit (All-Time)' : 'Oracle Score'}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {activeUsers.length === 0 && (
+            <tr>
+              <td colSpan={3} className="px-5 py-6 font-mono text-[0.68rem] text-[var(--text-muted)] text-center">
+                {isPnl ? 'No lifetime data yet.' : 'No oracle scores yet. Scores appear after markets resolve.'}
+              </td>
+            </tr>
+          )}
+          {activeUsers.map((user, index) => {
+            const rankText = index === 0 ? '🔮' : String(index + 1).padStart(2, '0');
+            const rankColor = index === 0
+              ? 'text-[var(--amber-bright)]'
+              : index === 1
+                ? 'text-[#9ca3af]'
+                : index === 2
+                  ? 'text-[#b45309]'
+                  : 'text-[var(--text)]';
+
+            return (
+              <tr
+                key={user.id}
+                onClick={() => router.push(`/user/${user.id}`)}
+                className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${viewerId === user.id ? 'bg-[rgba(220,38,38,.04)]' : ''}`}
+              >
+                <td className="px-5 py-4">
+                  <span className={`font-mono text-[0.8rem] font-bold ${rankColor}`}>{rankText}</span>
+                </td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-[var(--text)]">{getPublicDisplayName(user)}</span>
+                    {viewerId === user.id && (
+                      <span className="rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-1.5 py-[0.1rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">
+                        you
+                      </span>
+                    )}
+                    {index === 0 && !isPnl && (
+                      <span className="rounded border border-[rgba(217,119,6,.2)] bg-[rgba(217,119,6,.1)] px-1.5 py-[0.1rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
+                        oracle
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-5 py-4 text-right">
+                  {isPnl ? (
+                    <>
+                      <span className={`block font-mono text-[0.9rem] font-bold ${Number(user.lifetimeRep || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
+                        {Number(user.lifetimeRep || 0) >= 0 ? '+' : '-'}${fmtMoney(Math.abs(Number(user.lifetimeRep || 0)))}
+                      </span>
+                      <span className="ml-auto mt-1 block h-[2px] w-20 rounded bg-[var(--surface3)]">
+                        <span
+                          className={`block h-[2px] rounded ${Number(user.lifetimeRep || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]'}`}
+                          style={{ width: `${Math.max(2, Math.round((Math.abs(Number(user.lifetimeRep || 0)) / maxPnl) * 80))}px` }}
+                        />
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">
+                        {Number(user.oracleScore || 0).toFixed(1)} pts
+                      </span>
+                      <span className="ml-auto mt-1 block h-[2px] w-20 rounded bg-[var(--surface3)]">
+                        <span
+                          className="block h-[2px] rounded bg-[var(--amber-bright)]"
+                          style={{ width: `${Math.max(2, Math.round((Number(user.oracleScore || 0) / maxScore) * 80))}px` }}
+                        />
+                      </span>
+                    </>
+                  )}
                 </td>
               </tr>
             );

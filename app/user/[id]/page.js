@@ -156,6 +156,17 @@ export default function UserProfilePage() {
           </div>
         </div>
 
+        {Number(user.oracleScore || 0) > 0 && (
+          <div className="mb-6 flex items-center gap-3 rounded-[8px] border border-[rgba(217,119,6,.2)] bg-[rgba(217,119,6,.06)] px-5 py-4">
+            <span className="text-lg">🔮</span>
+            <div>
+              <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Oracle Score</p>
+              <p className="font-mono text-[1.1rem] font-bold text-[var(--amber-bright)]">{Number(user.oracleScore).toFixed(1)} pts</p>
+            </div>
+            <p className="ml-auto font-mono text-[0.6rem] text-[var(--text-dim)]">Prediction accuracy · all-time</p>
+          </div>
+        )}
+
         <PortfolioView
           userId={id}
           user={user}
