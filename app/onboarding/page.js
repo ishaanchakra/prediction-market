@@ -45,6 +45,7 @@ function defaultProfileForUser(user) {
     email: user?.email || '',
     weeklyRep: 1000,
     lifetimeRep: 0,
+    oracleScore: 0,
     createdAt: new Date(),
     displayName: netId,
     displayNameNormalized: normalized,
