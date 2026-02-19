@@ -12,6 +12,7 @@ import {
   orderBy,
   query,
   runTransaction,
+  setDoc,
   serverTimestamp,
   where
 } from 'firebase/firestore';
@@ -35,6 +36,20 @@ function probabilityColor(probability) {
 
 function categoryMeta(categoryId) {
   return CATEGORIES.find((c) => c.id === categoryId) || { id: 'wildcard', label: 'Wildcard', emoji: '🎲' };
+}
+
+function defaultProfileForUser(user) {
+  const netId = (user?.email || '').split('@')[0] || 'trader';
+  const normalized = normalizeDisplayName(netId);
+  return {
+    email: user?.email || '',
+    weeklyRep: 1000,
+    lifetimeRep: 0,
+    createdAt: new Date(),
+    displayName: netId,
+    displayNameNormalized: normalized,
+    onboardingComplete: false
+  };
 }
 
 export default function OnboardingPage() {
@@ -71,13 +86,15 @@ export default function OnboardingPage() {
       }
 
       try {
-        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        const userRef = doc(db, 'users', user.uid);
+        let userSnap = await getDoc(userRef);
         if (!userSnap.exists()) {
-          router.push('/login');
-          return;
+          const defaults = defaultProfileForUser(user);
+          await setDoc(userRef, defaults, { merge: true });
+          userSnap = await getDoc(userRef);
         }
 
-        const userData = userSnap.data();
+        const userData = userSnap.exists() ? userSnap.data() : defaultProfileForUser(user);
         if (userData.onboardingComplete === true) {
           router.push('/');
           return;
@@ -235,15 +252,23 @@ export default function OnboardingPage() {
         const normalized = normalizeDisplayName(trimmed);
         const userRef = doc(db, 'users', authUser.uid);
         const userSnap = await tx.get(userRef);
-        if (!userSnap.exists()) throw new Error('User profile missing');
-
-        const userData = userSnap.data();
+        const userData = userSnap.exists() ? userSnap.data() : {};
         const currentNormalized = userData.displayNameNormalized || '';
         const newKeyRef = doc(db, 'displayNames', normalized);
         const newKeySnap = await tx.get(newKeyRef);
+        const shouldDeleteOldKey = Boolean(currentNormalized && currentNormalized !== normalized);
+        const oldKeyRef = shouldDeleteOldKey ? doc(db, 'displayNames', currentNormalized) : null;
+        const oldKeySnap = oldKeyRef ? await tx.get(oldKeyRef) : null;
 
         if (newKeySnap.exists() && newKeySnap.data()?.userId !== authUser.uid) {
           throw new Error("That name's already claimed");
+        }
+
+        if (!userSnap.exists()) {
+          tx.set(userRef, {
+            ...defaultProfileForUser(authUser),
+            createdAt: serverTimestamp()
+          }, { merge: true });
         }
 
         tx.set(newKeyRef, {
@@ -253,18 +278,14 @@ export default function OnboardingPage() {
           updatedAt: serverTimestamp()
         }, { merge: true });
 
-        tx.update(userRef, {
+        tx.set(userRef, {
           displayName: trimmed,
           displayNameNormalized: normalized,
           onboardingComplete: false
-        });
+        }, { merge: true });
 
-        if (currentNormalized && currentNormalized !== normalized) {
-          const oldKeyRef = doc(db, 'displayNames', currentNormalized);
-          const oldKeySnap = await tx.get(oldKeyRef);
-          if (oldKeySnap.exists() && oldKeySnap.data()?.userId === authUser.uid) {
+        if (oldKeyRef && oldKeySnap?.exists() && oldKeySnap.data()?.userId === authUser.uid) {
             tx.delete(oldKeyRef);
-          }
         }
       });
 
@@ -395,6 +416,10 @@ export default function OnboardingPage() {
 
   function handlePointerDown(event) {
     if (animatingOut || placingBet || !topCard) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-onboarding-action]')) {
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragState({ active: true, startX: event.clientX, startY: event.clientY, dx: 0, dy: 0 });
   }
@@ -630,15 +655,30 @@ export default function OnboardingPage() {
                     </div>
 
                     <div className="grid grid-cols-[1fr_auto_1fr] border-t border-[var(--border)] bg-[var(--surface2)]">
-                      <button className="flex min-h-12 flex-col items-center justify-center gap-1 border-r border-[var(--border)] hover:bg-[var(--surface3)]" onClick={() => handleSwipeChoice('NO')}>
+                      <button
+                        type="button"
+                        data-onboarding-action="no"
+                        className="flex min-h-12 flex-col items-center justify-center gap-1 border-r border-[var(--border)] hover:bg-[var(--surface3)]"
+                        onClick={() => handleSwipeChoice('NO')}
+                      >
                         <span className="text-xl text-[var(--red)]">✗</span>
                         <span className="font-mono text-[0.48rem] uppercase tracking-[0.1em] text-[var(--red)]">Bet No</span>
                       </button>
-                      <button className="flex min-h-12 flex-col items-center justify-center gap-1 px-4 hover:bg-[var(--surface3)]" onClick={() => handleSwipeChoice('SKIP')}>
+                      <button
+                        type="button"
+                        data-onboarding-action="skip"
+                        className="flex min-h-12 flex-col items-center justify-center gap-1 px-4 hover:bg-[var(--surface3)]"
+                        onClick={() => handleSwipeChoice('SKIP')}
+                      >
                         <span className="text-xl text-[var(--text-muted)]">↑</span>
                         <span className="font-mono text-[0.48rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Skip</span>
                       </button>
-                      <button className="flex min-h-12 flex-col items-center justify-center gap-1 border-l border-[var(--border)] hover:bg-[var(--surface3)]" onClick={() => handleSwipeChoice('YES')}>
+                      <button
+                        type="button"
+                        data-onboarding-action="yes"
+                        className="flex min-h-12 flex-col items-center justify-center gap-1 border-l border-[var(--border)] hover:bg-[var(--surface3)]"
+                        onClick={() => handleSwipeChoice('YES')}
+                      >
                         <span className="text-xl text-[var(--green-bright)]">✓</span>
                         <span className="font-mono text-[0.48rem] uppercase tracking-[0.1em] text-[var(--green-bright)]">Bet Yes</span>
                       </button>
