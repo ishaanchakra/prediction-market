@@ -203,6 +203,16 @@ function AllMarketsContent() {
 
   const selectedCategoryLabel = CATEGORIES.find((entry) => entry.id === categoryFilter)?.label || 'All Markets';
   const selectedStatusLabel = STATUS_OPTIONS.find((entry) => entry.id === statusFilter)?.label || 'All';
+  const selectedSortLabel = SORT_OPTIONS.find((entry) => entry.id === sortBy)?.label || 'Newest';
+  const hasActiveFilters = statusFilter !== 'all' || categoryFilter !== 'all' || sortBy !== 'newest' || Boolean(searchQuery);
+  const activeFilterChips = useMemo(() => {
+    const chips = [];
+    if (statusFilter !== 'all') chips.push(`status: ${selectedStatusLabel.toLowerCase()}`);
+    if (categoryFilter !== 'all') chips.push(`category: ${selectedCategoryLabel.toLowerCase()}`);
+    if (sortBy !== 'newest') chips.push(`sort: ${selectedSortLabel.toLowerCase()}`);
+    if (searchQuery) chips.push(`search: "${searchQuery}"`);
+    return chips;
+  }, [categoryFilter, searchQuery, selectedCategoryLabel, selectedSortLabel, selectedStatusLabel, sortBy, statusFilter]);
   const emptyStateMessage = useMemo(() => {
     if (searchQuery) {
       if (categoryFilter === 'all' && statusFilter === 'all') {
@@ -230,6 +240,11 @@ function AllMarketsContent() {
     replaceFilters({ q: searchInput.trim() });
   }
 
+  function handleResetAll() {
+    setSearchInput('');
+    replaceFilters({ status: 'all', category: 'all', sort: 'newest', q: '' });
+  }
+
   if (loading) {
     return (
       <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">
@@ -246,136 +261,165 @@ function AllMarketsContent() {
         </div>
       )}
 
-      <h1 className="mb-2 font-sans text-3xl font-extrabold text-[var(--text)]">All Markets</h1>
-      <p className="mb-6 text-[var(--text-dim)]">
-        {filteredMarkets.length} markets shown
-        {statusFilter !== 'all' ? ` · ${statusFilter}` : ''}
-        {categoryFilter !== 'all' ? ` · ${selectedCategoryLabel}` : ''}
-        {searchQuery ? ` · search: "${searchQuery}"` : ''}
-      </p>
+      <h1 className="mb-4 font-sans text-3xl font-extrabold text-[var(--text)]">All Markets</h1>
 
-      <div className="hidden md:flex items-center gap-2 mb-4 flex-wrap">
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">Status:</span>
-        {STATUS_OPTIONS.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => replaceFilters({ status: entry.id })}
-            className={`
-              px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
-              border transition-colors
-              ${statusFilter === entry.id
-                ? 'bg-[var(--red)] border-[var(--red)] text-white'
-                : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
-            `}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
+      <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 md:p-4">
+        <form onSubmit={handleSearchSubmit} className="flex flex-col gap-3 md:flex-row md:items-center">
+          <label htmlFor="markets-search" className="sr-only">Search market questions</label>
+          <div className="flex w-full items-center gap-2 md:flex-1">
+            <input
+              id="markets-search"
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search global market questions..."
+              aria-label="Search global market questions"
+              className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.75rem] text-[var(--text)] focus:border-[var(--red)] focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded border border-[var(--red)] bg-[var(--red)] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.08em] text-white"
+            >
+              Search
+            </button>
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput('');
+                  replaceFilters({ q: '' });
+                }}
+                className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.08em] text-[var(--text-dim)] hover:text-[var(--text)]"
+              >
+                Clear
+              </button>
+            )}
+          </div>
 
-      <div className="hidden md:flex items-center gap-2 mb-4 flex-wrap">
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">Category:</span>
-        {CATEGORIES.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => replaceFilters({ category: entry.id })}
-            className={`
-              px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
-              border transition-colors
-              ${categoryFilter === entry.id
-                ? 'bg-[var(--red)] border-[var(--red)] text-white'
-                : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
-            `}
-          >
-            {entry.emoji} {entry.label}
-          </button>
-        ))}
-      </div>
+          <div className="hidden items-center gap-1 rounded-md border border-[var(--border2)] bg-[var(--surface2)] p-1 md:flex">
+            {STATUS_OPTIONS.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => replaceFilters({ status: entry.id })}
+                aria-label={`Filter status ${entry.label}`}
+                className={`rounded px-2.5 py-1.5 font-mono text-[0.6rem] uppercase tracking-[0.08em] transition-colors ${
+                  statusFilter === entry.id
+                    ? 'bg-[var(--red)] text-white'
+                    : 'text-[var(--text-dim)] hover:bg-[var(--surface3)] hover:text-[var(--text)]'
+                }`}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
 
-      <div className="hidden md:flex items-center gap-2 mb-6 flex-wrap">
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">Sort:</span>
-        {SORT_OPTIONS.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => replaceFilters({ sort: entry.id })}
-            className={`
-              px-4 py-1.5 rounded-full font-mono text-[0.65rem] uppercase tracking-[0.08em]
-              border transition-colors
-              ${sortBy === entry.id
-                ? 'bg-[var(--red)] border-[var(--red)] text-white'
-                : 'bg-transparent border-[var(--border2)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'}
-            `}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
+          <div className="hidden items-center gap-2 md:flex">
+            <label htmlFor="markets-category-desktop" className="sr-only">Filter by category</label>
+            <select
+              id="markets-category-desktop"
+              value={categoryFilter}
+              onChange={(e) => replaceFilters({ category: e.target.value })}
+              aria-label="Filter by category"
+              className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-[var(--text)]"
+            >
+              {CATEGORIES.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.label}</option>
+              ))}
+            </select>
 
-      <form onSubmit={handleSearchSubmit} className="mb-6 flex items-center gap-2">
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search global market questions..."
-          className="w-full rounded border border-[var(--border2)] bg-[var(--surface)] px-3 py-2 font-mono text-[0.75rem] text-[var(--text)]"
-        />
-        <button
-          type="submit"
-          className="rounded border border-[var(--red)] bg-[var(--red)] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.08em] text-white"
-        >
-          Search
-        </button>
-        {searchQuery && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchInput('');
-              replaceFilters({ q: '' });
-            }}
-            className="rounded border border-[var(--border2)] bg-[var(--surface)] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
-          >
-            Clear
-          </button>
+            <label htmlFor="markets-sort-desktop" className="sr-only">Sort markets</label>
+            <select
+              id="markets-sort-desktop"
+              value={sortBy}
+              onChange={(e) => replaceFilters({ sort: e.target.value })}
+              aria-label="Sort markets"
+              className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-[var(--text)]"
+            >
+              {SORT_OPTIONS.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.label}</option>
+              ))}
+            </select>
+          </div>
+        </form>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 md:hidden">
+          <div>
+            <label htmlFor="markets-status-mobile" className="mb-1 block font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              Status
+            </label>
+            <select
+              id="markets-status-mobile"
+              value={statusFilter}
+              onChange={(e) => replaceFilters({ status: e.target.value })}
+              className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.75rem] text-[var(--text)]"
+              style={{ fontSize: '16px' }}
+            >
+              {STATUS_OPTIONS.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="markets-category-mobile" className="mb-1 block font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              Category
+            </label>
+            <select
+              id="markets-category-mobile"
+              value={categoryFilter}
+              onChange={(e) => replaceFilters({ category: e.target.value })}
+              className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.75rem] text-[var(--text)]"
+              style={{ fontSize: '16px' }}
+            >
+              {CATEGORIES.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.emoji} {entry.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="markets-sort-mobile" className="mb-1 block font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              Sort
+            </label>
+            <select
+              id="markets-sort-mobile"
+              value={sortBy}
+              onChange={(e) => replaceFilters({ sort: e.target.value })}
+              className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.75rem] text-[var(--text)]"
+              style={{ fontSize: '16px' }}
+            >
+              {SORT_OPTIONS.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-[var(--border)] pt-3 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+          {filteredMarkets.length} markets shown
+        </div>
+
+        {hasActiveFilters && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Active filters</span>
+            {activeFilterChips.map((chip) => (
+              <span
+                key={chip}
+                className="rounded border border-[var(--border2)] bg-[var(--surface2)] px-2 py-[0.15rem] font-mono text-[0.55rem] uppercase tracking-[0.06em] text-[var(--text-dim)]"
+              >
+                {chip}
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={handleResetAll}
+              className="rounded border border-[var(--border2)] bg-transparent px-2.5 py-[0.25rem] font-mono text-[0.55rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+            >
+              Reset all
+            </button>
+          </div>
         )}
-      </form>
-
-      <div className="md:hidden mb-3">
-        <select
-          value={statusFilter}
-          onChange={(e) => replaceFilters({ status: e.target.value })}
-          className="w-full bg-[var(--surface)] border border-[var(--border2)] text-[var(--text)] font-mono text-[0.75rem] px-4 py-3 rounded-[4px] appearance-none"
-          style={{ fontSize: '16px' }}
-        >
-          {STATUS_OPTIONS.map((entry) => (
-            <option key={entry.id} value={entry.id}>{entry.label}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="md:hidden mb-3">
-        <select
-          value={categoryFilter}
-          onChange={(e) => replaceFilters({ category: e.target.value })}
-          className="w-full bg-[var(--surface)] border border-[var(--border2)] text-[var(--text)] font-mono text-[0.75rem] px-4 py-3 rounded-[4px] appearance-none"
-          style={{ fontSize: '16px' }}
-        >
-          {CATEGORIES.map((entry) => (
-            <option key={entry.id} value={entry.id}>{entry.emoji} {entry.label}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="md:hidden mb-6">
-        <select
-          value={sortBy}
-          onChange={(e) => replaceFilters({ sort: e.target.value })}
-          className="w-full bg-[var(--surface)] border border-[var(--border2)] text-[var(--text)] font-mono text-[0.75rem] px-4 py-3 rounded-[4px] appearance-none"
-          style={{ fontSize: '16px' }}
-        >
-          {SORT_OPTIONS.map((entry) => (
-            <option key={entry.id} value={entry.id}>{entry.label}</option>
-          ))}
-        </select>
       </div>
 
       {filteredMarkets.length === 0 ? (
