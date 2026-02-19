@@ -44,6 +44,9 @@ function EnterMarketplaceContent() {
   const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joinedMarketplaces, setJoinedMarketplaces] = useState([]);
+  const [availableMarketplaces, setAvailableMarketplaces] = useState([]);
+  const [availableSearch, setAvailableSearch] = useState('');
+  const [selectedMarketplaceId, setSelectedMarketplaceId] = useState('');
 
   const [joinIdentifier, setJoinIdentifier] = useState('');
   const [joinPassword, setJoinPassword] = useState('');
@@ -59,6 +62,26 @@ function EnterMarketplaceContent() {
   const canCreate = useMemo(() => {
     return name.trim().length >= 3 && password.length >= 4 && Number(startingBalance) > 0 && Number(defaultB) > 0;
   }, [name, password, startingBalance, defaultB]);
+  const joinedByMarketplaceId = useMemo(() => {
+    const map = new Map();
+    joinedMarketplaces.forEach((row) => {
+      if (row?.marketplace?.id) map.set(row.marketplace.id, row);
+    });
+    return map;
+  }, [joinedMarketplaces]);
+  const selectedMarketplace = useMemo(
+    () => availableMarketplaces.find((marketplace) => marketplace.id === selectedMarketplaceId) || null,
+    [availableMarketplaces, selectedMarketplaceId]
+  );
+  const filteredMarketplaces = useMemo(() => {
+    const needle = availableSearch.trim().toLowerCase();
+    const visible = availableMarketplaces.filter((marketplace) => !marketplace.isArchived);
+    if (!needle) return visible;
+    return visible.filter((marketplace) =>
+      String(marketplace.name || '').toLowerCase().includes(needle)
+      || String(marketplace.slug || '').toLowerCase().includes(needle)
+    );
+  }, [availableMarketplaces, availableSearch]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -68,7 +91,10 @@ function EnterMarketplaceContent() {
       }
       setUser(currentUser);
       try {
-        await fetchJoinedMarketplaces(currentUser.uid);
+        await Promise.all([
+          fetchJoinedMarketplaces(currentUser.uid),
+          fetchAvailableMarketplaces()
+        ]);
       } finally {
         setLoading(false);
       }
@@ -78,8 +104,17 @@ function EnterMarketplaceContent() {
 
   useEffect(() => {
     if (!requestedMarketplaceId) return;
+    const normalized = requestedMarketplaceId.trim().toLowerCase();
     setJoinIdentifier(requestedMarketplaceId);
-  }, [requestedMarketplaceId]);
+    const matched = availableMarketplaces.find((marketplace) =>
+      marketplace.id === requestedMarketplaceId
+      || String(marketplace.slug || '').toLowerCase() === normalized
+      || String(marketplace.nameLower || '').toLowerCase() === normalized
+    );
+    if (matched) {
+      setSelectedMarketplaceId(matched.id);
+    }
+  }, [requestedMarketplaceId, availableMarketplaces]);
 
   async function fetchJoinedMarketplaces(userId) {
     const membersQ = query(
@@ -103,9 +138,27 @@ function EnterMarketplaceContent() {
     setJoinedMarketplaces(marketplaceDocs.filter(Boolean));
   }
 
+  async function fetchAvailableMarketplaces() {
+    const marketplacesSnap = await getDocs(query(collection(db, 'marketplaces'), limit(300)));
+    const rows = marketplacesSnap.docs
+      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+      .filter((marketplace) => !marketplace.isArchived)
+      .sort((a, b) => {
+        const aLabel = String(a.nameLower || a.name || a.slug || '').toLowerCase();
+        const bLabel = String(b.nameLower || b.name || b.slug || '').toLowerCase();
+        return aLabel.localeCompare(bLabel);
+      });
+    setAvailableMarketplaces(rows);
+  }
+
   async function findMarketplace(identifier) {
     const normalized = identifier.trim().toLowerCase();
     if (!normalized) return null;
+
+    const idSnap = await getDoc(doc(db, 'marketplaces', identifier.trim()));
+    if (idSnap.exists()) {
+      return { id: idSnap.id, ...idSnap.data() };
+    }
 
     const slugQuery = query(collection(db, 'marketplaces'), where('slug', '==', normalized), limit(1));
     const slugSnap = await getDocs(slugQuery);
@@ -124,14 +177,14 @@ function EnterMarketplaceContent() {
   async function handleJoinMarketplace(e) {
     e.preventDefault();
     if (!user) return;
-    if (!joinIdentifier.trim() || !joinPassword) {
-      notifyError('Enter a marketplace name/slug and password.');
+    if (!joinPassword) {
+      notifyError('Enter the marketplace password.');
       return;
     }
 
     setJoining(true);
     try {
-      const marketplace = await findMarketplace(joinIdentifier);
+      const marketplace = selectedMarketplace || await findMarketplace(joinIdentifier);
       if (!marketplace || marketplace.isArchived) {
         notifyError('Marketplace not found.');
         return;
@@ -159,6 +212,7 @@ function EnterMarketplaceContent() {
 
       notifySuccess(`Joined ${marketplace.name}.`);
       await fetchJoinedMarketplaces(user.uid);
+      setJoinPassword('');
       router.push(`/marketplace/${marketplace.id}`);
     } catch (error) {
       console.error('Error joining marketplace:', error);
@@ -263,11 +317,70 @@ function EnterMarketplaceContent() {
             <p className="mb-4 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Join Marketplace</p>
             <div className="space-y-3">
               <input
-                value={joinIdentifier}
-                onChange={(e) => setJoinIdentifier(e.target.value)}
+                value={availableSearch}
+                onChange={(e) => setAvailableSearch(e.target.value)}
                 className={INPUT_CLASS}
-                placeholder="Marketplace slug or name"
+                placeholder="Search marketplace name or slug"
+                aria-label="Search marketplaces"
               />
+              <div className="overflow-hidden rounded border border-[var(--border)] bg-[#040404]">
+                <div className="border-b border-[var(--border)] px-3 py-2 font-mono text-[0.56rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Marketplace Terminal · {filteredMarketplaces.length} listed
+                </div>
+                <div className="max-h-[260px] overflow-y-auto">
+                  {filteredMarketplaces.length === 0 ? (
+                    <p className="px-3 py-3 font-mono text-[0.66rem] text-[var(--text-muted)]">
+                      No marketplaces match that search.
+                    </p>
+                  ) : (
+                    filteredMarketplaces.map((marketplace, index) => {
+                      const joinedRow = joinedByMarketplaceId.get(marketplace.id);
+                      const selected = selectedMarketplaceId === marketplace.id;
+                      return (
+                        <button
+                          key={marketplace.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMarketplaceId(marketplace.id);
+                            setJoinIdentifier(marketplace.slug || marketplace.id);
+                          }}
+                          className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-[var(--border)] px-3 py-2 text-left font-mono text-[0.64rem] last:border-b-0 ${
+                            selected
+                              ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
+                              : 'text-[var(--text-dim)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
+                          }`}
+                        >
+                          <span className="text-[var(--text-muted)]">{String(index + 1).padStart(2, '0')}</span>
+                          <span className="truncate">
+                            {marketplace.name}
+                            <span className="ml-2 text-[0.58rem] text-[var(--text-muted)]">/{marketplace.slug || marketplace.id}</span>
+                          </span>
+                          {joinedRow ? (
+                            <span className="rounded border border-[rgba(22,163,74,0.25)] bg-[rgba(22,163,74,0.12)] px-1.5 py-[0.1rem] text-[0.52rem] uppercase tracking-[0.08em] text-[var(--green-bright)]">
+                              {joinedRow.role === MARKETPLACE_ROLE.CREATOR ? 'Creator' : 'Joined'}
+                            </span>
+                          ) : (
+                            <span className="text-[0.54rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">open</span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+              {selectedMarketplace ? (
+                <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Selected: <span className="text-[var(--text)]">{selectedMarketplace.name}</span>
+                </p>
+              ) : joinIdentifier ? (
+                <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Invite Target: <span className="text-[var(--text)]">{joinIdentifier}</span>
+                </p>
+              ) : (
+                <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Select a marketplace above, then enter password.
+                </p>
+              )}
               <input
                 type="password"
                 value={joinPassword}
@@ -292,7 +405,7 @@ function EnterMarketplaceContent() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className={INPUT_CLASS}
-                placeholder="Cornell Birdwatching Club"
+                placeholder="your marketplace's name"
                 maxLength={72}
               />
               <input
