@@ -27,7 +27,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata = {
-  title: "Cornell Prediction Market",
+  title: "PredictCornell",
   description: "Trade on Cornell predictions",
   icons: {
     icon: "/predict-cornell-icon.png",

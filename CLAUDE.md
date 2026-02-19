@@ -1,35 +1,178 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Repository context for future LLM contributors.
 
-## Commands
+## Stack and structure
 
-- `npm run dev` — Start dev server (uses Webpack, required for Tailwind/PostCSS in Next.js 16)
-- `npm run build` — Production build
-- `npm run lint` — ESLint (flat config with next/core-web-vitals)
-- `node scripts/reset-database.js` — Reset Firestore: deletes all markets/bets/notifications, resets user rep to 500 (requires `serviceAccountKey.json`, interactive confirmation)
+- Next.js 16 App Router with React 19.
+- Firebase client SDK used directly from browser components (no API routes).
+- Every page in `app/` is a client component (`'use client'`) except layout shell.
+- Path alias: `@/*` (configured in `jsconfig.json`).
 
-## Architecture
+## Core commands
 
-**Next.js 16 App Router** with Firebase (Firestore + Google Auth). All pages are client-side (`'use client'`). No API routes — all Firestore reads/writes happen directly from the browser.
+- `npm run dev` — uses Webpack (`next dev --webpack`); this is the expected local dev path.
+- `npm run lint` — ESLint flat config.
+- `npm run build` — production build.
+- `npm test` — Jest (light usage currently).
 
-### Key directories
-- `lib/firebase.js` — Firebase client init, auth config. Google Auth restricted to `@cornell.edu` emails via `hd` parameter.
-- `utils/lmsr.js` — LMSR (Logarithmic Market Scoring Rule) with `calculateBet()`, `calculateSell()`, and `getPrice()`. Uses log-sum-exp trick for numerical stability.
-- `app/admin/page.js` — Admin panel for creating/resolving markets. Access gated by hardcoded `ADMIN_EMAILS` array.
-- `app/market/[id]/page.js` — Main trading page with buy/sell, probability chart (recharts AreaChart), liquidity pie chart, and activity feed.
+Admin scripts (require `serviceAccountKey.json`):
 
-### Firestore collections
-- `markets` — `{ question, probability, outstandingShares: { yes, no }, b, resolution, resolvedAt, createdAt }`
-- `bets` — `{ userId, marketId, side, amount, shares, probability, timestamp, type: 'BUY'|'SELL' }`
-- `users` — `{ email, weeklyRep, lifetimeRep }`
-- `notifications` — `{ userId, type, marketId, marketQuestion, amount, resolution, read, createdAt }`
+- `node scripts/reset-database.js` (destructive, interactive confirm).
+- `node scripts/weekly-reset.js [--dry-run] [--admin-email=...]`.
+- `node scripts/seed-sports-markets.js --sport=<sport> [--dry-run]`.
+- `node scripts/migrate-marketplace-null.js`.
 
-### Trading mechanics
-Uses LMSR (Logarithmic Market Scoring Rule). Cost function: C(q) = b * ln(e^(q_yes/b) + e^(q_no/b)). Price of YES = e^(q_yes/b) / (e^(q_yes/b) + e^(q_no/b)). The `b` parameter (default 100) controls liquidity depth — higher b means less price impact per trade. On market resolution, winning side receives shares as rep payout; losing side gets nothing.
+## Current app model
 
-### Brand colors (Tailwind)
-Custom `brand-red` (#DC2626), `brand-darkred` (#991B1B), `brand-pink` (#EC4899), `brand-lightpink` (#F9A8D4) defined in `tailwind.config.js`.
+Two scopes exist everywhere:
 
-### Environment variables
-Firebase config uses `NEXT_PUBLIC_FIREBASE_*` env vars (API_KEY, AUTH_DOMAIN, PROJECT_ID, STORAGE_BUCKET, MESSAGING_SENDER_ID, APP_ID). The reset script uses `serviceAccountKey.json` (firebase-admin).
+1. Global markets: `marketplaceId == null`
+2. Private marketplace markets: `marketplaceId` is a marketplace document id
+
+Many query/rules issues come from mixing these scopes incorrectly.
+
+### Status model
+
+`utils/marketStatus.js` defines:
+
+- `OPEN`
+- `LOCKED`
+- `RESOLVED`
+- `CANCELLED`
+
+Trade actions should only occur when `isTradeableMarket(market)` is true (currently `OPEN` only).
+
+### LMSR model
+
+`utils/lmsr.js` is source of truth for pricing and share math:
+
+- `calculateBet`
+- `calculateSell`
+- `getPrice`
+
+Do not duplicate LMSR logic in pages.
+
+## Firestore rules and implementation constraints
+
+Read `firestore.rules` before adding queries. The critical constraints:
+
+- `markets`, `bets`, `comments`, `newsItems` are read-gated by marketplace scope logic (`canReadMarketplaceScoped`).
+- Global reads work for everyone when `resource.data.marketplaceId` is null.
+- Marketplace reads require membership/creator/admin.
+- `users`, `displayNames`, `weeklySnapshots` are broadly readable.
+- `notifications` and `marketRequests` are auth and ownership constrained.
+
+### Query safety rule (important)
+
+For `bets/comments/newsItems`, always include marketplace scope in query filters where practical:
+
+- Global pages: `where('marketplaceId', '==', null)`
+- Marketplace pages: `where('marketplaceId', '==', marketplaceId)`
+
+If omitted, Firestore may reject with `permission-denied` because query could include inaccessible docs.
+
+## Indexes and query patterns
+
+`firestore.indexes.json` already includes common multi-field indexes, including:
+
+- `bets`: `(marketplaceId, marketId, timestamp desc)` and `(marketplaceId, userId, timestamp desc)`
+- `markets`: marketplace/status/resolution/createdAt variants
+- `comments` and `newsItems`: `(marketId, timestamp desc)` (not marketplace-scoped variants)
+
+Because of current indexes:
+
+- Some scoped reads use `orderBy('timestamp', 'desc')` then reverse in memory for ascending display.
+- Some comment/news reads fetch with filters + `limit` and then sort client-side.
+
+If you add query combinations, update `firestore.indexes.json` accordingly.
+
+## Auth and access patterns
+
+- Google auth restricted to Cornell domain in two places:
+  - `lib/firebase.js` provider `hd: 'cornell.edu'`
+  - `app/login/page.js` email suffix check
+- Admin is hardcoded by email and duplicated in multiple files + rules.
+  - If admin list changes, update all references plus `firestore.rules`.
+- Marketplace membership doc id is deterministic:
+  - `toMarketplaceMemberId(marketplaceId, userId)` => `${marketplaceId}_${userId}`
+
+## Launch gate (temporary but active)
+
+Launch gate is implemented and currently active:
+
+- Component: `app/components/LaunchGate.js`
+- Wrapper: `app/layout.js` wraps `{children}` with `<LaunchGate>`.
+- `Navigation` remains mounted in layout, but gate uses fixed overlay (`z-index: 9999`) to block interaction/visibility.
+
+Env vars used:
+
+- `NEXT_PUBLIC_LAUNCH_PASSWORD`
+- `NEXT_PUBLIC_LAUNCH_TIMESTAMP`
+
+Current default/fallback timestamp in code is `1771855200000` (Mon Feb 23, 2026 9:00 AM EST).
+
+Remove post-launch by:
+
+1. Unwrapping `children` in layout
+2. Deleting `LaunchGate.js`
+3. Removing launch env vars
+
+## Data and UX conventions
+
+- Weekly baseline is `$1000` for global trading.
+- Marketplace defaults (`utils/marketplace.js`):
+  - starting balance `500`
+  - default `b` `50`
+  - reset mode `WEEKLY`
+- Display names are managed with claim-key docs in `displayNames` and normalized uniqueness.
+- Portfolio/leaderboard math centralizes in:
+  - `utils/portfolio.js`
+  - `utils/marketplacePortfolio.js`
+
+## Known implementation gotchas
+
+- Do not log Firebase env vars/API keys in client code.
+- Avoid broad unauthenticated reads on protected collections.
+- Keep homepage and market-page fetches resilient: one failed subquery should not blank the whole page.
+- `next/font/google` fetches at build time; offline/sandboxed builds can fail even if code is fine.
+- A legacy component `app/components/navbar.js` exists; primary nav is `app/components/Navigation.js`.
+
+## Recent incidents + fixes
+
+- `orderBy` runtime error in `utils/marketplaceClient.js`:
+  - Cause: `orderBy(...)` used without importing from Firestore.
+  - Fix: import `orderBy` in `utils/marketplaceClient.js`.
+
+- Homepage warning banner (`Unable to load latest market data...`) showing unexpectedly:
+  - Cause: invalid/fragile Firestore query combinations and single catch block failing the whole page fetch.
+  - Fix: split homepage data fetch into isolated `try/catch` blocks and simplify resolved-market fetching to safer query + client sort.
+
+- Logged-out users seeing many `Missing or insufficient permissions` console errors:
+  - Cause: public pages querying `bets/comments/newsItems` without marketplace scope filters or before access context settled.
+  - Fix:
+    - Added `where('marketplaceId', '==', null)` on global/public reads.
+    - Added scoped marketplace filters on market detail page reads.
+    - Gated market-detail dependent reads behind market access context.
+    - Suppressed expected `permission-denied` noise where it is non-actionable.
+
+- Market page had a non-functional “Activity” tab label:
+  - Cause: static UI text with no state/content.
+  - Fix: removed dead tab label to avoid misleading UI.
+
+- Launch gate timestamp mismatch:
+  - Cause: `1740319200000` corresponds to Feb 23, 2025, not 2026.
+  - Fix: use `1771855200000` for Mon Feb 23, 2026 9:00 AM EST.
+
+## Suggested checklist before/after changes
+
+Before:
+
+- Check rules compatibility for new Firestore queries.
+- Reuse utility modules (LMSR, portfolio, marketplace helpers) rather than reimplementing.
+
+After:
+
+- Run `npm run lint`.
+- If query shapes changed, check/update `firestore.indexes.json`.
+- Smoke test logged-out and logged-in flows for permission-denied console noise.

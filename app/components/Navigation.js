@@ -17,6 +17,11 @@ function initialsFor(user) {
   return prefix.slice(0, 2).toUpperCase();
 }
 
+function isPermissionDenied(error) {
+  return error?.code === 'permission-denied'
+    || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
+}
+
 export default function Navigation() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -38,15 +43,56 @@ export default function Navigation() {
     if (!id || id === 'enter') return null;
     return id;
   }, [pathname]);
-  const inMarketplaceContext = !!routeMarketplaceId;
+  const routeMarketId = useMemo(() => {
+    if (!pathname?.startsWith('/market/')) return null;
+    const [, segment, id] = pathname.split('/');
+    if (segment !== 'market') return null;
+    if (!id || id === 'active') return null;
+    return id;
+  }, [pathname]);
+  const [marketRouteMarketplaceId, setMarketRouteMarketplaceId] = useState(null);
+  const activeMarketplaceId = routeMarketplaceId || marketRouteMarketplaceId;
+  const inMarketplaceContext = !!activeMarketplaceId;
 
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
   const displayBalance = inMarketplaceContext
     ? Number(activeMarketplaceBalance ?? balance)
     : Number(balance);
   const displayBalanceLabel = inMarketplaceContext
-    ? (activeMarketplace?.name || 'marketplace')
-    : 'balance';
+    ? `${activeMarketplace?.name || 'Marketplace'} wallet`
+    : 'Global wallet';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveMarketplaceFromMarketRoute() {
+      if (!routeMarketId) {
+        setMarketRouteMarketplaceId(null);
+        return;
+      }
+      setMarketRouteMarketplaceId(null);
+
+      try {
+        const marketSnap = await getDoc(doc(db, 'markets', routeMarketId));
+        if (cancelled) return;
+        if (!marketSnap.exists()) {
+          setMarketRouteMarketplaceId(null);
+          return;
+        }
+        setMarketRouteMarketplaceId(marketSnap.data().marketplaceId || null);
+      } catch (error) {
+        if (!isPermissionDenied(error)) {
+          console.error('Error resolving market route context:', error);
+        }
+        if (!cancelled) setMarketRouteMarketplaceId(null);
+      }
+    }
+
+    resolveMarketplaceFromMarketRoute();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeMarketId]);
 
   useEffect(() => {
     let unsubscribeUnread = null;
@@ -138,20 +184,20 @@ export default function Navigation() {
     let cancelled = false;
 
     async function loadMarketplaceContext() {
-      if (!user || !routeMarketplaceId) {
+      if (!user || !activeMarketplaceId) {
         setActiveMarketplace(null);
         setActiveMarketplaceBalance(null);
         return;
       }
 
       unsubscribeActiveMember = onSnapshot(
-        doc(db, 'marketplaceMembers', toMarketplaceMemberId(routeMarketplaceId, user.uid)),
+        doc(db, 'marketplaceMembers', toMarketplaceMemberId(activeMarketplaceId, user.uid)),
         (memberSnap) => setActiveMarketplaceBalance(memberSnap.exists() ? Number(memberSnap.data().balance || 0) : null),
         (error) => console.error('Error listening to marketplace balance:', error)
       );
 
       try {
-        const marketplaceSnap = await getDoc(doc(db, 'marketplaces', routeMarketplaceId));
+        const marketplaceSnap = await getDoc(doc(db, 'marketplaces', activeMarketplaceId));
         if (!cancelled) {
           setActiveMarketplace(marketplaceSnap.exists() ? { id: marketplaceSnap.id, ...marketplaceSnap.data() } : null);
         }
@@ -165,7 +211,7 @@ export default function Navigation() {
       cancelled = true;
       if (unsubscribeActiveMember) unsubscribeActiveMember();
     };
-  }, [routeMarketplaceId, user]);
+  }, [activeMarketplaceId, user]);
 
   const menuVisible = mobileMenuOpen && mobileMenuPath === pathname;
   const desktopMenuVisible = desktopMarketsOpen && desktopMenuPath === pathname && !menuVisible;
@@ -307,9 +353,17 @@ export default function Navigation() {
         <div className="justify-self-end flex items-center gap-2 md:gap-3">
           {user ? (
             <>
-              <div className="flex items-center gap-1 rounded border border-[var(--border2)] px-2 py-[0.3rem] font-mono text-[0.65rem] text-[var(--text-dim)] md:gap-2 md:px-3 md:text-[0.7rem]">
-                <span className="hidden sm:inline">{displayBalanceLabel}</span>
-                <strong className="text-[0.75rem] text-[var(--amber-bright)] md:text-[0.8rem]">
+              <div className={`flex items-center gap-2 rounded-md border px-2.5 py-[0.35rem] font-mono md:px-3 ${
+                inMarketplaceContext
+                  ? 'border-[var(--red-dim)] bg-[var(--red-glow)]'
+                  : 'border-[var(--border2)] bg-[var(--surface)]'
+              }`}>
+                <span className={`hidden sm:inline text-[0.54rem] uppercase tracking-[0.08em] ${
+                  inMarketplaceContext ? 'text-[var(--red)]' : 'text-[var(--text-muted)]'
+                }`}>{displayBalanceLabel}</span>
+                <strong className={`text-[0.82rem] md:text-[0.9rem] ${
+                  inMarketplaceContext ? 'text-[var(--amber-bright)]' : 'text-[var(--text)]'
+                }`}>
                   ${displayBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </strong>
               </div>

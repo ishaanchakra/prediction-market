@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase';
+import ToastStack from '@/app/components/ToastStack';
+import useToastQueue from '@/app/hooks/useToastQueue';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import { MARKETPLACE_ROLE } from '@/utils/marketplace';
+import { buildMarketplaceInviteUrl } from '@/utils/marketplaceInvite';
 import { fetchMarketplaceBets, fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/marketplaceClient';
 
 function probabilityClass(probability) {
@@ -17,6 +20,7 @@ function probabilityClass(probability) {
 export default function MarketplaceDashboardPage() {
   const params = useParams();
   const router = useRouter();
+  const { toasts, notifyError, notifySuccess, removeToast, resolveConfirm } = useToastQueue();
   const marketplaceId = params?.id;
 
   const [loading, setLoading] = useState(true);
@@ -108,6 +112,40 @@ export default function MarketplaceDashboardPage() {
     return () => unsubscribe();
   }, [marketplaceId, router]);
 
+  async function handleShareMarketplace() {
+    if (typeof window === 'undefined') return;
+
+    const inviteUrl = buildMarketplaceInviteUrl(window.location.origin, marketplace);
+    if (!inviteUrl) {
+      notifyError('Unable to generate invite link right now.');
+      return;
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${marketplace?.name || 'Predict Cornell'} invite`,
+          text: 'Join this marketplace on Predict Cornell. Share the password separately.',
+          url: inviteUrl
+        });
+        notifySuccess('Invite shared. Members still need the marketplace password.');
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteUrl);
+        notifySuccess('Invite link copied. Share the marketplace password separately.');
+        return;
+      }
+
+      notifyError('Share is unavailable on this browser.');
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        notifyError('Unable to share invite link right now.');
+      }
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
@@ -146,9 +184,18 @@ export default function MarketplaceDashboardPage() {
               Leaderboard
             </Link>
             {isCreator && (
-              <Link href={`/marketplace/${marketplaceId}/admin`} className="rounded border border-[var(--red-dim)] bg-[var(--red)] px-3 py-2 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-white hover:bg-[var(--red-dim)]">
-                Creator Admin
-              </Link>
+              <>
+                <button
+                  type="button"
+                  onClick={handleShareMarketplace}
+                  className="rounded border border-[var(--border2)] bg-[var(--surface)] px-3 py-2 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-dim)] hover:text-[var(--text)]"
+                >
+                  Share
+                </button>
+                <Link href={`/marketplace/${marketplaceId}/admin`} className="rounded border border-[var(--red-dim)] bg-[var(--red)] px-3 py-2 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-white hover:bg-[var(--red-dim)]">
+                  Creator Admin
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -204,6 +251,7 @@ export default function MarketplaceDashboardPage() {
           </div>
         </section>
       </div>
+      <ToastStack toasts={toasts} onDismiss={removeToast} onConfirm={resolveConfirm} />
     </div>
   );
 }
@@ -223,4 +271,3 @@ function StatCell({ label, value, tone }) {
     </div>
   );
 }
-

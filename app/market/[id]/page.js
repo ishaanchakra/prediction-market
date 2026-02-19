@@ -1239,22 +1239,31 @@ export default function MarketPage() {
     <div className="min-h-screen bg-[var(--bg)]">
       <div className="mx-auto max-w-[1200px] md:grid md:grid-cols-[1fr_320px]" style={{ minHeight: 'calc(100vh - 56px)' }}>
         <main className="p-4 md:border-r md:border-[var(--border)] md:p-8">
-          <div className="mb-6 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">
-            <Link href="/markets/active" className="text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
+          <div className="mb-6 flex flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[0.62rem] leading-none text-[var(--text-muted)]">
+            <Link href="/markets/active" className="uppercase tracking-[0.08em] text-[var(--text-dim)] hover:text-[var(--text)]">Markets</Link>
             <span>/</span>
-            <span className="text-[var(--text-dim)]">{categoryLabel}</span>
+            <span className="uppercase tracking-[0.08em] text-[var(--text-dim)]">{categoryLabel}</span>
             <span>/</span>
-            <span>{truncatedQuestion}</span>
+            <span className="tracking-normal text-[var(--text)] normal-case">{truncatedQuestion}</span>
           </div>
 
           {market.marketplaceId && (
-            <div className="mb-4 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-              <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                Private marketplace market
-              </p>
-              <p className="font-mono text-[0.64rem] text-[var(--text-dim)]">
-                Wallet balance: ${Number(marketplaceMembership?.balance || 0).toFixed(2)}
-              </p>
+            <div className="mb-5 rounded border border-[var(--red-dim)] bg-[var(--red-glow)] px-4 py-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--red)]">
+                    Marketplace Wallet
+                  </p>
+                  <p className="mt-1 font-mono text-[0.66rem] text-[var(--text-dim)]">
+                    This market uses your private marketplace balance.
+                  </p>
+                </div>
+                <p className="font-mono text-[1.35rem] font-bold tracking-[-0.03em] text-[var(--amber-bright)]">
+                  {marketplaceMembership
+                    ? `$${Number(marketplaceMembership.balance || 0).toFixed(2)}`
+                    : 'Loading...'}
+                </p>
+              </div>
             </div>
           )}
 
