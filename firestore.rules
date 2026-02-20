@@ -225,6 +225,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /waitlist/{entryId} {
+      allow create, update: if request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() <= 254;
+      allow read, delete: if isAdmin();
+    }
+
     match /notifications/{notificationId} {
       allow read: if hasAllowedEmail()
         && (request.auth.uid == resource.data.userId || isAdmin());

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const LAUNCH_PASSWORD = process.env.NEXT_PUBLIC_LAUNCH_PASSWORD || 'Hayek';
 const LAUNCH_TIMESTAMP = parseInt(process.env.NEXT_PUBLIC_LAUNCH_TIMESTAMP || '1771855200000', 10);
@@ -134,7 +136,32 @@ export default function LaunchGate({ children }) {
 }
 
 function LaunchGateUI({ password, setPassword, error, timeRemaining, onSubmit, disableInput = false }) {
+  const [email, setEmail] = useState('');
+  const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'submitting' | 'success' | 'error'
+  const [emailError, setEmailError] = useState('');
   const countdown = formatCountdown(timeRemaining);
+
+  async function handleEmailSubmit(e) {
+    e.preventDefault();
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setEmailError('Enter a valid email address.');
+      return;
+    }
+    setEmailStatus('submitting');
+    setEmailError('');
+    try {
+      await setDoc(doc(db, 'waitlist', trimmed), {
+        email: trimmed,
+        submittedAt: serverTimestamp()
+      });
+      setEmailStatus('success');
+    } catch (err) {
+      console.error('Waitlist signup error:', err);
+      setEmailStatus('error');
+      setEmailError('Something went wrong. Try again.');
+    }
+  }
 
   return (
     <div
@@ -314,6 +341,99 @@ function LaunchGateUI({ password, setPassword, error, timeRemaining, onSubmit, d
               Unlock
             </button>
           </form>
+        </div>
+
+        <div
+          style={{
+            padding: '1.5rem 2rem',
+            border: '1px solid var(--border, #2e2e2e)',
+            borderRadius: '8px',
+            background: 'var(--surface, #191919)',
+            marginBottom: '1.5rem'
+          }}
+        >
+          {emailStatus === 'success' ? (
+            <p
+              style={{
+                fontFamily: 'var(--mono, monospace)',
+                fontSize: '0.78rem',
+                color: '#4ade80',
+                margin: 0
+              }}
+            >
+              ✓ You&apos;re on the list — we&apos;ll email you on launch day.
+            </p>
+          ) : (
+            <>
+              <p
+                style={{
+                  fontFamily: 'var(--mono, monospace)',
+                  fontSize: '0.65rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  color: 'var(--text-muted, #4a4845)',
+                  marginBottom: '1rem'
+                }}
+              >
+                Get notified on launch day
+              </p>
+              <form onSubmit={handleEmailSubmit} style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
+                  placeholder="your@cornell.edu"
+                  disabled={emailStatus === 'submitting'}
+                  style={{
+                    flex: 1,
+                    padding: '0.6rem 0.85rem',
+                    fontFamily: 'var(--mono, monospace)',
+                    fontSize: '0.8rem',
+                    background: 'var(--surface2, #222222)',
+                    border: `1px solid ${emailError ? 'var(--red, #DC2626)' : 'var(--border2, #3d3d3d)'}`,
+                    borderRadius: '6px',
+                    color: 'var(--text, #F0EDE8)',
+                    outline: 'none',
+                    minWidth: 0
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={emailStatus === 'submitting'}
+                  style={{
+                    padding: '0.6rem 1rem',
+                    fontFamily: 'var(--mono, monospace)',
+                    fontSize: '0.65rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    fontWeight: 700,
+                    background: 'transparent',
+                    color: 'var(--text-dim, #7A7772)',
+                    border: '1px solid var(--border2, #3d3d3d)',
+                    borderRadius: '6px',
+                    cursor: emailStatus === 'submitting' ? 'default' : 'pointer',
+                    whiteSpace: 'nowrap',
+                    opacity: emailStatus === 'submitting' ? 0.6 : 1
+                  }}
+                >
+                  {emailStatus === 'submitting' ? '...' : 'Notify me'}
+                </button>
+              </form>
+              {emailError && (
+                <p
+                  style={{
+                    fontFamily: 'var(--mono, monospace)',
+                    fontSize: '0.68rem',
+                    color: 'var(--red, #DC2626)',
+                    marginTop: '0.5rem',
+                    textAlign: 'left'
+                  }}
+                >
+                  {emailError}
+                </p>
+              )}
+            </>
+          )}
         </div>
 
         <p
