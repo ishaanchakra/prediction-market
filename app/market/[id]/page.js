@@ -27,6 +27,7 @@ import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { toMarketplaceMemberId } from '@/utils/marketplace';
+import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -103,6 +104,7 @@ export default function MarketPage() {
   const [topBettors, setTopBettors] = useState([]);
   const [relatedMarkets, setRelatedMarkets] = useState([]);
   const [marketplaceMembership, setMarketplaceMembership] = useState(null);
+  const [viewTrackedForMarket, setViewTrackedForMarket] = useState(null);
   const { toasts, notifyError, notifySuccess, confirmToast, removeToast, resolveConfirm } = useToastQueue();
 
   const marketStatus = getMarketStatus(market);
@@ -258,6 +260,17 @@ export default function MarketPage() {
     }
     fetchMarket();
   }, [params.id, router]);
+
+  useEffect(() => {
+    if (!market?.id) return;
+    if (viewTrackedForMarket === market.id) return;
+    trackEvent(ANALYTICS_EVENTS.MARKET_VIEWED, {
+      marketId: market.id,
+      marketplaceId: market.marketplaceId || null,
+      category: market.category || null
+    });
+    setViewTrackedForMarket(market.id);
+  }, [market, viewTrackedForMarket]);
 
   useEffect(() => {
     async function fetchUserPosition() {
@@ -738,6 +751,18 @@ export default function MarketPage() {
           probability: txResult.newProbability
         } : prev));
       }
+      if (typeof window !== 'undefined' && currentUser?.uid) {
+        const firstBetKey = `predictcornell_first_bet_${currentUser.uid}`;
+        if (!window.localStorage.getItem(firstBetKey)) {
+          window.localStorage.setItem(firstBetKey, '1');
+          trackEvent(ANALYTICS_EVENTS.FIRST_BET_PLACED, {
+            marketId: params.id,
+            marketplaceId: market?.marketplaceId || null,
+            side: selectedSide,
+            amount
+          });
+        }
+      }
       setBetAmount('');
       setPreview(null);
     } catch (error) {
@@ -1086,6 +1111,10 @@ export default function MarketPage() {
   const resolutionRulesText = typeof market?.resolutionRules === 'string' && market.resolutionRules.trim()
     ? market.resolutionRules.trim()
     : null;
+  const resolutionRationale = market?.resolutionRationale || market?.resolutionAudit?.rationale || '';
+  const resolutionSourceUrl = market?.resolutionSourceUrl || market?.resolutionAudit?.sourceUrl || '';
+  const resolvedBy = market?.resolvedBy || market?.resolutionAudit?.resolver || '';
+  const disputeUntil = market?.resolutionDisputeUntil || null;
 
   const marketTags = Array.isArray(market?.tags) ? market.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [];
   const categoryLabel = market?.category || market?.topic || marketTags[0] || 'Campus';
@@ -1328,6 +1357,37 @@ export default function MarketPage() {
               {resolutionRulesText || 'No specific resolution rule has been posted yet. Trade carefully and check comments for clarifications.'}
             </p>
           </div>
+
+          {(isResolved || isCancelled) && (
+            <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+              <p className="mb-2 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                <span className="inline-block h-px w-3 bg-[var(--amber-bright)]" />
+                Resolution Audit
+              </p>
+              <p className="text-sm text-[var(--text-dim)]">
+                Resolver: <span className="text-[var(--text)]">{resolvedBy || 'Admin'}</span> · Timestamp:{' '}
+                <span className="text-[var(--text)]">{market.resolvedAt ? safeDate(market.resolvedAt).toLocaleString() : 'Pending'}</span>
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--text)]">
+                {resolutionRationale || 'No rationale was added for this resolution.'}
+              </p>
+              {resolutionSourceUrl && (
+                <a
+                  href={resolutionSourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block font-mono text-[0.62rem] text-[var(--red)] underline"
+                >
+                  Source link
+                </a>
+              )}
+              <p className="mt-2 font-mono text-[0.58rem] text-[var(--text-muted)]">
+                {disputeUntil
+                  ? `Dispute window until ${safeDate(disputeUntil).toLocaleString()}`
+                  : 'If you think this resolution is wrong, contact an admin with evidence.'}
+              </p>
+            </div>
+          )}
 
           <div className="mb-7">
             <ResponsiveContainer width="100%" height={isMobile ? 200 : 300}>

@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { round2 } from '@/utils/round';
 import { calculateAllPortfolioValues } from '@/utils/portfolio';
+import { calculateWeeklyCorrectionRows } from '@/utils/weeklyCorrection';
+import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -34,6 +36,24 @@ function hoursToNextMonday() {
   return `${days}d ${hours}h`;
 }
 
+function getCurrentWeekWindow(nowValue = new Date()) {
+  const now = new Date(nowValue);
+  const day = now.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  const start = new Date(now);
+  start.setDate(now.getDate() - daysSinceMonday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { start, end };
+}
+
+function formatWeekWindow(startValue, endValue) {
+  const start = toDate(startValue);
+  const end = toDate(endValue);
+  return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
 function toDate(value) {
   if (value?.toDate) return value.toDate();
   const parsed = new Date(value);
@@ -53,9 +73,9 @@ function isPermissionDenied(error) {
     || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
 }
 
-async function fetchOpenMarketBets(openMarketIds) {
-  if (openMarketIds.length === 0) return [];
-  const chunks = chunkArray(openMarketIds, 10);
+async function fetchBetsByMarketIds(marketIds) {
+  if (marketIds.length === 0) return [];
+  const chunks = chunkArray(marketIds, 10);
   const snapshots = await Promise.all(
     chunks.map((chunk) =>
       getDocs(
@@ -81,6 +101,7 @@ export default function LeaderboardPage() {
   const [openMarketsCount, setOpenMarketsCount] = useState(0);
   const [totalTraded, setTotalTraded] = useState(0);
   const [allTimeMode, setAllTimeMode] = useState('pnl');
+  const [weeklyMode, setWeeklyMode] = useState('pnl');
   const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
   const lifetimeUsers = useMemo(
@@ -95,10 +116,26 @@ export default function LeaderboardPage() {
         .slice(0, 50),
     [users]
   );
-  const weeklyUsers = useMemo(
-    () => [...weeklyRows].sort((a, b) => Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0)).slice(0, 50),
+  const weeklyRowsWithModes = useMemo(
+    () =>
+      weeklyRows.map((row) => ({
+        ...row,
+        weeklyCorrectionScore: Number(row.weeklyCorrectionScore || 0),
+        weeklyResolvedMarkets: Number(row.weeklyResolvedMarkets || 0)
+      })),
     [weeklyRows]
   );
+
+  const weeklyUsers = useMemo(() => {
+    const sorted = [...weeklyRowsWithModes].sort((a, b) => {
+      if (weeklyMode === 'correction') {
+        const scoreDiff = Number(b.weeklyCorrectionScore || 0) - Number(a.weeklyCorrectionScore || 0);
+        if (Math.abs(scoreDiff) > 0.0001) return scoreDiff;
+      }
+      return Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0);
+    });
+    return sorted.slice(0, 50);
+  }, [weeklyMode, weeklyRowsWithModes]);
 
   const meWeekly = useMemo(() => weeklyUsers.find((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
   const meWeeklyRank = useMemo(() => weeklyUsers.findIndex((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
@@ -107,11 +144,33 @@ export default function LeaderboardPage() {
     () => weeklyRows.filter((row) => Math.abs(Number(row.weeklyNet || 0)) > 0.001).length,
     [weeklyRows]
   );
+  const correctionParticipants = useMemo(
+    () => weeklyRowsWithModes.filter((row) => Number(row.weeklyResolvedMarkets || 0) > 0).length,
+    [weeklyRowsWithModes]
+  );
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => setViewer(currentUser));
     return () => unsubscribe();
   }, []);
+
+  const weekWindow = useMemo(() => getCurrentWeekWindow(), []);
+  const weeklyModeCopy = weeklyMode === 'correction'
+    ? 'Correction score rewards correct, contrarian positions on markets resolved this week.'
+    : 'Trading P&L uses portfolio value (cash + open positions) from a $1,000 baseline.';
+  const weeklyModeDetail = weeklyMode === 'correction'
+    ? `Window ${formatWeekWindow(weekWindow.start, weekWindow.end)} · ${correctionParticipants} users scored`
+    : `Window ${formatWeekWindow(weekWindow.start, weekWindow.end)} · ${activeTradersCount} active traders`;
+
+  function handleWeeklyModeChange(nextMode) {
+    if (nextMode === weeklyMode) return;
+    setWeeklyMode(nextMode);
+    trackEvent(ANALYTICS_EVENTS.LEADERBOARD_MODE_TOGGLED, {
+      mode: nextMode,
+      weekStart: weekWindow.start.toISOString(),
+      weekEnd: weekWindow.end.toISOString()
+    });
+  }
 
   useEffect(() => {
     async function fetchAll() {
@@ -134,7 +193,32 @@ export default function LeaderboardPage() {
         setOpenMarketsCount(openMarkets.length);
 
         const openMarketIds = openMarkets.map((market) => market.id);
-        const openBets = await fetchOpenMarketBets(openMarketIds);
+        const openBets = await fetchBetsByMarketIds(openMarketIds);
+
+        const weekWindow = getCurrentWeekWindow();
+        const [resolvedYesSnap, resolvedNoSnap] = await Promise.all([
+          getDocs(query(collection(db, 'markets'), where('resolution', '==', 'YES'))),
+          getDocs(query(collection(db, 'markets'), where('resolution', '==', 'NO')))
+        ]);
+        const resolvedThisWeek = [...resolvedYesSnap.docs, ...resolvedNoSnap.docs]
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => !market.marketplaceId)
+          .filter((market) => market.status !== 'CANCELLED')
+          .filter((market) => {
+            const resolvedAt = toDate(market.resolvedAt).getTime();
+            return resolvedAt >= weekWindow.start.getTime() && resolvedAt < weekWindow.end.getTime();
+          });
+        const resolvedMarketIds = resolvedThisWeek.map((market) => market.id);
+        const resolvedBets = await fetchBetsByMarketIds(resolvedMarketIds);
+        const correctionRows = calculateWeeklyCorrectionRows({
+          users: usersData,
+          resolvedMarkets: resolvedThisWeek,
+          bets: resolvedBets
+        });
+        const correctionByUserId = correctionRows.reduce((acc, row) => {
+          acc[row.id] = row;
+          return acc;
+        }, {});
 
         const weeklyRowsData = calculateAllPortfolioValues({
           users: usersData,
@@ -145,7 +229,9 @@ export default function LeaderboardPage() {
           portfolioValue: round2(row.portfolioValue),
           cashBalance: round2(row.cashBalance),
           positionsValue: round2(row.positionsValue),
-          weeklyNet: round2(row.weeklyNet)
+          weeklyNet: round2(row.weeklyNet),
+          weeklyCorrectionScore: round2(correctionByUserId[row.id]?.weeklyCorrectionScore || 0),
+          weeklyResolvedMarkets: Number(correctionByUserId[row.id]?.weeklyResolvedMarkets || 0)
         }));
         setWeeklyRows(weeklyRowsData);
 
@@ -196,15 +282,36 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        <div className="mb-8 flex items-center justify-between overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-4">
-          <div>
-            <p className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Current Week</p>
-            <p className="text-base font-bold text-[var(--text)]">Week of {weekLabel()}</p>
-            <p className="font-mono text-[0.65rem] text-[var(--text-dim)]">Weekly ranking uses portfolio value (cash + open positions) from a $1,000 baseline.</p>
+        <div className="mb-8 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Current Week</p>
+              <p className="text-base font-bold text-[var(--text)]">Week of {weekLabel()}</p>
+              <p className="font-mono text-[0.65rem] text-[var(--text-dim)]">{weeklyModeCopy}</p>
+              <p className="mt-1 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{weeklyModeDetail}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-mono text-2xl font-bold tracking-[-0.03em] text-[var(--amber-bright)]">{hoursToNextMonday()}</p>
+              <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">until reset window</p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="font-mono text-2xl font-bold tracking-[-0.03em] text-[var(--amber-bright)]">{hoursToNextMonday()}</p>
-            <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">until reset window</p>
+          <div className="mt-4 inline-flex rounded border border-[var(--border2)] bg-[var(--surface2)] p-1">
+            <button
+              onClick={() => handleWeeklyModeChange('pnl')}
+              className={`rounded px-3 py-1.5 font-mono text-[0.6rem] uppercase tracking-[0.08em] ${
+                weeklyMode === 'pnl' ? 'bg-[var(--red-glow)] text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+              }`}
+            >
+              Trading P&L
+            </button>
+            <button
+              onClick={() => handleWeeklyModeChange('correction')}
+              className={`rounded px-3 py-1.5 font-mono text-[0.6rem] uppercase tracking-[0.08em] ${
+                weeklyMode === 'correction' ? 'bg-[rgba(217,119,6,.12)] text-[var(--amber-bright)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+              }`}
+            >
+              Correction Score
+            </button>
           </div>
         </div>
 
@@ -217,14 +324,21 @@ export default function LeaderboardPage() {
             <div>
               <p className="text-base font-bold text-[var(--text)]">{getPublicDisplayName(meWeekly)}</p>
               <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">
-                Cash ${fmtMoney(meWeekly.cashBalance)} · Positions ${fmtMoney(meWeekly.positionsValue)}
+                {weeklyMode === 'correction'
+                  ? `${Number(meWeekly.weeklyResolvedMarkets || 0)} resolved market${Number(meWeekly.weeklyResolvedMarkets || 0) === 1 ? '' : 's'} scored`
+                  : `Cash $${fmtMoney(meWeekly.cashBalance)} · Positions $${fmtMoney(meWeekly.positionsValue)}`}
               </p>
             </div>
             <p className="text-right font-mono text-4xl font-bold tracking-[-0.04em] text-[var(--green-bright)]">#{meWeeklyRank + 1}</p>
             <p className="text-right font-mono text-[0.65rem] text-[var(--text-dim)]">
-              Weekly P&L:{' '}
-              <strong className={Number(meWeekly.weeklyNet || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}>
-                {Number(meWeekly.weeklyNet || 0) >= 0 ? '+' : ''}${fmtMoney(meWeekly.weeklyNet)}
+              {weeklyMode === 'correction' ? 'Correction Score' : 'Weekly P&L'}:{' '}
+              <strong className={weeklyMode === 'correction'
+                ? 'text-[var(--amber-bright)]'
+                : (Number(meWeekly.weeklyNet || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]')}
+              >
+                {weeklyMode === 'correction'
+                  ? `${Number(meWeekly.weeklyCorrectionScore || 0).toFixed(1)} pts`
+                  : `${Number(meWeekly.weeklyNet || 0) >= 0 ? '+' : ''}$${fmtMoney(meWeekly.weeklyNet)}`}
               </strong>
             </p>
           </div>
@@ -234,17 +348,39 @@ export default function LeaderboardPage() {
           <StatCell label="Active Traders" value={`${activeTradersCount}`} tone="amber" />
           <StatCell label="Total Traded" value={`$${Math.round(totalTraded).toLocaleString()}`} tone="dim" />
           <StatCell label="Markets Open" value={`${openMarketsCount}`} tone="red" />
-          <StatCell label="Top Profit" value={`${(Number(topWeekly?.weeklyNet || 0)) >= 0 ? '+' : ''}$${Math.round(Number(topWeekly?.weeklyNet || 0))}`} tone="green" />
+          <StatCell
+            label={weeklyMode === 'correction' ? 'Top Score' : 'Top Profit'}
+            value={weeklyMode === 'correction'
+              ? `${Number(topWeekly?.weeklyCorrectionScore || 0).toFixed(1)} pts`
+              : `${(Number(topWeekly?.weeklyNet || 0)) >= 0 ? '+' : ''}$${Math.round(Number(topWeekly?.weeklyNet || 0))}`}
+            tone={weeklyMode === 'correction' ? 'amber' : 'green'}
+          />
         </div>
 
         <TableBlock
-          title="Weekly Rankings"
-          subtitle="traders of the week"
+          title={weeklyMode === 'correction' ? 'Weekly Correction Rankings' : 'Weekly Trading Rankings'}
+          subtitle={weeklyMode === 'correction' ? 'truth-seeking performance' : 'traders of the week'}
           users={weeklyUsers}
           viewerId={viewer?.uid}
           router={router}
-          metricFn={(user) => Number(user.weeklyNet || 0)}
-          detailsFn={(user) => `Portfolio $${fmtMoney(user.portfolioValue)} · Cash $${fmtMoney(user.cashBalance)} · Pos $${fmtMoney(user.positionsValue)}`}
+          metricFn={(user) => (weeklyMode === 'correction' ? Number(user.weeklyCorrectionScore || 0) : Number(user.weeklyNet || 0))}
+          detailsFn={(user) =>
+            weeklyMode === 'correction'
+              ? `${Number(user.weeklyResolvedMarkets || 0)} resolved market${Number(user.weeklyResolvedMarkets || 0) === 1 ? '' : 's'} scored`
+              : `Portfolio $${fmtMoney(user.portfolioValue)} · Cash $${fmtMoney(user.cashBalance)} · Pos $${fmtMoney(user.positionsValue)}`}
+          metricLabel={weeklyMode === 'correction' ? 'Correction Score' : 'Net Profit (Week)'}
+          metricDisplayFn={(value) =>
+            weeklyMode === 'correction'
+              ? `${Number(value || 0).toFixed(1)} pts`
+              : `${Number(value || 0) >= 0 ? '+' : '-'}$${fmtMoney(Math.abs(Number(value || 0)))}`}
+          metricClassFn={(value) => {
+            if (weeklyMode === 'correction') return 'text-[var(--amber-bright)]';
+            return Number(value || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]';
+          }}
+          barClassFn={(value) => {
+            if (weeklyMode === 'correction') return 'bg-[var(--amber-bright)]';
+            return Number(value || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]';
+          }}
         />
 
         <AllTimeSection
@@ -283,7 +419,20 @@ function StatCell({ label, value, tone }) {
   );
 }
 
-function TableBlock({ title, subtitle, users, viewerId, router, metricFn, detailsFn, lifetime = false }) {
+function TableBlock({
+  title,
+  subtitle,
+  users,
+  viewerId,
+  router,
+  metricFn,
+  detailsFn,
+  lifetime = false,
+  metricLabel,
+  metricDisplayFn,
+  metricClassFn,
+  barClassFn
+}) {
   const maxAbs = Math.max(...users.map((user) => Math.abs(metricFn(user))), 1);
   return (
     <section className="mb-12">
@@ -300,7 +449,9 @@ function TableBlock({ title, subtitle, users, viewerId, router, metricFn, detail
           <tr className="border-b border-[var(--border)]">
             <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Rank</th>
             <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
-            <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">{lifetime ? 'Net Profit (All-Time)' : 'Net Profit (Week)'}</th>
+            <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">
+              {metricLabel || (lifetime ? 'Net Profit (All-Time)' : 'Net Profit (Week)')}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -345,12 +496,12 @@ function TableBlock({ title, subtitle, users, viewerId, router, metricFn, detail
                   )}
                 </td>
                 <td className="px-5 py-4 text-right">
-                  <span className={`block font-mono text-[0.9rem] font-bold ${pos ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
-                    {pos ? '+' : '-'}${fmtMoney(Math.abs(profit))}
+                  <span className={`block font-mono text-[0.9rem] font-bold ${metricClassFn ? metricClassFn(profit) : (pos ? 'text-[var(--green-bright)]' : 'text-[var(--red)]')}`}>
+                    {metricDisplayFn ? metricDisplayFn(profit) : `${pos ? '+' : '-'}$${fmtMoney(Math.abs(profit))}`}
                   </span>
                   <span className="ml-auto mt-1 block h-[2px] w-20 rounded bg-[var(--surface3)]">
                     <span
-                      className={`block h-[2px] rounded ${pos ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]'}`}
+                      className={`block h-[2px] rounded ${barClassFn ? barClassFn(profit) : (pos ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]')}`}
                       style={{ width: `${barWidth}px` }}
                     />
                   </span>
@@ -517,9 +668,11 @@ function PastWeeksSection({ weeklySnapshots, expandedWeeks, setExpandedWeeks }) 
         ) : (
           weeklySnapshots.map((snapshot) => {
             const top = Array.isArray(snapshot.rankings) ? snapshot.rankings[0] : null;
+            const topCorrection = Array.isArray(snapshot.rankingsCorrection) ? snapshot.rankingsCorrection[0] : null;
             const expanded = !!expandedWeeks[snapshot.id];
             const weekText = snapshot.weekOf || toDate(snapshot.snapshotDate).toISOString().slice(0, 10);
             const top10 = Array.isArray(snapshot.rankings) ? snapshot.rankings.slice(0, 10) : [];
+            const hasWindow = Boolean(snapshot.windowStart && snapshot.windowEnd);
             return (
               <div key={snapshot.id} className="border-b border-[var(--border)] last:border-b-0">
                 <button
@@ -531,6 +684,11 @@ function PastWeeksSection({ weeklySnapshots, expandedWeeks, setExpandedWeeks }) 
                     <p className="text-sm text-[var(--text)]">
                       Champion: {top?.displayName || '—'} · {top ? `${top.netProfit >= 0 ? '+' : ''}$${fmtMoney(top.netProfit)}` : '—'}
                     </p>
+                    {topCorrection && (
+                      <p className="mt-1 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
+                        Correction leader: {topCorrection.displayName} · {Number(topCorrection.correctionScore || 0).toFixed(1)} pts
+                      </p>
+                    )}
                   </div>
                   <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
                     {expanded ? 'Hide Top 10' : 'Show Top 10'}
@@ -552,6 +710,15 @@ function PastWeeksSection({ weeklySnapshots, expandedWeeks, setExpandedWeeks }) 
                     <p className="mt-2 font-mono text-[0.58rem] text-[var(--text-muted)]">
                       Participants: {snapshot.totalParticipants || 0} · Snapshot: {toDate(snapshot.snapshotDate).toLocaleString()}
                     </p>
+                    <p className="mt-1 font-mono text-[0.58rem] text-[var(--text-muted)]">
+                      Mode: {snapshot.weeklyMetricMode || 'TRADING_PNL'}
+                      {hasWindow ? ` · Window: ${formatWeekWindow(snapshot.windowStart, snapshot.windowEnd)}` : ''}
+                    </p>
+                    {snapshot.calculationBasis && (
+                      <p className="mt-1 font-mono text-[0.58rem] text-[var(--text-muted)]">
+                        Basis: {snapshot.calculationBasis.tradingPnl || 'Portfolio value'}{snapshot.calculationBasis.correctionScore ? ` · ${snapshot.calculationBasis.correctionScore}` : ''}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

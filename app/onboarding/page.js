@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   addDoc,
@@ -22,6 +22,7 @@ import { calculateBet } from '@/utils/lmsr';
 import { isTradeableMarket } from '@/utils/marketStatus';
 import { CATEGORIES } from '@/utils/categorize';
 import { round2 } from '@/utils/round';
+import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -78,6 +79,7 @@ export default function OnboardingPage() {
   const [exitDirection, setExitDirection] = useState(null);
   const [animatingOut, setAnimatingOut] = useState(false);
   const [placingBet, setPlacingBet] = useState(false);
+  const stepThreeTrackedRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -151,6 +153,10 @@ export default function OnboardingPage() {
         if (!userSnap.exists()) throw new Error('User profile missing');
         tx.update(userRef, { onboardingComplete: true });
       });
+      trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+        step: 4,
+        tutorialBetsPlaced: placedBets.length
+      });
       router.push('/');
     } catch (error) {
       console.error('Error finishing onboarding:', error);
@@ -160,6 +166,10 @@ export default function OnboardingPage() {
 
   async function loadHotMarkets() {
     setTutorialLoading(true);
+    trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+      step: 2,
+      path: 'guided'
+    });
     try {
       let marketSnapshot;
       try {
@@ -226,6 +236,7 @@ export default function OnboardingPage() {
       setHotMarkets(selected);
       setChoices(Array(selected.length).fill(null));
       setCurrentCardIndex(0);
+      stepThreeTrackedRef.current = false;
       setStep(3);
     } catch (error) {
       console.error('Error loading onboarding markets:', error);
@@ -290,6 +301,9 @@ export default function OnboardingPage() {
         }
       });
 
+      trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+        step: 1
+      });
       setStep(2);
     } catch (error) {
       setNameError(error?.message || 'Could not lock display name right now.');
@@ -405,11 +419,27 @@ export default function OnboardingPage() {
           return nextChoices;
         });
         setCurrentCardIndex(hotMarkets.length);
+        if (!stepThreeTrackedRef.current) {
+          stepThreeTrackedRef.current = true;
+          trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+            step: 3,
+            cardsSeen: hotMarkets.length,
+            betsPlaced: placedBets.length + (resolvedChoice === 'YES' || resolvedChoice === 'NO' ? 1 : 0)
+          });
+        }
         setTimeout(() => setStep(4), 500);
         return;
       }
 
       if (nextIndex >= hotMarkets.length) {
+        if (!stepThreeTrackedRef.current) {
+          stepThreeTrackedRef.current = true;
+          trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+            step: 3,
+            cardsSeen: hotMarkets.length,
+            betsPlaced: placedBets.length + (resolvedChoice === 'YES' || resolvedChoice === 'NO' ? 1 : 0)
+          });
+        }
         setTimeout(() => setStep(4), 500);
       }
     }, 450);
@@ -540,7 +570,13 @@ export default function OnboardingPage() {
               </button>
 
               <button
-                onClick={markOnboardingComplete}
+                onClick={() => {
+                  trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+                    step: 2,
+                    path: 'skip_tutorial'
+                  });
+                  markOnboardingComplete();
+                }}
                 className="grid w-full grid-cols-[48px_1fr_auto] items-center gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-5 text-left transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
               >
                 <span className="flex h-12 w-12 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--surface3)] text-2xl">🎯</span>

@@ -27,6 +27,8 @@ import { calculateRefundsByUser, round2 } from '@/utils/refunds';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { CATEGORIES, categorizeMarket } from '@/utils/categorize';
 import { calculateAllPortfolioValues } from '@/utils/portfolio';
+import { calculateWeeklyCorrectionRows } from '@/utils/weeklyCorrection';
+import { categoryForNotificationType } from '@/utils/notificationCategories';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -93,6 +95,23 @@ function mondayIso(date = new Date()) {
   const m = String(monday.getMonth() + 1).padStart(2, '0');
   const d = String(monday.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function getCurrentWeekWindow(nowValue = new Date()) {
+  const now = new Date(nowValue);
+  const day = now.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  const start = new Date(now);
+  start.setDate(now.getDate() - daysSinceMonday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { start, end };
+}
+
+function formatSummaryDateTime(value) {
+  if (!value) return '—';
+  return toDate(value).toLocaleString();
 }
 
 function chunkArray(items, size) {
@@ -201,6 +220,8 @@ export default function AdminPage() {
   const [loadingUserBetCounts, setLoadingUserBetCounts] = useState({});
   const [resetting, setResetting] = useState(false);
   const [launchResetting, setLaunchResetting] = useState(false);
+  const [weeklyResetSummary, setWeeklyResetSummary] = useState(null);
+  const [launchResetSummary, setLaunchResetSummary] = useState(null);
 
   const [commentsModeration, setCommentsModeration] = useState([]);
   const [newsModeration, setNewsModeration] = useState([]);
@@ -233,12 +254,18 @@ export default function AdminPage() {
 
   const [newMarketQuestion, setNewMarketQuestion] = useState('');
   const [newMarketResolutionRules, setNewMarketResolutionRules] = useState('');
+  const [newMarketResolutionDate, setNewMarketResolutionDate] = useState('');
   const [creating, setCreating] = useState(false);
   const [initialProbability, setInitialProbability] = useState(50);
   const [bValue, setBValue] = useState(100);
   const [newMarketCategory, setNewMarketCategory] = useState('auto');
+  const [dateDrafts, setDateDrafts] = useState({});
+  const [editingDateMarketId, setEditingDateMarketId] = useState(null);
+  const [savingDateMarketId, setSavingDateMarketId] = useState(null);
   const [newsDrafts, setNewsDrafts] = useState({});
   const [cancelReasonsByMarket, setCancelReasonsByMarket] = useState({});
+  const [resolutionNotesByMarket, setResolutionNotesByMarket] = useState({});
+  const [resolutionSourcesByMarket, setResolutionSourcesByMarket] = useState({});
 
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase();
@@ -393,6 +420,18 @@ export default function AdminPage() {
         });
 
       setMarkets(marketData);
+      setResolutionNotesByMarket(
+        marketData.reduce((acc, market) => {
+          acc[market.id] = market.resolutionRationale || market.resolutionAudit?.rationale || '';
+          return acc;
+        }, {})
+      );
+      setResolutionSourcesByMarket(
+        marketData.reduce((acc, market) => {
+          acc[market.id] = market.resolutionSourceUrl || market.resolutionAudit?.sourceUrl || '';
+          return acc;
+        }, {})
+      );
       await fetchMarketStatsForMarkets(marketData);
     } catch (error) {
       console.error('Error fetching active markets:', error);
@@ -507,7 +546,7 @@ export default function AdminPage() {
     setMarketQuestionMap((prev) => ({ ...prev, ...loaded }));
   }
 
-  async function createMarket({ question, probabilityPercent, liquidityB, resolutionRules, category }) {
+  async function createMarket({ question, probabilityPercent, liquidityB, resolutionRules, category, resolutionDate }) {
     const normalizedQuestion = question.trim();
     const probDecimal = probabilityPercent / 100;
     const b = liquidityB;
@@ -517,6 +556,7 @@ export default function AdminPage() {
     await addDoc(collection(db, 'markets'), {
       question: normalizedQuestion,
       resolutionRules: (resolutionRules || '').trim() || null,
+      resolutionDate: resolutionDate ? new Date(`${resolutionDate}T00:00:00`) : null,
       probability: round2(probDecimal),
       initialProbability: round2(probDecimal),
       outstandingShares: {
@@ -543,6 +583,11 @@ export default function AdminPage() {
       return;
     }
 
+    if (newMarketResolutionDate && isPastDateString(newMarketResolutionDate)) {
+      notifyError('Resolution date cannot be in the past.');
+      return;
+    }
+
     setCreating(true);
     try {
       await createMarket({
@@ -550,13 +595,15 @@ export default function AdminPage() {
         probabilityPercent: initialProbability,
         liquidityB: bValue,
         resolutionRules: newMarketResolutionRules,
-        category: newMarketCategory
+        category: newMarketCategory,
+        resolutionDate: newMarketResolutionDate
       });
 
       await logAdminAction('CREATE', `Market created: ${newMarketQuestion.trim().slice(0, 120)}`);
       notifySuccess('Market created successfully.');
       setNewMarketQuestion('');
       setNewMarketResolutionRules('');
+      setNewMarketResolutionDate('');
       setInitialProbability(50);
       setBValue(100);
       setNewMarketCategory('auto');
@@ -737,7 +784,7 @@ export default function AdminPage() {
     }
   }
 
-  async function handleResolve(marketId, resolution) {
+  async function handleResolve(marketId, resolution, auditInput = {}) {
     if (!(await confirmToast(`Resolve this market as ${resolution}?`))) {
       return;
     }
@@ -746,6 +793,12 @@ export default function AdminPage() {
     try {
       const marketRef = doc(db, 'markets', marketId);
       let marketQuestion = 'Market';
+      const resolvedAt = new Date();
+      const rationale = String(auditInput.rationale || '').trim();
+      const sourceUrl = String(auditInput.sourceUrl || '').trim();
+      const disputeWindowHours = Number.isFinite(Number(auditInput.disputeWindowHours))
+        ? Number(auditInput.disputeWindowHours)
+        : 24;
       await runTransaction(db, async (tx) => {
         const marketSnap = await tx.get(marketRef);
         if (!marketSnap.exists()) {
@@ -765,7 +818,18 @@ export default function AdminPage() {
         tx.update(marketRef, {
           status: MARKET_STATUS.RESOLVED,
           resolution,
-          resolvedAt: new Date()
+          resolvedAt,
+          resolvedBy: user?.email || null,
+          resolutionRationale: rationale || null,
+          resolutionSourceUrl: sourceUrl || null,
+          resolutionDisputeUntil: new Date(resolvedAt.getTime() + (Math.max(1, disputeWindowHours) * 60 * 60 * 1000)),
+          resolutionAudit: {
+            resolver: user?.email || null,
+            resolvedAt,
+            rationale: rationale || null,
+            sourceUrl: sourceUrl || null,
+            disputeWindowHours: Math.max(1, disputeWindowHours)
+          }
         });
       });
 
@@ -835,10 +899,12 @@ export default function AdminPage() {
         });
 
         if (adj.payout > 0) {
+          const type = 'payout';
           operationFns.push((batch) => {
             batch.set(doc(collection(db, 'notifications')), {
               userId,
-              type: 'payout',
+              type,
+              category: categoryForNotificationType(type),
               marketId,
               marketQuestion,
               amount: round2(adj.payout),
@@ -850,10 +916,12 @@ export default function AdminPage() {
         }
 
         if (adj.lostInvestment > 0) {
+          const type = 'loss';
           operationFns.push((batch) => {
             batch.set(doc(collection(db, 'notifications')), {
               userId,
-              type: 'loss',
+              type,
+              category: categoryForNotificationType(type),
               marketId,
               marketQuestion,
               amount: round2(adj.lostInvestment),
@@ -891,6 +959,9 @@ export default function AdminPage() {
       if (oracleOps.length > 0) {
         await commitOperationChunks(oracleOps);
       }
+
+      setResolutionNotesByMarket((prev) => ({ ...prev, [marketId]: '' }));
+      setResolutionSourcesByMarket((prev) => ({ ...prev, [marketId]: '' }));
 
       await logAdminAction('RESOLVE', `Market resolved as ${resolution}: ${marketQuestion}`);
       notifySuccess(`Market resolved as ${resolution}. Payouts distributed.`);
@@ -940,9 +1011,11 @@ export default function AdminPage() {
         });
 
         operationFns.push((batch) => {
+          const type = 'refund';
           batch.set(doc(collection(db, 'notifications')), {
             userId,
-            type: 'refund',
+            type,
+            category: categoryForNotificationType(type),
             marketId,
             marketQuestion,
             amount: refundAmount,
@@ -1066,6 +1139,34 @@ export default function AdminPage() {
     }
   }
 
+  async function handleEditResolutionDate(marketId) {
+    const dateStr = dateDrafts[marketId];
+    if (!dateStr) {
+      notifyError('Please enter a date.');
+      return;
+    }
+    if (isPastDateString(dateStr)) {
+      notifyError('Resolution date cannot be in the past.');
+      return;
+    }
+    const newDate = new Date(`${dateStr}T00:00:00`);
+    setSavingDateMarketId(marketId);
+    try {
+      await updateDoc(doc(db, 'markets', marketId), { resolutionDate: newDate });
+      await logAdminAction('EDIT', `Resolution date updated on market ${marketId}`);
+      setMarkets((prev) =>
+        prev.map((m) => (m.id === marketId ? { ...m, resolutionDate: newDate } : m))
+      );
+      setEditingDateMarketId(null);
+      notifySuccess('Resolution date updated.');
+    } catch (error) {
+      console.error('Error updating resolution date:', error);
+      notifyError('Could not update resolution date.');
+    } finally {
+      setSavingDateMarketId(null);
+    }
+  }
+
   async function handleEditCategory(market) {
     const currentCategory = getMarketCategoryValue(market);
     const nextCategory = normalizeCategory(
@@ -1146,9 +1247,11 @@ export default function AdminPage() {
         });
 
         operationFns.push((batch) => {
+          const type = 'refund';
           batch.set(doc(collection(db, 'notifications')), {
             userId,
-            type: 'refund',
+            type,
+            category: categoryForNotificationType(type),
             marketId,
             marketQuestion,
             amount: round2(refundAmount),
@@ -1290,6 +1393,7 @@ export default function AdminPage() {
       await addDoc(collection(db, 'notifications'), {
         userId: bet.userId,
         type: 'refund',
+        category: categoryForNotificationType('refund'),
         marketId: bet.marketId,
         amount: refundAmount,
         message: 'An admin refunded one of your bets.',
@@ -1373,6 +1477,7 @@ export default function AdminPage() {
       await addDoc(collection(db, 'notifications'), {
         userId: entry.id,
         type: 'admin_adjustment',
+        category: categoryForNotificationType('admin_adjustment'),
         amount: round2(weeklyRep - Number(entry.weeklyRep || 0)),
         message: reason,
         read: false,
@@ -1405,8 +1510,12 @@ export default function AdminPage() {
 
     setResetting(true);
     try {
+      const weekWindow = getCurrentWeekWindow();
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const usersRows = usersSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+      if (usersRows.length === 0) {
+        throw new Error('Preflight failed: no users found to reset.');
+      }
 
       const openMarketsSnapshot = await getDocs(query(collection(db, 'markets'), where('resolution', '==', null)));
       const openMarkets = openMarketsSnapshot.docs
@@ -1415,6 +1524,19 @@ export default function AdminPage() {
         .filter((market) => market.status !== MARKET_STATUS.CANCELLED);
       const openMarketIds = openMarkets.map((market) => market.id);
       const openBets = await fetchOpenMarketBets(openMarketIds);
+      const [resolvedYesSnap, resolvedNoSnap] = await Promise.all([
+        getDocs(query(collection(db, 'markets'), where('resolution', '==', 'YES'))),
+        getDocs(query(collection(db, 'markets'), where('resolution', '==', 'NO')))
+      ]);
+      const resolvedThisWeek = [...resolvedYesSnap.docs, ...resolvedNoSnap.docs]
+        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .filter((market) => !market.marketplaceId)
+        .filter((market) => market.status !== MARKET_STATUS.CANCELLED)
+        .filter((market) => {
+          const resolvedAt = toDate(market.resolvedAt).getTime();
+          return resolvedAt >= weekWindow.start.getTime() && resolvedAt < weekWindow.end.getTime();
+        });
+      const correctionBets = await fetchOpenMarketBets(resolvedThisWeek.map((market) => market.id));
 
       const weeklyRows = calculateAllPortfolioValues({
         users: usersRows,
@@ -1436,12 +1558,36 @@ export default function AdminPage() {
         rank: index + 1
       }));
       const tradedUserIds = new Set(openBets.map((bet) => bet.userId).filter(Boolean));
+      const correctionRows = calculateWeeklyCorrectionRows({
+        users: usersRows,
+        resolvedMarkets: resolvedThisWeek,
+        bets: correctionBets
+      })
+        .filter((row) => Number(row.weeklyCorrectionScore || 0) > 0)
+        .sort((a, b) => Number(b.weeklyCorrectionScore || 0) - Number(a.weeklyCorrectionScore || 0));
+      const correctionRankings = correctionRows.slice(0, 50).map((row, index) => ({
+        userId: row.id,
+        displayName: getPublicDisplayName(row),
+        correctionScore: round2(row.weeklyCorrectionScore),
+        marketsScored: Number(row.weeklyResolvedMarkets || 0),
+        rank: index + 1
+      }));
+      const correctionParticipants = correctionRows.length;
 
       await addDoc(collection(db, 'weeklySnapshots'), {
         weekOf: mondayIso(),
         snapshotDate: new Date(),
         rankings,
-        totalParticipants: tradedUserIds.size
+        rankingsCorrection: correctionRankings,
+        weeklyMetricMode: 'DUAL',
+        calculationBasis: {
+          tradingPnl: 'Portfolio value from cash + open positions',
+          correctionScore: 'Correct + contrarian score on markets resolved this week'
+        },
+        windowStart: weekWindow.start,
+        windowEnd: weekWindow.end,
+        totalParticipants: tradedUserIds.size,
+        correctionParticipants
       });
 
       const batch = writeBatch(db);
@@ -1452,14 +1598,26 @@ export default function AdminPage() {
       notifySuccess('Weekly snapshot saved and leaderboard reset. All balances set to $1,000.00.');
       await addDoc(collection(db, 'adminLog'), {
         action: 'RESET',
-        detail: `Weekly snapshot + reset completed (${rankings.length} ranked, ${tradedUserIds.size} participants). All users set to $1,000.00`,
+        detail: `Weekly snapshot + reset completed (${rankings.length} ranked, ${tradedUserIds.size} participants, ${correctionParticipants} correction participants). All users set to $1,000.00`,
         adminEmail: user.email,
         timestamp: new Date()
+      });
+      setWeeklyResetSummary({
+        status: 'success',
+        ranAt: new Date(),
+        detail: `Reset ${usersRows.length} users to $1,000. Trading ranks: ${rankings.length}. Correction ranks: ${correctionRankings.length}.`,
+        participants: tradedUserIds.size,
+        correctionParticipants
       });
       await Promise.all([fetchUsers(), fetchOverviewStats()]);
     } catch (error) {
       console.error('Error resetting weekly leaderboard:', error);
       notifyError('Failed to reset weekly leaderboard.');
+      setWeeklyResetSummary({
+        status: 'failure',
+        ranAt: new Date(),
+        detail: error?.message || 'Unknown error during weekly reset.'
+      });
     } finally {
       setResetting(false);
     }
@@ -1478,13 +1636,28 @@ export default function AdminPage() {
 
     setLaunchResetting(true);
     try {
-      const [usersSnap, betsSnap, displayNamesSnap, notificationsSnap, commentsSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'bets')),
-        getDocs(collection(db, 'displayNames')),
-        getDocs(collection(db, 'notifications')),
-        getDocs(collection(db, 'comments'))
-      ]);
+      const readTargets = [
+        ['users', collection(db, 'users')],
+        ['bets', collection(db, 'bets')],
+        ['displayNames', collection(db, 'displayNames')],
+        ['notifications', collection(db, 'notifications')],
+        ['comments', collection(db, 'comments')]
+      ];
+      const snapshotEntries = [];
+      for (const [label, ref] of readTargets) {
+        try {
+          const snapshot = await getDocs(ref);
+          snapshotEntries.push([label, snapshot]);
+        } catch (error) {
+          throw new Error(`Preflight failed reading ${label}: ${error?.message || 'permission denied'}`);
+        }
+      }
+      const snapshots = Object.fromEntries(snapshotEntries);
+      const usersSnap = snapshots.users;
+      const betsSnap = snapshots.bets;
+      const displayNamesSnap = snapshots.displayNames;
+      const notificationsSnap = snapshots.notifications;
+      const commentsSnap = snapshots.comments;
 
       const operationFns = [];
       usersSnap.docs.forEach((snapshotDoc) => {
@@ -1513,6 +1686,11 @@ export default function AdminPage() {
       });
 
       notifySuccess('Hard launch reset complete.');
+      setLaunchResetSummary({
+        status: 'success',
+        ranAt: new Date(),
+        detail: `Deleted users=${usersSnap.size}, bets=${betsSnap.size}, displayNames=${displayNamesSnap.size}, notifications=${notificationsSnap.size}, comments=${commentsSnap.size}.`
+      });
       await Promise.all([
         fetchUsers(),
         fetchOverviewStats(),
@@ -1524,6 +1702,11 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error running hard launch reset:', error);
       notifyError('Hard launch reset failed.');
+      setLaunchResetSummary({
+        status: 'failure',
+        ranAt: new Date(),
+        detail: error?.message || 'Unknown error during hard reset.'
+      });
     } finally {
       setLaunchResetting(false);
     }
@@ -1728,6 +1911,16 @@ export default function AdminPage() {
             </div>
           </div>
 
+          <div>
+            <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">Resolution Date (optional)</label>
+            <input
+              type="date"
+              value={newMarketResolutionDate}
+              onChange={(e) => setNewMarketResolutionDate(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+
           <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">This market will open at {initialProbability}% and start in status OPEN.</p>
 
           <div className="flex flex-wrap gap-2">
@@ -1738,6 +1931,7 @@ export default function AdminPage() {
               onClick={() => {
                 setNewMarketQuestion('');
                 setNewMarketResolutionRules('');
+                setNewMarketResolutionDate('');
                 setInitialProbability(50);
                 setBValue(100);
                 setNewMarketCategory('auto');
@@ -1953,16 +2147,61 @@ export default function AdminPage() {
           )}
         </div>
 
+        <div className="mb-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-2">
+          <p className="mb-1 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            Resolution Date
+          </p>
+          {editingDateMarketId === market.id ? (
+            <div className="space-y-2">
+              <input
+                type="date"
+                value={dateDrafts[market.id] || ''}
+                onChange={(e) =>
+                  setDateDrafts((prev) => ({ ...prev, [market.id]: e.target.value }))
+                }
+                className={INPUT_CLASS}
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleEditResolutionDate(market.id)}
+                  disabled={savingDateMarketId === market.id}
+                  className={BTN_GREEN}
+                >
+                  {savingDateMarketId === market.id ? 'Saving...' : 'Save Date'}
+                </button>
+                <button
+                  onClick={() => setEditingDateMarketId(null)}
+                  className={BTN_NEUTRAL}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-[var(--text)]">
+              {market.resolutionDate ? formatDate(market.resolutionDate) : 'No date set.'}
+            </p>
+          )}
+        </div>
+
         <div className="mb-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <button
-            onClick={() => handleResolve(market.id, 'YES')}
+            onClick={() => handleResolve(market.id, 'YES', {
+              rationale: resolutionNotesByMarket[market.id] || '',
+              sourceUrl: resolutionSourcesByMarket[market.id] || '',
+              disputeWindowHours: 24
+            })}
             disabled={resolving === market.id || cancelling === market.id || deletingMarketId === market.id}
             className={BTN_GREEN}
           >
             {resolving === market.id ? 'Resolving...' : 'Resolve YES'}
           </button>
           <button
-            onClick={() => handleResolve(market.id, 'NO')}
+            onClick={() => handleResolve(market.id, 'NO', {
+              rationale: resolutionNotesByMarket[market.id] || '',
+              sourceUrl: resolutionSourcesByMarket[market.id] || '',
+              disputeWindowHours: 24
+            })}
             disabled={resolving === market.id || cancelling === market.id || deletingMarketId === market.id}
             className={BTN_RED}
           >
@@ -1984,6 +2223,36 @@ export default function AdminPage() {
           </button>
         </div>
 
+        <div className="mb-2 grid gap-2 md:grid-cols-2">
+          <input
+            type="text"
+            value={resolutionNotesByMarket[market.id] || ''}
+            onChange={(e) =>
+              setResolutionNotesByMarket((prev) => ({
+                ...prev,
+                [market.id]: e.target.value
+              }))
+            }
+            placeholder="Optional resolution rationale (public)"
+            className={INPUT_CLASS}
+          />
+          <input
+            type="url"
+            value={resolutionSourcesByMarket[market.id] || ''}
+            onChange={(e) =>
+              setResolutionSourcesByMarket((prev) => ({
+                ...prev,
+                [market.id]: e.target.value
+              }))
+            }
+            placeholder="Optional source URL"
+            className={INPUT_CLASS}
+          />
+        </div>
+        <p className="mb-2 font-mono text-[0.58rem] text-[var(--text-muted)]">
+          Resolution metadata records resolver email, timestamp, rationale, source URL, and a default 24h dispute window.
+        </p>
+
         <div className="mb-2">
           <input
             type="text"
@@ -2002,6 +2271,18 @@ export default function AdminPage() {
         <div className="mb-2 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
           <button onClick={() => beginEditQuestion(market)} className={BTN_NEUTRAL}>Edit Question</button>
           <button onClick={() => beginEditRules(market)} className={BTN_NEUTRAL}>Edit Rules</button>
+          <button
+            onClick={() => {
+              setDateDrafts((prev) => ({
+                ...prev,
+                [market.id]: market.resolutionDate
+                  ? toDate(market.resolutionDate).toISOString().split('T')[0]
+                  : ''
+              }));
+              setEditingDateMarketId(market.id);
+            }}
+            className={BTN_NEUTRAL}
+          >Edit Date</button>
           <button
             onClick={() => handlePermanentDelete(market.id)}
             disabled={deletingMarketId === market.id || resolving === market.id || cancelling === market.id}
@@ -2077,6 +2358,7 @@ export default function AdminPage() {
           <div>
             <p className="text-sm italic text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>{market.question}</p>
             <p className="mt-1 font-mono text-[0.68rem] text-[var(--text-muted)]">Resolved at: {formatDateTime(market.resolvedAt)}</p>
+            <p className="mt-1 font-mono text-[0.68rem] text-[var(--text-dim)]">Resolver: {market.resolvedBy || market.resolutionAudit?.resolver || '—'}</p>
             <p className="mt-1 font-mono text-[0.68rem] text-[var(--text-dim)]">Category: {getCategoryLabel(getMarketCategoryValue(market))}</p>
           </div>
           <span
@@ -2086,6 +2368,29 @@ export default function AdminPage() {
             {market.resolution}
           </span>
         </div>
+        {(market.resolutionRationale || market.resolutionSourceUrl || market.resolutionAudit?.rationale || market.resolutionAudit?.sourceUrl) && (
+          <div className="mt-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-3">
+            <p className="mb-2 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Resolution Audit</p>
+            <p className="text-sm leading-6 text-[var(--text)]">
+              {market.resolutionRationale || market.resolutionAudit?.rationale || 'No rationale provided.'}
+            </p>
+            {(market.resolutionSourceUrl || market.resolutionAudit?.sourceUrl) && (
+              <a
+                href={market.resolutionSourceUrl || market.resolutionAudit?.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-block font-mono text-[0.62rem] text-[var(--red)] underline"
+              >
+                Source link
+              </a>
+            )}
+            {market.resolutionDisputeUntil && (
+              <p className="mt-2 font-mono text-[0.58rem] text-[var(--text-muted)]">
+                Dispute window until {formatDateTime(market.resolutionDisputeUntil)}
+              </p>
+            )}
+          </div>
+        )}
         <div className="mt-3 rounded border border-[var(--border)] bg-[var(--surface2)] px-3 py-3">
           <p className="mb-2 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
             Category
@@ -2436,6 +2741,34 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+        {(weeklyResetSummary || launchResetSummary) && (
+          <div className="grid gap-3 md:grid-cols-2">
+            {weeklyResetSummary && (
+              <div className={`rounded border px-4 py-3 ${weeklyResetSummary.status === 'success'
+                ? 'border-[rgba(22,163,74,0.25)] bg-[rgba(22,163,74,0.08)]'
+                : 'border-[rgba(220,38,38,0.3)] bg-[var(--red-glow)]'
+              }`}>
+                <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Weekly Reset {weeklyResetSummary.status === 'success' ? 'Success' : 'Failure'}
+                </p>
+                <p className="mt-1 font-mono text-[0.68rem] text-[var(--text)]">{weeklyResetSummary.detail}</p>
+                <p className="mt-1 font-mono text-[0.58rem] text-[var(--text-muted)]">Ran at {formatSummaryDateTime(weeklyResetSummary.ranAt)}</p>
+              </div>
+            )}
+            {launchResetSummary && (
+              <div className={`rounded border px-4 py-3 ${launchResetSummary.status === 'success'
+                ? 'border-[rgba(22,163,74,0.25)] bg-[rgba(22,163,74,0.08)]'
+                : 'border-[rgba(220,38,38,0.3)] bg-[var(--red-glow)]'
+              }`}>
+                <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Hard Launch Reset {launchResetSummary.status === 'success' ? 'Success' : 'Failure'}
+                </p>
+                <p className="mt-1 font-mono text-[0.68rem] text-[var(--text)]">{launchResetSummary.detail}</p>
+                <p className="mt-1 font-mono text-[0.58rem] text-[var(--text-muted)]">Ran at {formatSummaryDateTime(launchResetSummary.ranAt)}</p>
+              </div>
+            )}
+          </div>
+        )}
         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
           <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
             Search by email prefix

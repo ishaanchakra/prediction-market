@@ -30,6 +30,7 @@ import {
 import { calculateMarketplacePortfolioRows } from '@/utils/marketplacePortfolio';
 import { fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/marketplaceClient';
 import { getPublicDisplayName } from '@/utils/displayName';
+import { categoryForNotificationType } from '@/utils/notificationCategories';
 
 const INPUT_CLASS =
   'w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.78rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]';
@@ -282,12 +283,14 @@ export default function MarketplaceAdminPage() {
         });
 
         operationFns.push((batch) => {
+          const type = payout > 0 ? 'payout' : 'loss';
           batch.set(doc(collection(db, 'notifications')), {
             userId,
             marketplaceId,
             marketId: market.id,
             marketQuestion: market.question,
-            type: payout > 0 ? 'payout' : 'loss',
+            type,
+            category: categoryForNotificationType(type),
             amount: round2(payout > 0 ? payout : lostInvestment),
             resolution,
             read: false,
@@ -334,12 +337,14 @@ export default function MarketplaceAdminPage() {
           });
         });
         operationFns.push((batch) => {
+          const type = 'refund';
           batch.set(doc(collection(db, 'notifications')), {
             userId,
             marketplaceId,
             marketId: market.id,
             marketQuestion: market.question,
-            type: 'refund',
+            type,
+            category: categoryForNotificationType(type),
             amount: round2(refundAmount),
             read: false,
             createdAt: new Date()

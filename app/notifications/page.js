@@ -124,7 +124,7 @@ export default function NotificationsPage() {
 function NotificationRow({ notif, unread, onClickRead }) {
   return (
     <Link
-      href={`/market/${notif.marketId}`}
+      href={notif.marketId ? `/market/${notif.marketId}` : '/notifications'}
       onClick={() => unread && onClickRead(notif.id)}
       className={`block min-h-[60px] rounded-lg border-2 p-4 transition-all ${
         unread
@@ -182,6 +182,18 @@ function NotificationRow({ notif, unread, onClickRead }) {
               Price moved: {notif.oldProbability}% → {notif.newProbability}% ({notif.probabilityChange})
             </p>
           </div>
+          <TimeLabel createdAt={notif.createdAt} />
+        </>
+      )}
+
+      {!['payout', 'loss', 'refund', 'significant_trade'].includes(notif.type) && (
+        <>
+          <HeaderEmoji emoji="📌" unread={unread} />
+          <p className="font-semibold text-[var(--text)] mb-1">Account update</p>
+          <p className="text-sm text-[var(--text-dim)] mb-2">{notif.message || notif.marketQuestion || 'You have a new notification.'}</p>
+          {notif.amount !== undefined && (
+            <span className="text-[var(--amber-bright)] font-bold">${Number(notif.amount || 0).toFixed(2)}</span>
+          )}
           <TimeLabel createdAt={notif.createdAt} />
         </>
       )}
