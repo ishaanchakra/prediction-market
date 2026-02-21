@@ -144,38 +144,8 @@ service cloud.firestore {
 
     match /bets/{betId} {
       allow read: if canReadMarketplaceScoped(resource.data.marketplaceId);
-      allow create: if hasAllowedEmail()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.marketId is string
-        && request.resource.data.side in ['YES', 'NO']
-        && request.resource.data.type in ['BUY', 'SELL']
-        && request.resource.data.amount is number
-        && request.resource.data.shares is number
-        && request.resource.data.probability is number
-        && request.resource.data.probability >= 0
-        && request.resource.data.probability <= 1
-        && (
-          (request.resource.data.type == 'BUY'
-            && request.resource.data.amount > 0
-            && request.resource.data.shares > 0)
-          ||
-          (request.resource.data.type == 'SELL'
-            && request.resource.data.amount < 0
-            && request.resource.data.shares < 0)
-        )
-        && (
-          (
-            isGlobalScope(get(/databases/$(database)/documents/markets/$(request.resource.data.marketId)).data.marketplaceId)
-            && isGlobalScope(request.resource.data.marketplaceId)
-          )
-          ||
-          (
-            request.resource.data.marketplaceId is string
-            && request.resource.data.marketplaceId == get(/databases/$(database)/documents/markets/$(request.resource.data.marketId)).data.marketplaceId
-            && isMarketplaceMember(request.resource.data.marketplaceId)
-          )
-        )
-        && marketIsOpen(request.resource.data.marketId);
+      // Trades are created only via trusted Cloud Functions (Admin SDK bypasses rules).
+      allow create: if false;
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }

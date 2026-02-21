@@ -9,6 +9,28 @@ Repository context for future LLM contributors.
 - Every page in `app/` is a client component (`'use client'`) except layout shell.
 - Path alias: `@/*` (configured in `jsconfig.json`).
 
+## Cloud Functions
+
+Firebase callable functions now own trade execution:
+
+- `placeBet` (`functions/index.js`)
+  - Input: `marketId`, `side` (`YES`/`NO`), `amount`, `marketplaceId`.
+  - Validates auth + Cornell email, market scope match, market is `OPEN`, wallet existence, and sufficient balance.
+  - Re-runs LMSR buy math server-side and executes a Firestore transaction that writes the bet, updates market pool/probability, and debits balance.
+  - Re-checks market/balance inside the transaction to prevent stale client reads.
+
+- `sellShares` (`functions/index.js`)
+  - Input: `marketId`, `side` (`YES`/`NO`), `sharesToSell`, `marketplaceId`.
+  - Validates auth + Cornell email, market scope match, market is `OPEN`, wallet existence, and actual held shares computed from server-side bet history.
+  - Re-runs LMSR sell math server-side and executes a Firestore transaction that writes the negative bet, updates market pool/probability, and credits payout.
+  - Re-checks share ownership and market state inside the transaction to prevent race-condition sells.
+
+Client integration:
+
+- `app/market/[id]/page.js` uses Firebase callable `placeBet` / `sellShares` for all manual trading.
+- `app/onboarding/page.js` tutorial bets also call `placeBet` (global scope).
+- Firestore client writes to `bets` are intentionally blocked in rules; trade creation must happen via Admin SDK in Cloud Functions.
+
 ## Core commands
 
 - `npm run dev` — uses Webpack (`next dev --webpack`); this is the expected local dev path.
@@ -66,6 +88,7 @@ Read `firestore.rules` before adding queries. The critical constraints:
 - `users`, `displayNames`, `weeklySnapshots` are broadly readable.
 - `notifications` and `marketRequests` are auth and ownership constrained.
 - `waitlist` allows unauthenticated create/update (email string ≤254 chars); admin-only read/delete.
+- `bets` create is denied from clients (`allow create: if false`) to force server-side trade execution.
 
 ### Query safety rule (important)
 
@@ -116,6 +139,12 @@ Env vars used:
 - `NEXT_PUBLIC_LAUNCH_TIMESTAMP`
 
 Current default/fallback timestamp in code is `1771855200000` (Mon Feb 23, 2026 9:00 AM EST).
+
+### Security notes
+
+- `NEXT_PUBLIC_LAUNCH_PASSWORD` is not a secret. Because it uses the `NEXT_PUBLIC_` prefix, it is exposed in client-side JS.
+- The launch gate is intentionally a hype/social-friction layer only, not real authentication or authorization.
+- Future contributors should treat this as UX gating only and must not rely on it for access control.
 
 Remove post-launch by:
 

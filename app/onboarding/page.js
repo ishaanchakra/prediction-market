@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
@@ -15,9 +14,9 @@ import {
   serverTimestamp,
   where
 } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '@/lib/firebase';
 import { isValidDisplayName, normalizeDisplayName } from '@/utils/displayName';
-import { calculateBet } from '@/utils/lmsr';
 import { isTradeableMarket } from '@/utils/marketStatus';
 import { CATEGORIES } from '@/utils/categorize';
 import { round2 } from '@/utils/round';
@@ -27,6 +26,18 @@ import useToastQueue from '@/app/hooks/useToastQueue';
 
 const BET_AMOUNT = 25;
 const CARD_LIMIT = 5;
+const DISPLAY_NAME_TAKEN_ERROR = 'This display name is already taken.';
+
+function getCallableErrorMessage(error, fallbackMessage) {
+  const details = typeof error?.details === 'string' ? error.details.trim() : '';
+  if (details) return details;
+  const rawMessage = typeof error?.message === 'string' ? error.message.trim() : '';
+  if (!rawMessage) return fallbackMessage;
+  return rawMessage
+    .replace(/^FirebaseError:\s*/i, '')
+    .replace(/^functions\/[a-z-]+:\s*/i, '')
+    .trim() || fallbackMessage;
+}
 
 function probabilityColor(probability) {
   if (probability > 0.65) return 'var(--green-bright)';
@@ -266,7 +277,7 @@ export default function OnboardingPage() {
         const oldKeySnap = oldKeyRef ? await tx.get(oldKeyRef) : null;
 
         if (newKeySnap.exists() && newKeySnap.data()?.userId !== authUser.uid) {
-          throw new Error("That name's already claimed");
+          throw new Error(DISPLAY_NAME_TAKEN_ERROR);
         }
 
         if (!userSnap.exists()) {
@@ -307,56 +318,17 @@ export default function OnboardingPage() {
 
   async function placeOnboardingBet(market, side) {
     if (!authUser) throw new Error('You must be logged in to place bets.');
-
-    const marketRef = doc(db, 'markets', market.id);
-    const userRef = doc(db, 'users', authUser.uid);
-
-    await runTransaction(db, async (tx) => {
-      const [marketSnap, userSnap] = await Promise.all([tx.get(marketRef), tx.get(userRef)]);
-      if (!marketSnap.exists()) throw new Error('Market not found.');
-      if (!userSnap.exists()) throw new Error('User profile not found.');
-
-      const marketData = marketSnap.data();
-      if (!isTradeableMarket(marketData)) {
-        throw new Error('Market is no longer open.');
-      }
-
-      const userData = userSnap.data();
-      const weeklyRep = Number(userData.weeklyRep || 0);
-      if (weeklyRep < BET_AMOUNT) {
-        throw new Error('Insufficient weekly balance.');
-      }
-
-      const result = calculateBet(
-        marketData.outstandingShares || { yes: 0, no: 0 },
-        BET_AMOUNT,
-        side,
-        Number(marketData.b || 100)
-      );
-
-      const betRef = doc(collection(db, 'bets'));
-      tx.set(betRef, {
-        userId: authUser.uid,
+    const placeBetCallable = httpsCallable(functions, 'placeBet');
+    try {
+      await placeBetCallable({
         marketId: market.id,
-        marketplaceId: null,
         side,
         amount: BET_AMOUNT,
-        shares: result.shares,
-        probability: result.newProbability,
-        timestamp: new Date(),
-        type: 'BUY'
+        marketplaceId: null
       });
-
-      tx.update(marketRef, {
-        outstandingShares: result.newPool,
-        probability: result.newProbability
-      });
-
-      tx.update(userRef, {
-        weeklyRep: round2(weeklyRep - BET_AMOUNT),
-        lifetimeRep: Number(userData.lifetimeRep) || 0
-      });
-    });
+    } catch (error) {
+      throw new Error(getCallableErrorMessage(error, 'Bet failed. Please try again.'));
+    }
   }
 
   async function handleSwipeChoice(choice) {

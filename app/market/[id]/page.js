@@ -11,19 +11,19 @@ import {
   orderBy,
   getDocs,
   limit,
-  deleteDoc,
-  runTransaction
+  deleteDoc
 } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, auth, functions } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { calculateBet, calculateSell } from '@/utils/lmsr';
-import { round2 } from '@/utils/round';
 import { MARKET_STATUS, getMarketStatus, isTradeableMarket } from '@/utils/marketStatus';
 import InfoTooltip from '@/app/components/InfoTooltip';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 import { getPublicDisplayName } from '@/utils/displayName';
+import { ADMIN_EMAILS } from '@/utils/adminEmails';
 import { toMarketplaceMemberId } from '@/utils/marketplace';
 import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import {
@@ -38,8 +38,6 @@ import {
   ReferenceLine,
   ReferenceDot
 } from 'recharts';
-
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function getInitials(name) {
   if (!name) return 'PC';
@@ -65,6 +63,17 @@ function toMillis(value) {
   const parsed = new Date(value);
   const ts = parsed.getTime();
   return Number.isNaN(ts) ? 0 : ts;
+}
+
+function getCallableErrorMessage(error, fallbackMessage) {
+  const details = typeof error?.details === 'string' ? error.details.trim() : '';
+  if (details) return details;
+  const rawMessage = typeof error?.message === 'string' ? error.message.trim() : '';
+  if (!rawMessage) return fallbackMessage;
+  return rawMessage
+    .replace(/^FirebaseError:\s*/i, '')
+    .replace(/^functions\/[a-z-]+:\s*/i, '')
+    .trim() || fallbackMessage;
 }
 
 export default function MarketPage() {
@@ -667,82 +676,17 @@ export default function MarketPage() {
     setSubmitting(true);
     try {
       const amount = parseFloat(betAmount);
-      const marketRef = doc(db, 'markets', params.id);
-      const isMarketplaceMarket = !!market?.marketplaceId;
-      const walletRef = isMarketplaceMarket
-        ? doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
-        : doc(db, 'users', currentUser.uid);
-      let txResult = null;
-
-      await runTransaction(db, async (tx) => {
-        const [marketSnap, userSnap] = await Promise.all([
-          tx.get(marketRef),
-          tx.get(walletRef)
-        ]);
-
-        if (!marketSnap.exists()) {
-          throw new Error('Market not found.');
-        }
-        if (!userSnap.exists()) {
-          throw new Error('User profile not found. Please log out and log back in.');
-        }
-
-        const latestMarket = marketSnap.data();
-        if (!isTradeableMarket(latestMarket)) {
-          throw new Error('Trading is currently locked for this market.');
-        }
-
-        const userData = userSnap.data();
-        const availableBalance = isMarketplaceMarket
-          ? Number(userData.balance || 0)
-          : Number(userData.weeklyRep || 0);
-        if (availableBalance < amount) {
-          throw new Error(`Insufficient balance. You have $${availableBalance.toFixed(2)} available.`);
-        }
-
-        const result = calculateBet(
-          latestMarket.outstandingShares || { yes: 0, no: 0 },
-          amount,
-          selectedSide,
-          latestMarket.b
-        );
-
-        const betRef = doc(collection(db, 'bets'));
-        tx.set(betRef, {
-          userId: currentUser.uid,
-          marketId: params.id,
-          marketplaceId: latestMarket.marketplaceId || null,
-          side: selectedSide,
-          amount,
-          shares: result.shares,
-          probability: result.newProbability,
-          timestamp: new Date(),
-          type: 'BUY'
-        });
-
-        tx.update(marketRef, {
-          outstandingShares: result.newPool,
-          probability: result.newProbability
-        });
-
-        if (isMarketplaceMarket) {
-          tx.update(walletRef, {
-            balance: round2(availableBalance - amount),
-            lifetimeRep: Number(userData.lifetimeRep) || 0,
-            updatedAt: new Date()
-          });
-        } else {
-          tx.update(walletRef, {
-            weeklyRep: round2(availableBalance - amount),
-            lifetimeRep: Number(userData.lifetimeRep) || 0
-          });
-        }
-
-        txResult = result;
+      const placeBetCallable = httpsCallable(functions, 'placeBet');
+      const response = await placeBetCallable({
+        marketId: params.id,
+        side: selectedSide,
+        amount,
+        marketplaceId: market?.marketplaceId || null
       });
+      const txResult = response?.data;
 
       await reloadMarket();
-      if (txResult) {
+      if (txResult?.newPool && Number.isFinite(txResult?.newProbability)) {
         setMarket((prev) => (prev ? {
           ...prev,
           outstandingShares: txResult.newPool,
@@ -765,7 +709,7 @@ export default function MarketPage() {
       setPreview(null);
     } catch (error) {
       console.error('Error placing bet:', error);
-      notifyError(error?.message || 'Error placing bet. Please try again.');
+      notifyError(getCallableErrorMessage(error, 'Error placing bet. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -796,110 +740,17 @@ export default function MarketPage() {
       if (!marketId) {
         throw new Error('Market not found.');
       }
-      const scopedMarketplaceId = market?.marketplaceId || null;
-      const userBetsQuery = query(
-        collection(db, 'bets'),
-        where('marketId', '==', marketId),
-        where('marketplaceId', '==', scopedMarketplaceId),
-        where('userId', '==', currentUser.uid)
-      );
-      const userBetsSnapshot = await getDocs(userBetsQuery);
-      let yesSharesHeld = 0;
-      let noSharesHeld = 0;
-      userBetsSnapshot.docs.forEach((betDoc) => {
-        const bet = betDoc.data();
-        const shares = Math.abs(Number(bet.shares || 0));
-        if (bet.side === 'YES') {
-          yesSharesHeld += bet.type === 'SELL' ? -shares : shares;
-        } else if (bet.side === 'NO') {
-          noSharesHeld += bet.type === 'SELL' ? -shares : shares;
-        }
+      const sellSharesCallable = httpsCallable(functions, 'sellShares');
+      const response = await sellSharesCallable({
+        marketId,
+        side: sellSide,
+        sharesToSell,
+        marketplaceId: market?.marketplaceId || null
       });
-      const availableNow = sellSide === 'YES' ? Math.max(0, yesSharesHeld) : Math.max(0, noSharesHeld);
-      const safeSharesToSell = Math.min(sharesToSell, availableNow);
-      if (safeSharesToSell <= 0) {
-        throw new Error(`Insufficient shares. You have ${availableNow.toFixed(2)} ${sellSide} shares.`);
-      }
-
-      const marketRef = doc(db, 'markets', marketId);
-      const isMarketplaceMarket = !!market?.marketplaceId;
-      const walletRef = isMarketplaceMarket
-        ? doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
-        : doc(db, 'users', currentUser.uid);
-      let txResult = null;
-
-      await runTransaction(db, async (tx) => {
-        const [marketSnap, userSnap] = await Promise.all([
-          tx.get(marketRef),
-          tx.get(walletRef)
-        ]);
-
-        if (!marketSnap.exists()) {
-          throw new Error('Market not found.');
-        }
-        if (!userSnap.exists()) {
-          throw new Error('User profile not found. Please log out and log back in.');
-        }
-
-        const latestMarket = marketSnap.data();
-        if (!isTradeableMarket(latestMarket)) {
-          throw new Error('Selling is unavailable while this market is locked or closed.');
-        }
-
-        const result = calculateSell(
-          latestMarket.outstandingShares || { yes: 0, no: 0 },
-          safeSharesToSell,
-          sellSide,
-          latestMarket.b
-        );
-        if (!Number.isFinite(result.payout) || result.payout < 0 || result.payout > 1_000_000) {
-          throw new Error('Invalid sell payout calculated.');
-        }
-        if (result.payout <= 0 || safeSharesToSell <= 0) {
-          throw new Error('Invalid sell: payout and shares must be positive.');
-        }
-
-        const userData = userSnap.data();
-        const currentBalance = isMarketplaceMarket
-          ? Number(userData.balance || 0)
-          : Number(userData.weeklyRep || 0);
-
-        const betRef = doc(collection(db, 'bets'));
-        tx.set(betRef, {
-          userId: currentUser.uid,
-          marketId,
-          marketplaceId: latestMarket.marketplaceId || null,
-          side: sellSide,
-          amount: -result.payout,
-          shares: -safeSharesToSell,
-          probability: result.newProbability,
-          timestamp: new Date(),
-          type: 'SELL'
-        });
-
-        tx.update(marketRef, {
-          outstandingShares: result.newPool,
-          probability: result.newProbability
-        });
-
-        if (isMarketplaceMarket) {
-          tx.update(walletRef, {
-            balance: round2(currentBalance + result.payout),
-            lifetimeRep: Number(userData.lifetimeRep) || 0,
-            updatedAt: new Date()
-          });
-        } else {
-          tx.update(walletRef, {
-            weeklyRep: round2(currentBalance + result.payout),
-            lifetimeRep: Number(userData.lifetimeRep) || 0
-          });
-        }
-
-        txResult = result;
-      });
+      const txResult = response?.data;
 
       await reloadMarket();
-      if (txResult) {
+      if (txResult?.newPool && Number.isFinite(txResult?.newProbability)) {
         setMarket((prev) => (prev ? {
           ...prev,
           outstandingShares: txResult.newPool,
@@ -911,7 +762,7 @@ export default function MarketPage() {
       setShowSellModal(false);
     } catch (error) {
       console.error('Error selling shares:', error);
-      notifyError(error?.message || 'Error selling shares. Please try again.');
+      notifyError(getCallableErrorMessage(error, 'Error selling shares. Please try again.'));
     } finally {
       setSelling(false);
     }
