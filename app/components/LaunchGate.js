@@ -1,3 +1,9 @@
+/**
+ * SECURITY NOTE:
+ * `NEXT_PUBLIC_LAUNCH_PASSWORD` is intentionally client-side and NOT secret.
+ * It is bundled into browser JS, so this gate only adds social friction for
+ * pre-launch access and is not real access control.
+ */
 'use client';
 
 import { useEffect, useState } from 'react';

@@ -31,8 +31,7 @@ import { calculateMarketplacePortfolioRows } from '@/utils/marketplacePortfolio'
 import { fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/marketplaceClient';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { categoryForNotificationType } from '@/utils/notificationCategories';
-
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
+import { ADMIN_EMAILS } from '@/utils/adminEmails';
 const INPUT_CLASS =
   'w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.78rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]';
 const BTN_BASE =

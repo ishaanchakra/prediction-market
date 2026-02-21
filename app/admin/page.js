@@ -29,10 +29,10 @@ import { CATEGORIES, categorizeMarket } from '@/utils/categorize';
 import { calculateAllPortfolioValues } from '@/utils/portfolio';
 import { calculateWeeklyCorrectionRows } from '@/utils/weeklyCorrection';
 import { categoryForNotificationType } from '@/utils/notificationCategories';
+import { ADMIN_EMAILS } from '@/utils/adminEmails';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 const SECTIONS = ['Overview', 'Markets', 'Requests', 'Users', 'Moderation'];
 
 const ACTION_BUTTON_BASE =

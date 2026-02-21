@@ -75,6 +75,12 @@ export function calculateBet(outstandingShares, betAmount, side, b = DEFAULT_B) 
     shares = mid;
   }
 
+  const convergedCost =
+    side === 'YES' ? cost(qYes + shares, qNo, b) - currentCost : cost(qYes, qNo + shares, b) - currentCost;
+  if (Math.abs(convergedCost - betAmount) > 0.01) {
+    throw new Error('LMSR binary search failed to converge');
+  }
+
   const newQYes = side === 'YES' ? qYes + shares : qYes;
   const newQNo = side === 'NO' ? qNo + shares : qNo;
   const newProbability = price(newQYes, newQNo, b);

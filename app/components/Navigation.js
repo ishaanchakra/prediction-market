@@ -5,10 +5,9 @@ import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { collection, query, where, doc, onSnapshot, orderBy, limit, getDoc } from 'firebase/firestore';
+import { ADMIN_EMAILS } from '@/utils/adminEmails';
 import { toMarketplaceMemberId } from '@/utils/marketplace';
 import { CATEGORIES } from '@/utils/categorize';
-
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function initialsFor(user) {
   if (!user?.email) return 'PC';

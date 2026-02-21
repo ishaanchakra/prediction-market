@@ -20,8 +20,7 @@ import { toMarketplaceMemberId } from '@/utils/marketplace';
 import { calculateMarketplacePortfolioRows } from '@/utils/marketplacePortfolio';
 import { fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/marketplaceClient';
 import { round2 } from '@/utils/round';
-
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
+import { ADMIN_EMAILS } from '@/utils/adminEmails';
 
 function fmtMoney(value) {
   return Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

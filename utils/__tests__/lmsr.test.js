@@ -150,6 +150,11 @@ describe('calculateBet', () => {
     expect(r.newProbability).toBeLessThanOrEqual(1);
   });
 
+  test('does not throw on $2000 YES bet against a seeded 95% pool with b=100', () => {
+    const pool = seededPool(0.95, 100);
+    expect(() => calculateBet(pool, 2000, 'YES', 100)).not.toThrow();
+  });
+
   test('NO bet on 5% market gives valid result', () => {
     const pool = seededPool(0.05);
     const r = calculateBet(pool, 50, 'NO');

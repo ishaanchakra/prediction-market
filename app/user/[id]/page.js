@@ -5,10 +5,9 @@ import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firesto
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPublicDisplayName } from '@/utils/displayName';
+import { ADMIN_EMAILS } from '@/utils/adminEmails';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import PortfolioView from '@/app/components/PortfolioView';
-
-const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function fmtMoney(num) {
   return Number(num || 0).toFixed(2);
