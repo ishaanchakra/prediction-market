@@ -30,6 +30,9 @@ Client integration:
 - `app/market/[id]/page.js` uses Firebase callable `placeBet` / `sellShares` for all manual trading.
 - `app/onboarding/page.js` tutorial bets also call `placeBet` (global scope).
 - Firestore client writes to `bets` are intentionally blocked in rules; trade creation must happen via Admin SDK in Cloud Functions.
+- Deploy functions from repo root (not from `functions/`), after installing `functions` deps (`npm --prefix functions install`).
+- If deploy reports Artifact Registry cleanup-policy setup warnings/errors, run:
+  - `firebase functions:artifacts:setpolicy --location us-central1 --days 30 --force`
 
 ## Core commands
 
@@ -119,8 +122,9 @@ If you add query combinations, update `firestore.indexes.json` accordingly.
 - Google auth restricted to Cornell domain in two places:
   - `lib/firebase.js` provider `hd: 'cornell.edu'`
   - `app/login/page.js` email suffix check
-- Admin is hardcoded by email and duplicated in multiple files + rules.
-  - If admin list changes, update all references plus `firestore.rules`.
+- Cloud Functions trade auth (`functions/index.js`) also enforces Cornell email on callable requests.
+- No temporary Gmail test-account exceptions should be present in committed auth/rules/function code.
+- Client admin list lives in `utils/adminEmails.js`; keep it in sync with `isAdmin()` in `firestore.rules`.
 - Marketplace membership doc id is deterministic:
   - `toMarketplaceMemberId(marketplaceId, userId)` => `${marketplaceId}_${userId}`
 
