@@ -119,7 +119,26 @@ service cloud.firestore {
         !isGlobalScope(request.resource.data.marketplaceId)
         && (isAdmin() || isMarketplaceCreator(request.resource.data.marketplaceId))
       );
-      allow update, delete: if isAdmin()
+      allow update: if isAdmin()
+        || (!isGlobalScope(resource.data.marketplaceId) && isMarketplaceCreator(resource.data.marketplaceId))
+        || (
+          hasAllowedEmail()
+          && canReadMarketplaceScoped(resource.data.marketplaceId)
+          && marketIsOpen(marketId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'outstandingShares',
+            'probability'
+          ])
+          && request.resource.data.outstandingShares is map
+          && request.resource.data.outstandingShares.yes is number
+          && request.resource.data.outstandingShares.no is number
+          && request.resource.data.outstandingShares.yes >= 0
+          && request.resource.data.outstandingShares.no >= 0
+          && request.resource.data.probability is number
+          && request.resource.data.probability >= 0
+          && request.resource.data.probability <= 1
+        );
+      allow delete: if isAdmin()
         || (!isGlobalScope(resource.data.marketplaceId) && isMarketplaceCreator(resource.data.marketplaceId));
     }
 
