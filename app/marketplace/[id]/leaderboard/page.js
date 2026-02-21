@@ -16,9 +16,12 @@ import {
 import { auth, db } from '@/lib/firebase';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { MARKET_STATUS } from '@/utils/marketStatus';
+import { toMarketplaceMemberId } from '@/utils/marketplace';
 import { calculateMarketplacePortfolioRows } from '@/utils/marketplacePortfolio';
 import { fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/marketplaceClient';
 import { round2 } from '@/utils/round';
+
+const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 
 function fmtMoney(value) {
   return Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -28,6 +31,11 @@ function toDate(value) {
   if (value?.toDate) return value.toDate();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function isPermissionDenied(error) {
+  return error?.code === 'permission-denied'
+    || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
 }
 
 export default function MarketplaceLeaderboardPage() {
@@ -43,6 +51,7 @@ export default function MarketplaceLeaderboardPage() {
   const [weeklyRows, setWeeklyRows] = useState([]);
   const [weeklySnapshots, setWeeklySnapshots] = useState([]);
   const [expandedSnapshot, setExpandedSnapshot] = useState(null);
+  const [limitedLeaderboard, setLimitedLeaderboard] = useState(false);
   const [error, setError] = useState('');
 
   const weeklySorted = useMemo(
@@ -79,11 +88,20 @@ export default function MarketplaceLeaderboardPage() {
         }
         setMarketplace(context.marketplace);
         setMembership(context.membership);
+        setLimitedLeaderboard(false);
 
-        const membersSnap = await getDocs(
-          query(collection(db, 'marketplaceMembers'), where('marketplaceId', '==', marketplaceId), orderBy('balance', 'desc'), limit(500))
-        );
-        const members = membersSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+        const canViewFullLeaderboard = context.membership.role === 'CREATOR'
+          || ADMIN_EMAILS.includes(currentUser.email || '');
+        let members = [];
+        if (canViewFullLeaderboard) {
+          const membersSnap = await getDocs(
+            query(collection(db, 'marketplaceMembers'), where('marketplaceId', '==', marketplaceId), orderBy('balance', 'desc'), limit(500))
+          );
+          members = membersSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+        } else {
+          members = [{ id: toMarketplaceMemberId(marketplaceId, currentUser.uid), ...context.membership }];
+          setLimitedLeaderboard(true);
+        }
         setMemberRows(members);
 
         const openMarkets = (await fetchMarketplaceMarkets(marketplaceId)).filter((market) => {
@@ -125,6 +143,11 @@ export default function MarketplaceLeaderboardPage() {
         );
         setUserMap(Object.fromEntries(users));
       } catch (err) {
+        if (isPermissionDenied(err)) {
+          setError('Leaderboard visibility is limited for this account.');
+          setLoading(false);
+          return;
+        }
         console.error('Error loading marketplace leaderboard:', err);
         setError('Unable to load leaderboard right now.');
       } finally {
@@ -167,6 +190,11 @@ export default function MarketplaceLeaderboardPage() {
           {membership?.userId && (
             <p className="mt-1 font-mono text-[0.62rem] text-[var(--text-dim)]">
               Your wallet: ${Number(membership.balance || 0).toFixed(2)}
+            </p>
+          )}
+          {limitedLeaderboard && (
+            <p className="mt-1 font-mono text-[0.62rem] text-[var(--text-muted)]">
+              Limited view: only your live wallet is shown. Full rankings appear in weekly snapshots.
             </p>
           )}
         </div>
@@ -289,4 +317,3 @@ function TableBlock({ title, rows, userMap, metricFn, detailsFn, currentUserId }
     </section>
   );
 }
-

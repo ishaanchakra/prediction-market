@@ -32,6 +32,7 @@ import { fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/market
 import { getPublicDisplayName } from '@/utils/displayName';
 import { categoryForNotificationType } from '@/utils/notificationCategories';
 
+const ADMIN_EMAILS = ['ichakravorty14@gmail.com', 'ic367@cornell.edu'];
 const INPUT_CLASS =
   'w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.78rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]';
 const BTN_BASE =
@@ -142,13 +143,19 @@ export default function MarketplaceAdminPage() {
   }
 
   async function logCreatorAction(action, detail) {
-    await addDoc(collection(db, 'adminLog'), {
-      action,
-      detail,
-      adminEmail: auth.currentUser?.email || 'unknown',
-      marketplaceId,
-      timestamp: new Date()
-    });
+    const currentEmail = auth.currentUser?.email || '';
+    if (!ADMIN_EMAILS.includes(currentEmail)) return;
+    try {
+      await addDoc(collection(db, 'adminLog'), {
+        action,
+        detail,
+        adminEmail: currentEmail,
+        marketplaceId,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.warn('Skipping adminLog write:', error?.code || error?.message);
+    }
   }
 
   async function handleCreateMarket(e) {
@@ -241,7 +248,11 @@ export default function MarketplaceAdminPage() {
         });
       });
 
-      const betsSnap = await getDocs(query(collection(db, 'bets'), where('marketId', '==', market.id)));
+      const betsSnap = await getDocs(query(
+        collection(db, 'bets'),
+        where('marketId', '==', market.id),
+        where('marketplaceId', '==', marketplaceId)
+      ));
       const positions = {};
       betsSnap.docs.forEach((snapshotDoc) => {
         const bet = snapshotDoc.data();
@@ -261,7 +272,8 @@ export default function MarketplaceAdminPage() {
         }
       });
 
-      const operationFns = [];
+      const payoutOperationFns = [];
+      const notificationOperationFns = [];
       Object.entries(positions).forEach(([userId, position]) => {
         const yesShares = Math.max(0, Number(position.yesShares || 0));
         const noShares = Math.max(0, Number(position.noShares || 0));
@@ -274,7 +286,7 @@ export default function MarketplaceAdminPage() {
         const member = members.find((entry) => entry.id === memberId);
         if (!member) return;
 
-        operationFns.push((batch) => {
+        payoutOperationFns.push((batch) => {
           batch.update(doc(db, 'marketplaceMembers', memberId), {
             balance: round2(Number(member.balance || 0) + payout),
             lifetimeRep: round2(Number(member.lifetimeRep || 0) + payout - lostInvestment),
@@ -282,26 +294,39 @@ export default function MarketplaceAdminPage() {
           });
         });
 
-        operationFns.push((batch) => {
-          const type = payout > 0 ? 'payout' : 'loss';
-          batch.set(doc(collection(db, 'notifications')), {
-            userId,
-            marketplaceId,
-            marketId: market.id,
-            marketQuestion: market.question,
-            type,
-            category: categoryForNotificationType(type),
-            amount: round2(payout > 0 ? payout : lostInvestment),
-            resolution,
-            read: false,
-            createdAt: new Date()
+        if (ADMIN_EMAILS.includes(auth.currentUser?.email || '')) {
+          notificationOperationFns.push((batch) => {
+            const type = payout > 0 ? 'payout' : 'loss';
+            batch.set(doc(collection(db, 'notifications')), {
+              userId,
+              marketplaceId,
+              marketId: market.id,
+              marketQuestion: market.question,
+              type,
+              category: categoryForNotificationType(type),
+              amount: round2(payout > 0 ? payout : lostInvestment),
+              resolution,
+              read: false,
+              createdAt: new Date()
+            });
           });
-        });
+        }
       });
-      for (const chunk of chunkArray(operationFns, 350)) {
+      for (const chunk of chunkArray(payoutOperationFns, 350)) {
         const batch = writeBatch(db);
         chunk.forEach((applyOp) => applyOp(batch));
         await batch.commit();
+      }
+      if (notificationOperationFns.length > 0) {
+        try {
+          for (const chunk of chunkArray(notificationOperationFns, 350)) {
+            const batch = writeBatch(db);
+            chunk.forEach((applyOp) => applyOp(batch));
+            await batch.commit();
+          }
+        } catch (error) {
+          console.warn('Skipping marketplace notifications:', error?.code || error?.message);
+        }
       }
 
       await logCreatorAction('RESOLVE', `Marketplace market resolved as ${resolution}: ${market.question.slice(0, 120)}`);
@@ -320,49 +345,67 @@ export default function MarketplaceAdminPage() {
     setProcessingMarketId(market.id);
 
     try {
-      const betsSnap = await getDocs(query(collection(db, 'bets'), where('marketId', '==', market.id)));
+      const betsSnap = await getDocs(query(
+        collection(db, 'bets'),
+        where('marketId', '==', market.id),
+        where('marketplaceId', '==', marketplaceId)
+      ));
       const bets = betsSnap.docs.map((snapshotDoc) => snapshotDoc.data());
       const refunds = calculateRefundsByUser(bets);
 
-      const operationFns = [];
+      const refundOperationFns = [];
+      const notificationOperationFns = [];
       Object.entries(refunds).forEach(([userId, refundAmount]) => {
         const memberId = toMarketplaceMemberId(marketplaceId, userId);
         const member = members.find((entry) => entry.id === memberId);
         if (!member) return;
-        operationFns.push((batch) => {
+        refundOperationFns.push((batch) => {
           batch.update(doc(db, 'marketplaceMembers', memberId), {
             balance: round2(Number(member.balance || 0) + Number(refundAmount || 0)),
             lifetimeRep: Number(member.lifetimeRep || 0),
             updatedAt: new Date()
           });
         });
-        operationFns.push((batch) => {
-          const type = 'refund';
-          batch.set(doc(collection(db, 'notifications')), {
-            userId,
-            marketplaceId,
-            marketId: market.id,
-            marketQuestion: market.question,
-            type,
-            category: categoryForNotificationType(type),
-            amount: round2(refundAmount),
-            read: false,
-            createdAt: new Date()
+        if (ADMIN_EMAILS.includes(auth.currentUser?.email || '')) {
+          notificationOperationFns.push((batch) => {
+            const type = 'refund';
+            batch.set(doc(collection(db, 'notifications')), {
+              userId,
+              marketplaceId,
+              marketId: market.id,
+              marketQuestion: market.question,
+              type,
+              category: categoryForNotificationType(type),
+              amount: round2(refundAmount),
+              read: false,
+              createdAt: new Date()
+            });
           });
-        });
+        }
       });
 
-      operationFns.push((batch) => {
+      refundOperationFns.push((batch) => {
         batch.update(doc(db, 'markets', market.id), {
           status: MARKET_STATUS.CANCELLED,
           cancelledAt: new Date(),
           lockedAt: null
         });
       });
-      for (const chunk of chunkArray(operationFns, 350)) {
+      for (const chunk of chunkArray(refundOperationFns, 350)) {
         const batch = writeBatch(db);
         chunk.forEach((applyOp) => applyOp(batch));
         await batch.commit();
+      }
+      if (notificationOperationFns.length > 0) {
+        try {
+          for (const chunk of chunkArray(notificationOperationFns, 350)) {
+            const batch = writeBatch(db);
+            chunk.forEach((applyOp) => applyOp(batch));
+            await batch.commit();
+          }
+        } catch (error) {
+          console.warn('Skipping marketplace notifications:', error?.code || error?.message);
+        }
       }
 
       await logCreatorAction('DELETE', `Marketplace market cancelled: ${market.question.slice(0, 120)}`);

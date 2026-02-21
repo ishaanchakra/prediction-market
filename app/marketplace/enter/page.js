@@ -35,25 +35,6 @@ import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 const INPUT_CLASS =
   'w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.78rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]';
 
-function toDate(value) {
-  if (value?.toDate) return value.toDate();
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function formatRelativeFromNow(value) {
-  const date = toDate(value);
-  if (!date) return 'No recent activity';
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.floor(diffMs / (1000 * 60));
-  if (minutes < 1) return 'Active just now';
-  if (minutes < 60) return `Active ${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Active ${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `Active ${days}d ago`;
-}
-
 function EnterMarketplaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -159,60 +140,10 @@ function EnterMarketplaceContent() {
   }
 
   async function fetchAvailableMarketplaces() {
-    const [marketplacesSnap, membersSnap, marketsSnap] = await Promise.all([
-      getDocs(query(collection(db, 'marketplaces'), limit(300))),
-      getDocs(query(collection(db, 'marketplaceMembers'), limit(5000))),
-      getDocs(query(collection(db, 'markets'), limit(3000)))
-    ]);
-
-    const memberCountsByMarketplace = {};
-    membersSnap.docs.forEach((snapshotDoc) => {
-      const member = snapshotDoc.data();
-      const marketplaceId = member.marketplaceId;
-      if (!marketplaceId) return;
-      memberCountsByMarketplace[marketplaceId] = (memberCountsByMarketplace[marketplaceId] || 0) + 1;
-    });
-
-    const marketStatsByMarketplace = {};
-    marketsSnap.docs.forEach((snapshotDoc) => {
-      const market = snapshotDoc.data();
-      const marketplaceId = market.marketplaceId;
-      if (!marketplaceId) return;
-      if (!marketStatsByMarketplace[marketplaceId]) {
-        marketStatsByMarketplace[marketplaceId] = { activeMarkets: 0, lastActivityAt: null };
-      }
-
-      const stats = marketStatsByMarketplace[marketplaceId];
-      const isActive = market.resolution == null && market.status !== 'CANCELLED';
-      if (isActive) {
-        stats.activeMarkets += 1;
-      }
-
-      const timestamps = [market.updatedAt, market.createdAt, market.resolvedAt]
-        .map((value) => toDate(value))
-        .filter(Boolean)
-        .map((value) => value.getTime());
-      if (timestamps.length > 0) {
-        const next = Math.max(...timestamps);
-        const current = stats.lastActivityAt?.getTime?.() || 0;
-        if (next > current) {
-          stats.lastActivityAt = new Date(next);
-        }
-      }
-    });
-
+    const marketplacesSnap = await getDocs(query(collection(db, 'marketplaces'), limit(300)));
     const rows = marketplacesSnap.docs
       .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
       .filter((marketplace) => !marketplace.isArchived)
-      .map((marketplace) => {
-        const stats = marketStatsByMarketplace[marketplace.id] || { activeMarkets: 0, lastActivityAt: null };
-        return {
-          ...marketplace,
-          memberCount: memberCountsByMarketplace[marketplace.id] || 0,
-          activeMarketCount: stats.activeMarkets || 0,
-          lastActivityAt: stats.lastActivityAt || toDate(marketplace.updatedAt) || toDate(marketplace.createdAt) || null
-        };
-      })
       .sort((a, b) => {
         const aLabel = String(a.nameLower || a.name || a.slug || '').toLowerCase();
         const bLabel = String(b.nameLower || b.name || b.slug || '').toLowerCase();
@@ -435,7 +366,7 @@ function EnterMarketplaceContent() {
                               <span className="ml-2 text-[0.58rem] text-[var(--text-muted)]">/{marketplace.slug || marketplace.id}</span>
                             </span>
                             <span className="mt-0.5 block text-[0.54rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                              {marketplace.memberCount || 0} members · {marketplace.activeMarketCount || 0} active · {formatRelativeFromNow(marketplace.lastActivityAt)}
+                              Password-protected marketplace
                             </span>
                           </span>
                           {joinedRow ? (

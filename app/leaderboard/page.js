@@ -197,8 +197,16 @@ export default function LeaderboardPage() {
 
         const weekWindow = getCurrentWeekWindow();
         const [resolvedYesSnap, resolvedNoSnap] = await Promise.all([
-          getDocs(query(collection(db, 'markets'), where('resolution', '==', 'YES'))),
-          getDocs(query(collection(db, 'markets'), where('resolution', '==', 'NO')))
+          getDocs(query(
+            collection(db, 'markets'),
+            where('marketplaceId', '==', null),
+            where('resolution', '==', 'YES')
+          )),
+          getDocs(query(
+            collection(db, 'markets'),
+            where('marketplaceId', '==', null),
+            where('resolution', '==', 'NO')
+          ))
         ]);
         const resolvedThisWeek = [...resolvedYesSnap.docs, ...resolvedNoSnap.docs]
           .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))

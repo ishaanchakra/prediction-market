@@ -9,7 +9,6 @@ import {
   getDoc,
   getDocs,
   limit,
-  orderBy,
   query,
   runTransaction,
   setDoc,
@@ -171,26 +170,14 @@ export default function OnboardingPage() {
       path: 'guided'
     });
     try {
-      let marketSnapshot;
-      try {
-        marketSnapshot = await getDocs(
-          query(
-            collection(db, 'markets'),
-            where('resolution', '==', null),
-            orderBy('createdAt', 'desc'),
-            limit(50)
-          )
-        );
-      } catch {
-        marketSnapshot = await getDocs(
-          query(
-            collection(db, 'markets'),
-            where('resolution', '==', null),
-            where('marketplaceId', '==', null),
-            limit(50)
-          )
-        );
-      }
+      const marketSnapshot = await getDocs(
+        query(
+          collection(db, 'markets'),
+          where('marketplaceId', '==', null),
+          where('resolution', '==', null),
+          limit(50)
+        )
+      );
 
       const candidates = marketSnapshot.docs
         .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
@@ -207,7 +194,13 @@ export default function OnboardingPage() {
             return { ...market, totalVolume: Number(market.totalVolume) };
           }
 
-          const betSnapshot = await getDocs(query(collection(db, 'bets'), where('marketId', '==', market.id)));
+          const betSnapshot = await getDocs(
+            query(
+              collection(db, 'bets'),
+              where('marketplaceId', '==', null),
+              where('marketId', '==', market.id)
+            )
+          );
           const totalVolume = betSnapshot.docs.reduce((sum, snapshotDoc) => {
             const bet = snapshotDoc.data();
             if ((bet.type || 'BUY') !== 'BUY') return sum;

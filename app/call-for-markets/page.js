@@ -69,8 +69,8 @@ export default function CallForMarketsPage() {
     const selectedDate = new Date(`${form.resolutionDate}T00:00:00`);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (selectedDate < today) {
-      notifyError('Resolution date cannot be in the past.');
+    if (selectedDate <= today) {
+      notifyError('Resolution date must be in the future.');
       return;
     }
 
@@ -84,7 +84,7 @@ export default function CallForMarketsPage() {
         initialProbability: Number(form.initialProbability),
         liquidityB: Number(form.liquidityB),
         resolutionRules: form.resolutionRules.trim(),
-        resolutionDate: new Date(form.resolutionDate),
+        resolutionDate: new Date(`${form.resolutionDate}T23:59:59`),
         rationale: form.rationale.trim() || null,
         status: 'PENDING',
         adminNotes: null,

@@ -216,9 +216,17 @@ export default function Home() {
         if (user) {
           const trendEntries = await Promise.all(
             active.slice(0, 20).map(async (market) => {
-              const betQuery = query(collection(db, 'bets'), where('marketId', '==', market.id), orderBy('timestamp', 'asc'));
+              const betQuery = query(
+                collection(db, 'bets'),
+                where('marketplaceId', '==', null),
+                where('marketId', '==', market.id),
+                orderBy('timestamp', 'desc')
+              );
               const betSnapshot = await getDocs(betQuery);
-              const probs = betSnapshot.docs.map((d) => Number(d.data().probability)).filter((v) => Number.isFinite(v));
+              const probs = betSnapshot.docs
+                .map((d) => Number(d.data().probability))
+                .filter((v) => Number.isFinite(v))
+                .reverse();
               const initial = typeof market.initialProbability === 'number' ? market.initialProbability : (probs[0] ?? market.probability ?? 0.5);
               const series = probs.length ? [initial, ...probs] : [initial, initial];
               return [market.id, series];

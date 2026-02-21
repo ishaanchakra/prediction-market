@@ -12,9 +12,7 @@ import {
   getDocs,
   limit,
   deleteDoc,
-  runTransaction,
-  arrayUnion,
-  arrayRemove
+  runTransaction
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
@@ -857,6 +855,9 @@ export default function MarketPage() {
         if (!Number.isFinite(result.payout) || result.payout < 0 || result.payout > 1_000_000) {
           throw new Error('Invalid sell payout calculated.');
         }
+        if (result.payout <= 0 || safeSharesToSell <= 0) {
+          throw new Error('Invalid sell: payout and shares must be positive.');
+        }
 
         const userData = userSnap.data();
         const currentBalance = isMarketplaceMarket
@@ -1043,28 +1044,6 @@ export default function MarketPage() {
     }
   }
 
-  async function handleLikeComment(comment) {
-    if (!currentUser) { notifyError('Sign in to like comments.'); return; }
-    const uid = currentUser.uid;
-    const isLiked = Array.isArray(comment.likedBy) && comment.likedBy.includes(uid);
-    try {
-      if (isLiked) {
-        await updateDoc(doc(db, 'comments', comment.id), { likedBy: arrayRemove(uid) });
-        setComments((prev) => prev.map((item) =>
-          item.id === comment.id ? { ...item, likedBy: (item.likedBy || []).filter((id) => id !== uid) } : item
-        ));
-      } else {
-        await updateDoc(doc(db, 'comments', comment.id), { likedBy: arrayUnion(uid) });
-        setComments((prev) => prev.map((item) =>
-          item.id === comment.id ? { ...item, likedBy: [...(item.likedBy || []), uid] } : item
-        ));
-      }
-    } catch (error) {
-      console.error('Error liking comment:', error);
-      notifyError('Unable to like comment.');
-    }
-  }
-
   async function handleShareMarket() {
     if (typeof window === 'undefined') return;
     const shareUrl = window.location.href;
@@ -1225,9 +1204,9 @@ export default function MarketPage() {
           )}
 
           <div className="mt-3 flex items-center gap-3">
-            <button onClick={() => handleLikeComment(comment)} className={`font-mono text-[0.58rem] ${Array.isArray(comment.likedBy) && comment.likedBy.includes(currentUser?.uid) ? 'text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'}`}>
+            <span className="font-mono text-[0.58rem] text-[var(--text-muted)]">
               ♥ {Array.isArray(comment.likedBy) ? comment.likedBy.length : Number(comment.likes || 0)}
-            </button>
+            </span>
             <button
               onClick={() => {
                 if (!currentUser) {
