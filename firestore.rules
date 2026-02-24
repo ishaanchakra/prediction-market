@@ -186,10 +186,28 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /userPrivate/{userId} {
+      allow read: if hasAllowedEmail()
+        && (request.auth.uid == userId || isAdmin());
+      allow create, update: if hasAllowedEmail()
+        && (request.auth.uid == userId || isAdmin())
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() <= 254;
+      allow delete: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if true;
-      allow create: if hasAllowedEmail() && request.auth.uid == userId;
-      allow update: if hasAllowedEmail() && (request.auth.uid == userId || isAdmin());
+      allow create: if hasAllowedEmail()
+        && request.auth.uid == userId
+        && !('email' in request.resource.data);
+      allow update: if hasAllowedEmail()
+        && (request.auth.uid == userId || isAdmin())
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email'])
+          || !('email' in request.resource.data)
+        );
       allow delete: if isAdmin();
     }
 
@@ -209,7 +227,10 @@ service cloud.firestore {
         && request.resource.data.resolutionDate > request.time;
       allow read: if isAdmin() || (hasAllowedEmail() && resource.data.submittedBy == request.auth.uid);
       allow update: if isAdmin()
-        && request.resource.data.resolutionDate > request.time;
+        && (
+          request.resource.data.status != 'PENDING'
+          || request.resource.data.resolutionDate > request.time
+        );
       allow delete: if isAdmin();
     }
 

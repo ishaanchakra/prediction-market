@@ -1,16 +1,26 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { auth, db, googleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { normalizeDisplayName } from '@/utils/displayName';
+import { sanitizeInternalRedirectPath } from '@/utils/redirect';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = useMemo(
+    () => sanitizeInternalRedirectPath(searchParams.get('next'), '/'),
+    [searchParams]
+  );
+  const onboardingPath = useMemo(
+    () => (nextPath === '/' ? '/onboarding' : `/onboarding?next=${encodeURIComponent(nextPath)}`),
+    [nextPath]
+  );
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -18,16 +28,16 @@ export default function LoginPage() {
       try {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists() && userDoc.data()?.onboardingComplete === false) {
-          router.push('/onboarding');
+          router.push(onboardingPath);
           return;
         }
       } catch (error) {
         console.error('Error checking onboarding status:', error);
       }
-      router.push('/');
+      router.push(nextPath);
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [nextPath, onboardingPath, router]);
 
   async function handleGoogleSignIn() {
     setLoading(true);
@@ -45,25 +55,32 @@ export default function LoginPage() {
       }
 
       const userDocRef = doc(db, 'users', user.uid);
+      const userPrivateRef = doc(db, 'userPrivate', user.uid);
       const userDoc = await getDoc(userDocRef);
       const netId = user.email.split('@')[0];
       const defaultDisplayName = netId;
+      const canonicalEmail = user.email.toLowerCase();
 
       if (!userDoc.exists()) {
-        await setDoc(userDocRef, {
-          email: user.email,
-          weeklyRep: 1000,
-          lifetimeRep: 0,
-          oracleScore: 0,
-          quickTakesUsedToday: 0,
-          quickTakeLastDate: null,
-          quickTakeStreak: 0,
-          createdAt: new Date(),
-          displayName: defaultDisplayName,
-          displayNameNormalized: normalizeDisplayName(defaultDisplayName),
-          onboardingComplete: false
-        });
-        router.push('/onboarding');
+        await Promise.all([
+          setDoc(userDocRef, {
+            weeklyRep: 1000,
+            lifetimeRep: 0,
+            oracleScore: 0,
+            quickTakesUsedToday: 0,
+            quickTakeLastDate: null,
+            quickTakeStreak: 0,
+            createdAt: new Date(),
+            displayName: defaultDisplayName,
+            displayNameNormalized: normalizeDisplayName(defaultDisplayName),
+            onboardingComplete: false
+          }),
+          setDoc(userPrivateRef, {
+            email: canonicalEmail,
+            updatedAt: new Date()
+          }, { merge: true })
+        ]);
+        router.push(onboardingPath);
         return;
       } else {
         const current = userDoc.data() || {};
@@ -74,19 +91,22 @@ export default function LoginPage() {
           patch.displayName = current.displayName || defaultDisplayName;
           patch.displayNameNormalized = normalizeDisplayName(patch.displayName);
         }
-        if (!current.email && user.email) patch.email = user.email;
 
         if (Object.keys(patch).length > 0) {
           await setDoc(userDocRef, patch, { merge: true });
         }
+        await setDoc(userPrivateRef, {
+          email: canonicalEmail,
+          updatedAt: new Date()
+        }, { merge: true });
 
         if (current.onboardingComplete === false) {
-          router.push('/onboarding');
+          router.push(onboardingPath);
           return;
         }
       }
 
-      router.push('/');
+      router.push(nextPath);
     } catch (signInError) {
       if (signInError.code === 'auth/popup-closed-by-user') {
         setError('');

@@ -211,6 +211,7 @@ export default function AdminPage() {
   const [rejectReasons, setRejectReasons] = useState({});
 
   const [usersData, setUsersData] = useState([]);
+  const [privateEmailMap, setPrivateEmailMap] = useState({});
   const [userSearch, setUserSearch] = useState('');
   const [editingUserId, setEditingUserId] = useState(null);
   const [userEdits, setUserEdits] = useState({});
@@ -271,8 +272,11 @@ export default function AdminPage() {
     const term = userSearch.trim().toLowerCase();
     const rows = [...usersData].sort((a, b) => Number(b.weeklyRep || 0) - Number(a.weeklyRep || 0));
     if (!term) return rows;
-    return rows.filter((entry) => (entry.email || '').toLowerCase().startsWith(term));
-  }, [usersData, userSearch]);
+    return rows.filter((entry) => {
+      const email = String(privateEmailMap[entry.id] || entry.email || '').toLowerCase();
+      return email.startsWith(term);
+    });
+  }, [usersData, userSearch, privateEmailMap]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -476,8 +480,29 @@ export default function AdminPage() {
 
   async function fetchUsers() {
     try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      const rows = snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+      const [usersSnapshot, userPrivateSnapshot] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'userPrivate'))
+      ]);
+
+      const emailMap = {};
+      userPrivateSnapshot.docs.forEach((snapshotDoc) => {
+        const value = snapshotDoc.data()?.email;
+        if (typeof value === 'string' && value.trim()) {
+          emailMap[snapshotDoc.id] = value.trim().toLowerCase();
+        }
+      });
+      setPrivateEmailMap(emailMap);
+
+      const rows = usersSnapshot.docs.map((snapshotDoc) => {
+        const data = snapshotDoc.data() || {};
+        const fallbackEmail = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+        return {
+          id: snapshotDoc.id,
+          ...data,
+          email: emailMap[snapshotDoc.id] || fallbackEmail
+        };
+      });
       setUsersData(rows);
 
       const cacheEntries = rows.map((entry) => [entry.id, getPublicDisplayName(entry)]);

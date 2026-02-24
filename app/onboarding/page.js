@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   collection,
   doc,
@@ -23,6 +23,7 @@ import { round2 } from '@/utils/round';
 import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
+import { buildLoginPath, sanitizeInternalRedirectPath } from '@/utils/redirect';
 
 const BET_AMOUNT = 25;
 const CARD_LIMIT = 5;
@@ -53,7 +54,6 @@ function defaultProfileForUser(user) {
   const netId = (user?.email || '').split('@')[0] || 'trader';
   const normalized = normalizeDisplayName(netId);
   return {
-    email: user?.email || '',
     weeklyRep: 1000,
     lifetimeRep: 0,
     oracleScore: 0,
@@ -69,7 +69,16 @@ function defaultProfileForUser(user) {
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toasts, notifyError, removeToast, resolveConfirm } = useToastQueue();
+  const nextPath = useMemo(
+    () => sanitizeInternalRedirectPath(searchParams.get('next'), '/'),
+    [searchParams]
+  );
+  const loginPath = useMemo(() => {
+    const onboardingPath = nextPath === '/' ? '/onboarding' : `/onboarding?next=${encodeURIComponent(nextPath)}`;
+    return buildLoginPath(onboardingPath);
+  }, [nextPath]);
 
   const [authUser, setAuthUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -97,12 +106,19 @@ export default function OnboardingPage() {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (!user) {
-        router.push('/login');
+        router.push(loginPath);
         return;
       }
 
       try {
         const userRef = doc(db, 'users', user.uid);
+        const userPrivateRef = doc(db, 'userPrivate', user.uid);
+        if (user.email) {
+          await setDoc(userPrivateRef, {
+            email: String(user.email).toLowerCase(),
+            updatedAt: new Date()
+          }, { merge: true });
+        }
         let userSnap = await getDoc(userRef);
         if (!userSnap.exists()) {
           const defaults = defaultProfileForUser(user);
@@ -112,7 +128,7 @@ export default function OnboardingPage() {
 
         const userData = userSnap.exists() ? userSnap.data() : defaultProfileForUser(user);
         if (userData.onboardingComplete === true) {
-          router.push('/');
+          router.push(nextPath);
           return;
         }
 
@@ -130,7 +146,7 @@ export default function OnboardingPage() {
     });
 
     return () => unsubscribe();
-  }, [notifyError, router]);
+  }, [loginPath, nextPath, notifyError, router]);
 
   useEffect(() => {
     if (step !== 3) return undefined;
@@ -170,7 +186,7 @@ export default function OnboardingPage() {
         step: 4,
         tutorialBetsPlaced: placedBets.length
       });
-      router.push('/');
+      router.push(nextPath);
     } catch (error) {
       console.error('Error finishing onboarding:', error);
       notifyError('Could not complete onboarding. Please try again.');

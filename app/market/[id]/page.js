@@ -445,7 +445,9 @@ export default function MarketPage() {
             try {
               const userDoc = await getDoc(doc(db, 'users', bet.userId));
               if (userDoc.exists()) {
-                userName = userDoc.data().email?.split('@')[0] || 'User';
+                userName = getPublicDisplayName({ id: bet.userId, ...userDoc.data() });
+              } else {
+                userName = getPublicDisplayName({ id: bet.userId });
               }
             } catch (error) {
               console.error('Error fetching user:', error);

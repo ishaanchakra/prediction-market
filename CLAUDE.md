@@ -25,6 +25,11 @@ Firebase callable functions now own trade execution:
   - Re-runs LMSR sell math server-side and executes a Firestore transaction that writes the negative bet, updates market pool/probability, and credits payout.
   - Re-checks share ownership and market state inside the transaction to prevent race-condition sells.
 
+- `migrateUserEmailsToPrivate` (`functions/index.js`)
+  - Admin-only callable utility for one-time privacy migration.
+  - Scans `/users`, copies legacy `email` values into `/userPrivate/{uid}` (`{ email, updatedAt }`), and removes `email` from `/users`.
+  - Supports dry-run mode with summary counts.
+
 Client integration:
 
 - `app/market/[id]/page.js` uses Firebase callable `placeBet` / `sellShares` for all manual trading.
@@ -88,7 +93,8 @@ Read `firestore.rules` before adding queries. The critical constraints:
 - `markets`, `bets`, `comments`, `newsItems` are read-gated by marketplace scope logic (`canReadMarketplaceScoped`).
 - Global reads work for everyone when `resource.data.marketplaceId` is null.
 - Marketplace reads require membership/creator/admin.
-- `users`, `displayNames`, `weeklySnapshots` are broadly readable.
+- `users`, `displayNames`, `weeklySnapshots` are broadly readable (public-safe fields only).
+- `userPrivate/{uid}` is self/admin only and stores private email.
 - `notifications` and `marketRequests` are auth and ownership constrained.
 - `waitlist` allows unauthenticated create/update (email string ≤254 chars); admin-only read/delete.
 - `bets` create is denied from clients (`allow create: if false`) to force server-side trade execution.
@@ -175,6 +181,12 @@ New users get these fields at creation (set in both `app/login/page.js` and `app
 - `weeklyRep: 1000` — resets weekly
 - `lifetimeRep: 0` — all-time P&L, never resets
 - `oracleScore: 0` — all-time prediction accuracy score (see below)
+
+Private email storage:
+
+- Email is not stored on `/users` anymore.
+- Email lives in `/userPrivate/{uid}` as `{ email, updatedAt }`.
+- Never read other users' emails from `/users`; use auth context for self-email, and `/userPrivate` for admin/self contexts.
 
 ### Oracle Score
 

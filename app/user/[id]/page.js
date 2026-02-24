@@ -17,6 +17,7 @@ export default function UserProfilePage() {
   const { id } = useParams();
   const [viewer, setViewer] = useState(null);
   const [user, setUser] = useState(null);
+  const [adminVisibleEmail, setAdminVisibleEmail] = useState('');
   const [bets, setBets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -33,6 +34,7 @@ export default function UserProfilePage() {
     async function fetchUserProfile() {
       try {
         setProfileError('');
+        setAdminVisibleEmail('');
         const userDoc = await getDoc(doc(db, 'users', id));
         if (!userDoc.exists()) {
           setNotFound(true);
@@ -40,6 +42,19 @@ export default function UserProfilePage() {
           return;
         }
         setUser({ uid: id, ...userDoc.data() });
+
+        const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
+        if (viewerIsAdmin) {
+          try {
+            const privateDoc = await getDoc(doc(db, 'userPrivate', id));
+            if (privateDoc.exists() && typeof privateDoc.data()?.email === 'string') {
+              setAdminVisibleEmail(privateDoc.data().email);
+            }
+          } catch (error) {
+            // Keep profile visible even if private email lookup is denied/misconfigured.
+            console.warn('Unable to load private email for admin view:', error?.code || error?.message);
+          }
+        }
 
         const betsQuery = query(
           collection(db, 'bets'),
@@ -98,7 +113,7 @@ export default function UserProfilePage() {
       }
     }
     fetchUserProfile();
-  }, [id]);
+  }, [id, viewer?.email]);
 
   if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
   if (notFound) {
@@ -137,7 +152,7 @@ export default function UserProfilePage() {
           <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
             joined {memberSince} · {tradeCount} trades · {winRate}% win rate
           </p>
-          {viewerIsAdmin && user.email && <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">{user.email}</p>}
+          {viewerIsAdmin && adminVisibleEmail && <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">{adminVisibleEmail}</p>}
         </div>
 
         <div className="mb-10 grid gap-4 sm:grid-cols-2">

@@ -31,6 +31,7 @@ import {
   createMarketplacePasswordSecret
 } from '@/utils/marketplaceAuth';
 import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
+import { buildLoginPath } from '@/utils/redirect';
 
 const INPUT_CLASS =
   'w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.78rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]';
@@ -59,6 +60,14 @@ function EnterMarketplaceContent() {
   const [resetMode, setResetMode] = useState(MARKETPLACE_DEFAULTS.resetMode);
 
   const requestedMarketplaceId = searchParams.get('marketplace');
+  const loginPath = useMemo(() => {
+    const params = new URLSearchParams();
+    if (requestedMarketplaceId?.trim()) {
+      params.set('marketplace', requestedMarketplaceId.trim());
+    }
+    const nextPath = params.toString() ? `/marketplace/enter?${params.toString()}` : '/marketplace/enter';
+    return buildLoginPath(nextPath);
+  }, [requestedMarketplaceId]);
 
   const canCreate = useMemo(() => {
     return name.trim().length >= 3 && password.length >= 4 && Number(startingBalance) > 0 && Number(defaultB) > 0;
@@ -87,7 +96,7 @@ function EnterMarketplaceContent() {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       if (!currentUser) {
-        router.push('/login');
+        router.push(loginPath);
         return;
       }
       setUser(currentUser);
@@ -101,7 +110,7 @@ function EnterMarketplaceContent() {
       }
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [loginPath, router]);
 
   useEffect(() => {
     if (!requestedMarketplaceId) return;
@@ -419,7 +428,7 @@ function EnterMarketplaceContent() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className={INPUT_CLASS}
-                placeholder="your marketplace's name"
+                placeholder="Your marketplace's name"
                 maxLength={72}
               />
               <input

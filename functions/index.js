@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase-admin/app'
-import { FieldValue, getFirestore } from 'firebase-admin/firestore'
+import { FieldPath, FieldValue, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 
 initializeApp()
@@ -12,6 +12,7 @@ const MARKET_STATUS = {
   RESOLVED: 'RESOLVED',
   CANCELLED: 'CANCELLED'
 }
+const ADMIN_EMAILS = new Set(['ic367@cornell.edu'])
 
 const DEFAULT_B = 100
 
@@ -208,6 +209,15 @@ function assertAuthenticatedCornell(request) {
     throw new HttpsError('permission-denied', 'You must use a Cornell email address (@cornell.edu).')
   }
   return { uid, email }
+}
+
+function assertAdminCaller(request) {
+  const { uid, email } = assertAuthenticatedCornell(request)
+  const normalizedEmail = String(email).toLowerCase()
+  if (!ADMIN_EMAILS.has(normalizedEmail)) {
+    throw new HttpsError('permission-denied', 'Admin access required.')
+  }
+  return { uid, email: normalizedEmail }
 }
 
 function assertOpenMarket(market, lockedMessage) {
@@ -571,5 +581,81 @@ export const sellShares = onCall(async (request) => {
     return txResult
   } catch (error) {
     throw toHttpsError(error, 'Unable to sell shares right now.')
+  }
+})
+
+export const migrateUserEmailsToPrivate = onCall(async (request) => {
+  try {
+    const { email } = assertAdminCaller(request)
+    const dryRun = Boolean(request.data?.dryRun)
+    const requestedBatchSize = Number(request.data?.batchSize)
+    const batchSize = Number.isFinite(requestedBatchSize) && requestedBatchSize > 0
+      ? Math.min(200, Math.floor(requestedBatchSize))
+      : 200
+
+    let scanned = 0
+    let migrated = 0
+    let alreadyClean = 0
+    let pages = 0
+    let lastDoc = null
+
+    while (true) {
+      let usersQuery = db.collection('users')
+        .orderBy(FieldPath.documentId())
+        .limit(batchSize)
+      if (lastDoc) {
+        usersQuery = usersQuery.startAfter(lastDoc)
+      }
+
+      const usersSnapshot = await usersQuery.get()
+      if (usersSnapshot.empty) break
+      pages += 1
+
+      const batch = dryRun ? null : db.batch()
+      let batchOps = 0
+
+      for (const userDoc of usersSnapshot.docs) {
+        scanned += 1
+        const rawEmail = typeof userDoc.data()?.email === 'string'
+          ? userDoc.data().email.trim().toLowerCase()
+          : ''
+
+        if (!rawEmail) {
+          alreadyClean += 1
+          continue
+        }
+
+        migrated += 1
+        if (!dryRun) {
+          const privateRef = db.collection('userPrivate').doc(userDoc.id)
+          batch.set(privateRef, {
+            email: rawEmail,
+            updatedAt: new Date()
+          }, { merge: true })
+          batch.update(userDoc.ref, {
+            email: FieldValue.delete()
+          })
+          batchOps += 2
+        }
+      }
+
+      if (!dryRun && batchOps > 0) {
+        await batch.commit()
+      }
+
+      lastDoc = usersSnapshot.docs[usersSnapshot.docs.length - 1]
+    }
+
+    return {
+      dryRun,
+      batchSize,
+      scanned,
+      migrated,
+      alreadyClean,
+      pages,
+      executedBy: email
+    }
+  } catch (error) {
+    throw toHttpsError(error, 'Unable to migrate user emails right now.')
   }
 })
