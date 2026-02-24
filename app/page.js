@@ -337,7 +337,7 @@ export default function Home() {
                     Browse Markets
                   </Link>
                   <Link href="/how-it-works" className="rounded-[5px] border border-[var(--border2)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]">
-                    How It Works
+                    About
                   </Link>
                 </div>
               </div>
@@ -438,7 +438,7 @@ export default function Home() {
           <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Predict Cornell &middot; BETA &middot; Spring 2026</span>
           <ul className="flex list-none gap-6">
             <li>
-              <Link href="/how-it-works" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">How It Works</Link>
+              <Link href="/how-it-works" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">About</Link>
             </li>
             <li>
               <Link href="/call-for-markets" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">Call for Markets</Link>
@@ -483,7 +483,7 @@ export default function Home() {
               Start Trading
             </Link>
             <Link href="/how-it-works" className="rounded-[5px] border border-[var(--border2)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]">
-              How It Works
+              About
             </Link>
           </div>
           <p className="mt-4 font-mono text-[0.6rem] tracking-[0.04em] text-[var(--text-muted)]">@cornell.edu required &middot; weekly reset leaderboard &middot; BETA</p>
@@ -585,7 +585,7 @@ export default function Home() {
         <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Predict Cornell &middot; BETA &middot; Spring 2026</span>
         <ul className="flex list-none gap-6">
           <li>
-            <Link href="/how-it-works" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">How It Works</Link>
+            <Link href="/how-it-works" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">About</Link>
           </li>
           <li>
             <Link href="/call-for-markets" className="font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:text-[var(--text-dim)]">Call for Markets</Link>

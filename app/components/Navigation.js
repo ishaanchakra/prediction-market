@@ -386,7 +386,7 @@ export default function Navigation() {
           </li>
           <li>
             <Link href="/how-it-works" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
-              How It Works
+              About
             </Link>
           </li>
         </ul>
@@ -545,7 +545,7 @@ export default function Navigation() {
               Call for Markets
             </Link>
             <Link onClick={() => setMobileMenuOpen(false)} href="/how-it-works" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
-              How It Works
+              About
             </Link>
             {user && isAdmin && (
               <Link onClick={() => setMobileMenuOpen(false)} href="/admin" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
