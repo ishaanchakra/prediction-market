@@ -141,7 +141,14 @@ export default function Navigation() {
 
         unsubscribeBalance = onSnapshot(
           doc(db, 'users', currentUser.uid),
-          (userDoc) => setBalance(userDoc.exists() ? Number(userDoc.data().weeklyRep || 0) : 0),
+          (userDoc) => {
+            if (userDoc.exists()) {
+              const data = userDoc.data();
+              setBalance(Number(data.weeklyRep || 0));
+            } else {
+              setBalance(0);
+            }
+          },
           (error) => console.error('Error listening to user balance:', error)
         );
 
@@ -387,19 +394,21 @@ export default function Navigation() {
         <div className="justify-self-end flex items-center gap-2 md:gap-3">
           {user ? (
             <>
-              <div className={`flex items-center gap-2 rounded-md border px-2.5 py-[0.35rem] font-mono md:px-3 ${
-                inMarketplaceContext
-                  ? 'border-[var(--red-dim)] bg-[var(--red-glow)]'
-                  : 'border-[var(--border2)] bg-[var(--surface)]'
-              }`}>
-                <span className={`hidden sm:inline text-[0.54rem] uppercase tracking-[0.08em] ${
-                  inMarketplaceContext ? 'text-[var(--red)]' : 'text-[var(--text-muted)]'
-                }`}>{displayBalanceLabel}</span>
-                <strong className={`text-[0.82rem] md:text-[0.9rem] ${
-                  inMarketplaceContext ? 'text-[var(--amber-bright)]' : 'text-[var(--text)]'
+              <div className="flex items-center gap-1.5">
+                <div className={`flex items-center gap-2 rounded-md border px-2.5 py-[0.35rem] font-mono md:px-3 ${
+                  inMarketplaceContext
+                    ? 'border-[var(--red-dim)] bg-[var(--red-glow)]'
+                    : 'border-[var(--border2)] bg-[var(--surface)]'
                 }`}>
-                  ${displayBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </strong>
+                  <span className={`hidden sm:inline text-[0.54rem] uppercase tracking-[0.08em] ${
+                    inMarketplaceContext ? 'text-[var(--red)]' : 'text-[var(--text-muted)]'
+                  }`}>{displayBalanceLabel}</span>
+                  <strong className={`text-[0.82rem] md:text-[0.9rem] ${
+                    inMarketplaceContext ? 'text-[var(--amber-bright)]' : 'text-[var(--text)]'
+                  }`}>
+                    ${displayBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </strong>
+                </div>
               </div>
               <Link
                 href="/notifications"

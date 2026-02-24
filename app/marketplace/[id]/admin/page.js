@@ -535,7 +535,7 @@ export default function MarketplaceAdminPage() {
         <form onSubmit={handleCreateMarket} className="mb-8 rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-5">
           <p className="mb-4 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Create Marketplace Market</p>
           <div className="grid gap-3 md:grid-cols-2">
-            <input value={question} onChange={(e) => setQuestion(e.target.value)} className={INPUT_CLASS} placeholder="Will there be over 100 unique bird species this weekend?" />
+            <input value={question} onChange={(e) => setQuestion(e.target.value)} className={INPUT_CLASS} placeholder="Your Market question here" />
             <select value={category} onChange={(e) => setCategory(e.target.value)} className={INPUT_CLASS}>
               <option value="auto">Auto category</option>
               {CATEGORIES.filter((entry) => entry.id !== 'all').map((entry) => (
