@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
+import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 
 initializeApp()
@@ -398,7 +398,8 @@ export const placeBet = onCall(async (request) => {
 
       tx.update(marketRef, {
         outstandingShares: result.newPool,
-        probability: result.newProbability
+        probability: result.newProbability,
+        totalVolume: FieldValue.increment(amount)
       })
 
       if (txIsMarketplaceMarket) {
@@ -543,7 +544,8 @@ export const sellShares = onCall(async (request) => {
 
       tx.update(marketRef, {
         outstandingShares: result.newPool,
-        probability: result.newProbability
+        probability: result.newProbability,
+        totalVolume: FieldValue.increment(result.payout)
       })
 
       if (txIsMarketplaceMarket) {

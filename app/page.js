@@ -329,6 +329,9 @@ export default function Home() {
                   <br />
                   is tradeable.
                 </h1>
+                <p className="mb-8 max-w-[480px] text-[0.95rem] leading-[1.6] text-[var(--text-dim)]">
+                  Campus prediction markets. Bet on course outcomes, sports, construction timelines, and everything Cornell.
+                </p>
                 <div className="flex items-center gap-3">
                   <Link href="/markets?status=active" className="rounded-[5px] bg-[var(--red)] px-7 py-3 font-mono text-[0.75rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)]">
                     Browse Markets
