@@ -23,11 +23,10 @@ const faqs = [
     q: "Why does my $50 bet only move the price by 2%?",
     a: "Markets have a liquidity depth parameter; this is basically the market's sensitivity to bet sizes. This prevents one person from swinging a market 30% on a $20 bet, but price impact scales with conviction and volume, not just a single trade."
   },
-  {
-    q: "What happens to my rep at the end of the week?",
-    a: "Weekly rep resets to 1,000 so the leaderboard stays competitive. Your lifetime P&L and Oracle Score accumulate permanently and reflect your track record over time."
-  },
-];
+        {
+          q: "What happens to my rep at the end of the week?",
+          a: "Weekly rep resets to $1,000 so the leaderboard stays competitive. Your lifetime P&L and Oracle Score accumulate permanently and reflect your track record over time."
+        },];
 
 function FAQ({ q, a, aNode }) {
   const [open, setOpen] = useState(false);

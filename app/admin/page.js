@@ -30,6 +30,7 @@ import { calculateAllPortfolioValues } from '@/utils/portfolio';
 import { calculateWeeklyCorrectionRows } from '@/utils/weeklyCorrection';
 import { categoryForNotificationType } from '@/utils/notificationCategories';
 import { ADMIN_EMAILS } from '@/utils/adminEmails';
+import { round8 } from '@/utils/round';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -585,7 +586,7 @@ export default function AdminPage() {
       probability: round2(probDecimal),
       initialProbability: round2(probDecimal),
       outstandingShares: {
-        yes: qYes,
+        yes: round8(qYes),
         no: 0
       },
       b,
@@ -1091,11 +1092,12 @@ export default function AdminPage() {
     try {
       await addDoc(collection(db, 'newsItems'), {
         marketId: market.id,
+        marketplaceId: market.marketplaceId || null,
         adminId: user.uid,
         headline: draft.headline.trim(),
         url: draft.url.trim(),
         source: draft.source.trim(),
-        timestamp: new Date(),
+        timestamp: serverTimestamp(),
         probabilityAtPost: Number(market.probability || 0)
       });
 

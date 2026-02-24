@@ -124,10 +124,10 @@ function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT_B) {
   }
   let safeSharesToSell = sharesToSell
   if (side === 'YES') {
-    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qYes))
+    safeSharesToSell = sharesToSell
   }
   if (side === 'NO') {
-    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qNo))
+    safeSharesToSell = sharesToSell
   }
 
   const currentCost = cost(qYes, qNo, b)
@@ -162,6 +162,10 @@ function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT_B) {
 
 function round2(num) {
   return Math.round((Number(num) + Number.EPSILON) * 100) / 100
+}
+
+function round8(num) {
+  return Math.round((Number(num) + Number.EPSILON) * 100000000) / 100000000
 }
 
 function toMarketplaceMemberId(marketplaceId, userId) {
@@ -400,14 +404,17 @@ export const placeBet = onCall(async (request) => {
         marketplaceId: latestMarketplaceId,
         side,
         amount,
-        shares: result.shares,
+        shares: round8(result.shares),
         probability: result.newProbability,
         timestamp: now,
         type: 'BUY'
       })
 
       tx.update(marketRef, {
-        outstandingShares: result.newPool,
+        outstandingShares: {
+          yes: round8(result.newPool.yes),
+          no: round8(result.newPool.no)
+        },
         probability: result.newProbability,
         totalVolume: FieldValue.increment(amount)
       })
@@ -546,14 +553,17 @@ export const sellShares = onCall(async (request) => {
         marketplaceId: latestMarketplaceId,
         side,
         amount: -result.payout,
-        shares: -sharesToSell,
+        shares: -round8(sharesToSell),
         probability: result.newProbability,
         timestamp: now,
         type: 'SELL'
       })
 
       tx.update(marketRef, {
-        outstandingShares: result.newPool,
+        outstandingShares: {
+          yes: round8(result.newPool.yes),
+          no: round8(result.newPool.no)
+        },
         probability: result.newProbability,
         totalVolume: FieldValue.increment(result.payout)
       })
