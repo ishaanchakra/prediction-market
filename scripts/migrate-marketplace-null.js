@@ -44,13 +44,11 @@ async function applyNullMarketplaceId(collectionName) {
 async function run() {
   try {
     console.log('Running marketplaceId null migration...');
-    const [marketsUpdated, betsUpdated, commentsUpdated, newsUpdated] = await Promise.all([
+    const [marketsUpdated, betsUpdated] = await Promise.all([
       applyNullMarketplaceId('markets'),
-      applyNullMarketplaceId('bets'),
-      applyNullMarketplaceId('comments'),
-      applyNullMarketplaceId('newsItems')
+      applyNullMarketplaceId('bets')
     ]);
-    console.log(`Done. markets: ${marketsUpdated}, bets: ${betsUpdated}, comments: ${commentsUpdated}, newsItems: ${newsUpdated}`);
+    console.log(`Done. markets: ${marketsUpdated}, bets: ${betsUpdated}`);
     process.exit(0);
   } catch (error) {
     console.error('Migration failed:', error);

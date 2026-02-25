@@ -105,10 +105,10 @@ export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT
   }
   let safeSharesToSell = sharesToSell;
   if (side === 'YES') {
-    safeSharesToSell = sharesToSell;
+    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qYes));
   }
   if (side === 'NO') {
-    safeSharesToSell = sharesToSell;
+    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qNo));
   }
 
   const currentCost = cost(qYes, qNo, b);

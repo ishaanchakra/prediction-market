@@ -32,7 +32,6 @@ import { fetchMarketplaceContext, fetchMarketplaceMarkets } from '@/utils/market
 import { getPublicDisplayName } from '@/utils/displayName';
 import { categoryForNotificationType } from '@/utils/notificationCategories';
 import { ADMIN_EMAILS } from '@/utils/adminEmails';
-import { round8 } from '@/utils/round';
 const INPUT_CLASS =
   'w-full rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 font-mono text-[0.78rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]';
 const BTN_BASE =
@@ -183,7 +182,7 @@ export default function MarketplaceAdminPage() {
         resolutionRules: resolutionRules.trim() || null,
         probability: round2(probDecimal),
         initialProbability: round2(probDecimal),
-        outstandingShares: { yes: round8(qYes), no: 0 },
+        outstandingShares: { yes: qYes, no: 0 },
         b,
         status: MARKET_STATUS.OPEN,
         resolution: null,

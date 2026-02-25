@@ -1,5 +1,5 @@
 import { MARKET_STATUS, getMarketStatus } from './marketStatus';
-import { round2, round6 } from './round';
+import { round2 } from './round';
 
 function toNumber(value, fallback = 0) {
   const n = Number(value);
@@ -75,8 +75,8 @@ export function aggregatePositions(bets = []) {
   const positions = [];
 
   for (const entry of byMarket.values()) {
-    const yesShares = Math.max(0, cleanSmall(round6(entry.yesShares)));
-    const noShares = Math.max(0, cleanSmall(round6(entry.noShares)));
+    const yesShares = Math.max(0, cleanSmall(round2(entry.yesShares)));
+    const noShares = Math.max(0, cleanSmall(round2(entry.noShares)));
     if (yesShares <= 0 && noShares <= 0) continue;
 
     const yesCost = Math.max(0, cleanSmall(round2(entry.yesCost)));
