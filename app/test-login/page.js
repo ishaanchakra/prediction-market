@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getAuth, signInWithCustomToken } from 'firebase/auth'
-import { app } from '@/lib/firebase'
+import { signInWithCustomToken } from 'firebase/auth'
+import { auth } from '@/lib/firebase'
 
 const TOKEN = process.env.NEXT_PUBLIC_DOGFOOD_TOKEN
 
@@ -15,7 +15,7 @@ export default function TestLoginPage() {
   useEffect(() => {
     if (!TOKEN) return
 
-    signInWithCustomToken(getAuth(app), TOKEN)
+    signInWithCustomToken(auth, TOKEN)
       .then(() => {
         router.push('/')
       })
