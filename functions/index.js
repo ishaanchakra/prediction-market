@@ -199,11 +199,19 @@ function normalizePositiveNumber(value, fieldName) {
   return parsed
 }
 
+const DOGFOOD_UIDS = new Set(
+  (process.env.DOGFOOD_TEST_UIDS || '').split(',').map(s => s.trim()).filter(Boolean)
+)
+
 function assertAuthenticatedCornell(request) {
   const uid = request.auth?.uid
   const email = request.auth?.token?.email
   if (!uid) {
     throw new HttpsError('unauthenticated', 'You must be signed in to trade.')
+  }
+  // Dogfood bypass — only active when DOGFOOD_TEST_UIDS env var is explicitly set
+  if (DOGFOOD_UIDS.has(uid)) {
+    return { uid, email: email || 'dogfood@cornell.edu' }
   }
   if (typeof email !== 'string' || !email.toLowerCase().endsWith('@cornell.edu')) {
     throw new HttpsError('permission-denied', 'You must use a Cornell email address (@cornell.edu).')

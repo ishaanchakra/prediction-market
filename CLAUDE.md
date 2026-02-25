@@ -246,6 +246,27 @@ Markets have an optional `resolutionDate` field (Firestore `Date`). Admins can s
   - Cause: `defaultProfileForUser()` in `app/onboarding/page.js` didn't include `oracleScore: 0`.
   - Fix: added the field to match the login-time doc shape.
 
+## Dogfood testing bypass (temporary, never commit active)
+
+Three components work together to let an automated browser agent test the full trading flow:
+
+| Component | Purpose |
+|---|---|
+| `scripts/create-dogfood-user.js` | One-shot script: creates Auth user, Firestore wallet, prints custom token |
+| `app/test-login/page.js` | Silent sign-in page using custom token; redirects to `/` |
+| `DOGFOOD_TEST_UIDS` env var in functions | Allowlists UID to bypass Cornell email check in Cloud Functions |
+
+**To activate:** Run the script, set `NEXT_PUBLIC_DOGFOOD_TOKEN` in Vercel env vars, set
+`DOGFOOD_TEST_UIDS=dogfood-test-user` in the functions environment, redeploy functions.
+
+**To deactivate after a dogfood session:**
+1. Unset `NEXT_PUBLIC_DOGFOOD_TOKEN` in Vercel (redeploy)
+2. Unset `DOGFOOD_TEST_UIDS` in functions environment (redeploy functions)
+3. Optionally delete `users/dogfood-test-user`, `userPrivate/dogfood-test-user`, `displayNames/dogfoodtester` from Firestore
+4. The `app/test-login/page.js` file can stay — it does nothing without the env var
+
+Custom tokens expire in 1 hour. Re-run the script to get a fresh one before each dogfood session.
+
 ## Suggested checklist before/after changes
 
 Before:
