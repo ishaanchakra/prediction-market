@@ -4,6 +4,7 @@ import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from '
 import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
+import { calculateAllPortfolioValues } from '@/utils/portfolio';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 import { useRouter } from 'next/navigation';
 
@@ -247,6 +248,7 @@ export default function Home() {
       }
 
       let totalTraded = 28440;
+      let allBetDocs = [];
       try {
         if (user) {
           const allBets = await getDocs(
@@ -256,8 +258,8 @@ export default function Home() {
               limit(500)
             )
           );
-          totalTraded = allBets.docs.reduce((sum, d) => {
-            const bet = d.data();
+          allBetDocs = allBets.docs.map((d) => ({ id: d.id, ...d.data() }));
+          totalTraded = allBetDocs.reduce((sum, bet) => {
             if (bet.marketplaceId) return sum;
             return sum + Math.abs(Number(bet.amount || 0));
           }, 0);
@@ -270,11 +272,16 @@ export default function Home() {
 
       try {
         if (user) {
-          const usersQuery = query(collection(db, 'users'), orderBy('weeklyRep', 'desc'), limit(300));
+          const usersQuery = query(collection(db, 'users'), limit(300));
           const usersSnapshot = await getDocs(usersQuery);
           const users = usersSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
           const me = users.find((u) => u.id === user.uid);
-          const rankIdx = users.findIndex((u) => u.id === user.uid);
+          const ranked = calculateAllPortfolioValues({
+            users,
+            bets: allBetDocs,
+            openMarkets: active
+          }).sort((a, b) => b.portfolioValue - a.portfolioValue);
+          const rankIdx = ranked.findIndex((u) => u.id === user.uid);
           setStats({
             balance: Number(me?.weeklyRep || 1042.5),
             rank: rankIdx >= 0 ? `#${rankIdx + 1}` : '#3',
