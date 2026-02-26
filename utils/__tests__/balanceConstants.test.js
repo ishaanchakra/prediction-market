@@ -21,27 +21,23 @@ describe('balance baseline constants', () => {
     expect(source).not.toMatch(/weeklyRep:\s*(?!1000)\d+/);
   });
 
-  test('admin weekly reset sets weeklyRep to 1000 and copy says $1,000', () => {
+  test('admin weekly reset does NOT set weeklyRep to 1000 (stipend model)', () => {
     const source = read('app/admin/page.js');
-    expect(source).toContain('batch.update(doc(db, \'users\', d.id), { weeklyRep: 1000 })');
-    expect(source).toContain('$1,000');
-    expect(source).not.toContain('$500');
+    expect(source).not.toContain("batch.update(doc(db, 'users', d.id), { weeklyRep: 1000 })");
+    expect(source).toContain('weeklySnapshots');
   });
 
-  test('how-it-works and leaderboard reference $1,000 (not $500)', () => {
-    const howItWorks = read('app/how-it-works/page.js');
+  test('leaderboard does not reference hardcoded $1,000 baseline copy', () => {
     const leaderboard = read('app/leaderboard/page.js');
-
+    expect(leaderboard).not.toContain('from a $1,000 baseline');
+    const howItWorks = read('app/how-it-works/page.js');
     expect(howItWorks).toContain('$1,000');
     expect(howItWorks).not.toContain('$500');
-
-    expect(leaderboard).toContain('$1,000');
-    expect(leaderboard).not.toContain('$500');
   });
 
-  test('user profile weeklyNet baseline is weeklyRep - 1000', () => {
+  test('user profile weeklyNet uses weeklyStartingBalance, not hardcoded 1000', () => {
     const source = read('app/user/[id]/page.js');
-    expect(source).toMatch(/weeklyNet\s*=\s*Number\(user\.weeklyRep\s*\|\|\s*0\)\s*-\s*1000/);
-    expect(source).not.toMatch(/weeklyNet\s*=.*-\s*500/);
+    expect(source).toContain('weeklyStartingBalance');
+    expect(source).not.toMatch(/weeklyNet\s*=\s*Number\(user\.weeklyRep\s*\|\|\s*0\)\s*-\s*1000/);
   });
 });

@@ -153,6 +153,58 @@ describe('calculatePortfolioSummary', () => {
   });
 });
 
+describe('calculatePortfolioSummary - weeklyStartingBalance baseline', () => {
+  test('uses weeklyStartingBalance when present', () => {
+    const user = { weeklyRep: 1200, weeklyStartingBalance: 1100 };
+    const result = calculatePortfolioSummary(user, []);
+    expect(result.weeklyPnl).toBe(100);
+  });
+
+  test('falls back to 1000 when weeklyStartingBalance is missing', () => {
+    const user = { weeklyRep: 1200 };
+    const result = calculatePortfolioSummary(user, []);
+    expect(result.weeklyPnl).toBe(200);
+  });
+
+  test('falls back to 1000 when weeklyStartingBalance is null', () => {
+    const user = { weeklyRep: 1200, weeklyStartingBalance: null };
+    const result = calculatePortfolioSummary(user, []);
+    expect(result.weeklyPnl).toBe(200);
+  });
+
+  test('falls back to 1000 when weeklyStartingBalance is undefined', () => {
+    const user = { weeklyRep: 1200, weeklyStartingBalance: undefined };
+    const result = calculatePortfolioSummary(user, []);
+    expect(result.weeklyPnl).toBe(200);
+  });
+
+  test('handles user with more accumulated balance than baseline', () => {
+    const user = { weeklyRep: 2400, weeklyStartingBalance: 2350 };
+    const result = calculatePortfolioSummary(user, []);
+    expect(result.weeklyPnl).toBe(50);
+  });
+
+  test('handles negative weekly pnl correctly', () => {
+    const user = { weeklyRep: 900, weeklyStartingBalance: 1050 };
+    const result = calculatePortfolioSummary(user, []);
+    expect(result.weeklyPnl).toBe(-150);
+  });
+
+  test('weeklyStartingBalance of 0 does not cause division errors', () => {
+    const user = { weeklyRep: 50, weeklyStartingBalance: 0 };
+    const result = calculatePortfolioSummary(user, []);
+    expect(Number.isFinite(result.weeklyPnl)).toBe(true);
+    expect(result.weeklyPnl).toBe(50);
+  });
+
+  test('weeklyPnl rounds to 2 decimal places', () => {
+    const user = { weeklyRep: 1100.005, weeklyStartingBalance: 1000.003 };
+    const result = calculatePortfolioSummary(user, []);
+    const pnl = result.weeklyPnl;
+    expect(Math.round(pnl * 100) / 100).toBe(pnl);
+  });
+});
+
 describe('calculatePortfolioValue', () => {
   test('cash only, no bets returns cash as portfolio value', () => {
     const result = calculatePortfolioValue({ cashBalance: 1000, userBets: [], openMarketsById: {} });

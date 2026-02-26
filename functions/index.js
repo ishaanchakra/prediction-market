@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase-admin/app'
-import { FieldPath, FieldValue, getFirestore } from 'firebase-admin/firestore'
+import { FieldPath, FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 initializeApp()
 
@@ -321,6 +322,103 @@ function toHttpsError(error, fallbackMessage) {
   return new HttpsError('internal', fallbackMessage)
 }
 
+function chunkArray(items, size) {
+  const chunks = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+function timestampToDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (value instanceof Timestamp) return value.toDate()
+  if (typeof value?.toDate === 'function') return value.toDate()
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+async function runWeeklyStipendInjection({ dryRun = false, actor = 'system' } = {}) {
+  const STIPEND_AMOUNT = 50
+  const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000
+  const usersSnapshot = await db.collection('users')
+    .where('onboardingComplete', '==', true)
+    .get()
+  const users = usersSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
+
+  let injectedCount = 0
+  let skippedCount = 0
+  const now = Date.now()
+  const operations = []
+
+  for (const user of users) {
+    const lastInjectedAt = timestampToDate(user.weeklyStipendLastInjectedAt)
+    if (lastInjectedAt && (now - lastInjectedAt.getTime()) < SIX_DAYS_MS) {
+      skippedCount += 1
+      continue
+    }
+
+    const currentBalance = round2(Number(user.weeklyRep || 0))
+    const newBalance = round2(currentBalance + STIPEND_AMOUNT)
+    operations.push({
+      id: user.id,
+      newBalance
+    })
+  }
+
+  if (!dryRun && operations.length > 0) {
+    const userChunks = chunkArray(operations, 400)
+    for (const chunk of userChunks) {
+      const userBatch = db.batch()
+      const notificationBatch = db.batch()
+
+      for (const row of chunk) {
+        const userRef = db.collection('users').doc(row.id)
+        userBatch.update(userRef, {
+          weeklyRep: row.newBalance,
+          weeklyStartingBalance: row.newBalance,
+          weeklyStipendLastInjectedAt: FieldValue.serverTimestamp()
+        })
+
+        const notificationRef = db.collection('notifications').doc()
+        notificationBatch.set(notificationRef, {
+          userId: row.id,
+          type: 'stipend',
+          category: 'balance',
+          amount: STIPEND_AMOUNT,
+          message: `+$${STIPEND_AMOUNT} weekly stipend added to your balance.`,
+          read: false,
+          createdAt: FieldValue.serverTimestamp()
+        })
+      }
+
+      await userBatch.commit()
+      await notificationBatch.commit()
+      injectedCount += chunk.length
+    }
+
+    await db.collection('adminLog').add({
+      action: 'STIPEND_INJECT',
+      detail: `Weekly stipend of $${STIPEND_AMOUNT} injected to ${injectedCount} users.`,
+      actor,
+      timestamp: new Date()
+    })
+  } else {
+    injectedCount = operations.length
+  }
+
+  const totalStipend = round2(injectedCount * STIPEND_AMOUNT)
+  return {
+    dryRun,
+    stipendAmount: STIPEND_AMOUNT,
+    eligibleCount: users.length,
+    injectedCount,
+    skippedCount,
+    totalStipend
+  }
+}
+
 export const placeBet = onCall(async (request) => {
   try {
     const { uid } = assertAuthenticatedCornell(request)
@@ -589,6 +687,42 @@ export const sellShares = onCall(async (request) => {
     return txResult
   } catch (error) {
     throw toHttpsError(error, 'Unable to sell shares right now.')
+  }
+})
+
+export const injectWeeklyStipend = onSchedule(
+  {
+    schedule: 'every sunday 23:59',
+    timeZone: 'America/New_York',
+    region: 'us-central1'
+  },
+  async () => {
+    try {
+      const result = await runWeeklyStipendInjection({ dryRun: false, actor: 'scheduler' })
+      console.log(
+        `injectWeeklyStipend complete: injected=${result.injectedCount}, skipped=${result.skippedCount}, eligible=${result.eligibleCount}`
+      )
+    } catch (error) {
+      console.error('injectWeeklyStipend failed:', error)
+      throw error
+    }
+  }
+)
+
+export const manualStipendInject = onCall(async (request) => {
+  try {
+    const { email } = assertAdminCaller(request)
+    const dryRun = request.data?.dryRun === true
+    const result = await runWeeklyStipendInjection({ dryRun, actor: email })
+    return {
+      injectedCount: result.injectedCount,
+      skippedCount: result.skippedCount,
+      eligibleCount: result.eligibleCount,
+      totalStipend: result.totalStipend,
+      dryRun
+    }
+  } catch (error) {
+    throw toHttpsError(error, 'Unable to inject stipend right now.')
   }
 })
 

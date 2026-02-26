@@ -133,6 +133,9 @@ export function aggregatePositions(bets = []) {
 
 export function calculatePortfolioSummary(user = {}, positions = []) {
   const cashBalance = round2(toNumber(user?.weeklyRep, 0));
+  const weeklyBaseline = round2(
+    user?.weeklyStartingBalance == null ? 1000 : toNumber(user?.weeklyStartingBalance, 1000)
+  );
   const activePositions = positions.filter((pos) => [MARKET_STATUS.OPEN, MARKET_STATUS.LOCKED].includes(pos.marketStatus));
 
   const yesExposure = round2(activePositions.reduce(
@@ -146,7 +149,7 @@ export function calculatePortfolioSummary(user = {}, positions = []) {
 
   const positionsValue = round2(activePositions.reduce((sum, pos) => sum + toNumber(pos.marketValue, 0), 0));
   const portfolioValue = round2(cashBalance + positionsValue);
-  const weeklyPnl = round2(portfolioValue - 1000);
+  const weeklyPnl = round2(portfolioValue - weeklyBaseline);
   const marketCount = activePositions.length;
 
   const base = portfolioValue > 0 ? portfolioValue : 1;
@@ -168,7 +171,7 @@ export function calculatePortfolioSummary(user = {}, positions = []) {
   };
 }
 
-export function calculatePortfolioValue({ cashBalance, userBets = [], openMarketsById = {} }) {
+export function calculatePortfolioValue({ cashBalance, weeklyStartingBalance, userBets = [], openMarketsById = {} }) {
   const normalizedBets = userBets.map((bet) => {
     const market = openMarketsById[bet.marketId] || {};
     return {
@@ -182,7 +185,7 @@ export function calculatePortfolioValue({ cashBalance, userBets = [], openMarket
   });
 
   const positions = aggregatePositions(normalizedBets);
-  const summary = calculatePortfolioSummary({ weeklyRep: cashBalance }, positions);
+  const summary = calculatePortfolioSummary({ weeklyRep: cashBalance, weeklyStartingBalance }, positions);
 
   const positionsByMarket = {};
   for (const pos of positions) {
@@ -215,6 +218,7 @@ export function calculateAllPortfolioValues({ users = [], bets = [], openMarkets
     const userId = user.id || user.uid;
     const result = calculatePortfolioValue({
       cashBalance: user.weeklyRep,
+      weeklyStartingBalance: user.weeklyStartingBalance,
       userBets: betsByUserId.get(userId) || [],
       openMarketsById
     });

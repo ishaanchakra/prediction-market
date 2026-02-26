@@ -6,8 +6,6 @@ import { useRouter } from 'next/navigation';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { round2 } from '@/utils/round';
 import { calculateAllPortfolioValues } from '@/utils/portfolio';
-import { calculateWeeklyCorrectionRows } from '@/utils/weeklyCorrection';
-import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -34,6 +32,13 @@ function hoursToNextMonday() {
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
   return `${days}d ${hours}h`;
+}
+
+function getWeekNumber() {
+  const semesterStart = new Date('2026-01-19');
+  const now = new Date();
+  const diff = Math.floor((now - semesterStart) / (7 * 24 * 60 * 60 * 1000));
+  return Math.max(1, diff + 1);
 }
 
 function getCurrentWeekWindow(nowValue = new Date()) {
@@ -90,6 +95,73 @@ async function fetchBetsByMarketIds(marketIds) {
   return snapshots.flatMap((snapshot) => snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
 }
 
+function rankDisplay(index) {
+  if (index === 0) return '🥇';
+  if (index === 1) return '🥈';
+  if (index === 2) return '🥉';
+  return String(index + 1).padStart(2, '0');
+}
+
+function rankColorClass(index) {
+  if (index === 0) return 'text-[var(--amber-bright)]';
+  if (index === 1) return 'text-[#9ca3af]';
+  if (index === 2) return 'text-[#b45309]';
+  return 'text-[var(--text-muted)]';
+}
+
+function pctReturn(user) {
+  const baseline = Number(user.weeklyStartingBalance || 1000);
+  if (baseline === 0) return '0.0';
+  const pct = ((Number(user.weeklyNet || 0) / baseline) * 100);
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}`;
+}
+
+function positionLabel(user) {
+  return Number(user.positionsValue || 0) > 0 ? 'has open positions' : 'no open positions';
+}
+
+function joinWeekLabel(user) {
+  if (!user.createdAt) return null;
+  const semesterStart = new Date('2026-01-19');
+  const joined = toDate(user.createdAt);
+  const diff = Math.floor((joined - semesterStart) / (7 * 24 * 60 * 60 * 1000));
+  const week = Math.max(1, diff + 1);
+  return `Joined Wk ${week}`;
+}
+
+function YouBadge() {
+  return (
+    <span className="rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-1.5 py-[0.1rem] font-mono text-[0.44rem] uppercase tracking-[0.08em] text-[var(--red)]">
+      you
+    </span>
+  );
+}
+
+function BarMini({ value, max, colorClass }) {
+  const width = Math.max(2, Math.round((value / Math.max(max, 1)) * 80));
+  return (
+    <span className="ml-auto mt-[4px] block h-[2px] w-20 rounded bg-[var(--surface3)]">
+      <span
+        className={`block h-[2px] rounded ${colorClass}`}
+        style={{ width: `${width}px` }}
+      />
+    </span>
+  );
+}
+
+function FormulaTooltip({ formula }) {
+  return (
+    <span className="group relative ml-2 inline-flex cursor-help items-center" title={formula}>
+      <span className="rounded border border-[var(--border2)] bg-[var(--surface3)] px-[5px] py-[1px] font-mono text-[0.44rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+        formula
+      </span>
+      <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-max max-w-[260px] rounded-[6px] border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+        <p className="font-mono text-[0.58rem] leading-[1.6] text-[var(--text-dim)]">{formula}</p>
+      </div>
+    </span>
+  );
+}
+
 export default function LeaderboardPage() {
   const router = useRouter();
   const [users, setUsers] = useState([]);
@@ -100,8 +172,7 @@ export default function LeaderboardPage() {
   const [viewer, setViewer] = useState(null);
   const [openMarketsCount, setOpenMarketsCount] = useState(0);
   const [totalTraded, setTotalTraded] = useState(0);
-  const [allTimeMode, setAllTimeMode] = useState('pnl');
-  const [weeklyMode, setWeeklyMode] = useState('pnl');
+  const [activeTab, setActiveTab] = useState('weekly');
   const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
   const lifetimeUsers = useMemo(
@@ -116,26 +187,20 @@ export default function LeaderboardPage() {
         .slice(0, 50),
     [users]
   );
-  const weeklyRowsWithModes = useMemo(
+  const weeklyUsers = useMemo(
     () =>
-      weeklyRows.map((row) => ({
-        ...row,
-        weeklyCorrectionScore: Number(row.weeklyCorrectionScore || 0),
-        weeklyResolvedMarkets: Number(row.weeklyResolvedMarkets || 0)
-      })),
+      [...weeklyRows]
+        .sort((a, b) => Number(b.weeklyNet || 0) - Number(a.weeklyNet || 0))
+        .slice(0, 50),
     [weeklyRows]
   );
-
-  const weeklyUsers = useMemo(() => {
-    const sorted = [...weeklyRowsWithModes].sort((a, b) => {
-      if (weeklyMode === 'correction') {
-        const scoreDiff = Number(b.weeklyCorrectionScore || 0) - Number(a.weeklyCorrectionScore || 0);
-        if (Math.abs(scoreDiff) > 0.0001) return scoreDiff;
-      }
-      return Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0);
-    });
-    return sorted.slice(0, 50);
-  }, [weeklyMode, weeklyRowsWithModes]);
+  const allTimeUsers = useMemo(
+    () =>
+      [...weeklyRows]
+        .sort((a, b) => Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0))
+        .slice(0, 50),
+    [weeklyRows]
+  );
 
   const meWeekly = useMemo(() => weeklyUsers.find((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
   const meWeeklyRank = useMemo(() => weeklyUsers.findIndex((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
@@ -144,10 +209,66 @@ export default function LeaderboardPage() {
     () => weeklyRows.filter((row) => Math.abs(Number(row.weeklyNet || 0)) > 0.001).length,
     [weeklyRows]
   );
-  const correctionParticipants = useMemo(
-    () => weeklyRowsWithModes.filter((row) => Number(row.weeklyResolvedMarkets || 0) > 0).length,
-    [weeklyRowsWithModes]
+
+  const maxWeeklyNet = useMemo(
+    () => Math.max(...weeklyUsers.map((u) => Math.abs(Number(u.weeklyNet || 0))), 1),
+    [weeklyUsers]
   );
+  const maxLifetimeRep = useMemo(
+    () => Math.max(...lifetimeUsers.map((u) => Math.abs(Number(u.lifetimeRep || 0))), 1),
+    [lifetimeUsers]
+  );
+  const maxPortfolioValue = useMemo(
+    () => Math.max(...allTimeUsers.map((u) => Number(u.portfolioValue || 0)), 1),
+    [allTimeUsers]
+  );
+  const maxOracleScore = useMemo(
+    () => Math.max(...oracleUsers.map((u) => Number(u.oracleScore || 0)), 1),
+    [oracleUsers]
+  );
+
+  const myRankData = useMemo(() => {
+    if (!viewer?.uid) return null;
+
+    if (activeTab === 'weekly') {
+      if (!meWeekly || meWeeklyRank < 0) return null;
+      return {
+        rank: meWeeklyRank + 1,
+        displayName: getPublicDisplayName(meWeekly),
+        metric: meWeekly.weeklyNet,
+        metricLabel: `${meWeekly.weeklyNet >= 0 ? '+' : ''}$${fmtMoney(Math.abs(meWeekly.weeklyNet))}`,
+        sub: `${meWeekly.weeklyNet >= 0 ? '+' : ''}${Number(((meWeekly.weeklyNet / Math.max(Number(meWeekly.weeklyStartingBalance || 1000), 1)) * 100)).toFixed(1)}% this week`
+      };
+    }
+
+    if (activeTab === 'alltime') {
+      const idx = allTimeUsers.findIndex((u) => u.id === viewer.uid);
+      if (idx < 0) return null;
+      const row = allTimeUsers[idx];
+      return {
+        rank: idx + 1,
+        displayName: getPublicDisplayName(row),
+        metric: row.portfolioValue,
+        metricLabel: `$${fmtMoney(Number(row.portfolioValue || 0))}`,
+        sub: 'all-time balance'
+      };
+    }
+
+    if (activeTab === 'oracle') {
+      const idx = oracleUsers.findIndex((u) => u.id === viewer.uid);
+      if (idx < 0) return null;
+      const row = oracleUsers[idx];
+      return {
+        rank: idx + 1,
+        displayName: getPublicDisplayName(row),
+        metric: row.oracleScore,
+        metricLabel: `${Number(row.oracleScore || 0).toFixed(1)} pts`,
+        sub: 'oracle score'
+      };
+    }
+
+    return null;
+  }, [activeTab, allTimeUsers, oracleUsers, viewer, meWeekly, meWeeklyRank]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => setViewer(currentUser));
@@ -155,22 +276,11 @@ export default function LeaderboardPage() {
   }, []);
 
   const weekWindow = useMemo(() => getCurrentWeekWindow(), []);
-  const weeklyModeCopy = weeklyMode === 'correction'
-    ? 'Correction score rewards correct, contrarian positions on markets resolved this week.'
-    : 'Trading P&L uses portfolio value (cash + open positions) from a $1,000 baseline.';
-  const weeklyModeDetail = weeklyMode === 'correction'
-    ? `Window ${formatWeekWindow(weekWindow.start, weekWindow.end)} · ${correctionParticipants} users scored`
-    : `Window ${formatWeekWindow(weekWindow.start, weekWindow.end)} · ${activeTradersCount} active traders`;
-
-  function handleWeeklyModeChange(nextMode) {
-    if (nextMode === weeklyMode) return;
-    setWeeklyMode(nextMode);
-    trackEvent(ANALYTICS_EVENTS.LEADERBOARD_MODE_TOGGLED, {
-      mode: nextMode,
-      weekStart: weekWindow.start.toISOString(),
-      weekEnd: weekWindow.end.toISOString()
-    });
-  }
+  const rankMetricColorClass = activeTab === 'alltime'
+    ? 'text-[var(--amber-bright)]'
+    : activeTab === 'oracle'
+      ? 'text-[var(--blue-bright)]'
+      : (Number(myRankData?.metric || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]');
 
   useEffect(() => {
     async function fetchAll() {
@@ -195,39 +305,6 @@ export default function LeaderboardPage() {
         const openMarketIds = openMarkets.map((market) => market.id);
         const openBets = await fetchBetsByMarketIds(openMarketIds);
 
-        const weekWindow = getCurrentWeekWindow();
-        const [resolvedYesSnap, resolvedNoSnap] = await Promise.all([
-          getDocs(query(
-            collection(db, 'markets'),
-            where('marketplaceId', '==', null),
-            where('resolution', '==', 'YES')
-          )),
-          getDocs(query(
-            collection(db, 'markets'),
-            where('marketplaceId', '==', null),
-            where('resolution', '==', 'NO')
-          ))
-        ]);
-        const resolvedThisWeek = [...resolvedYesSnap.docs, ...resolvedNoSnap.docs]
-          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-          .filter((market) => !market.marketplaceId)
-          .filter((market) => market.status !== 'CANCELLED')
-          .filter((market) => {
-            const resolvedAt = toDate(market.resolvedAt).getTime();
-            return resolvedAt >= weekWindow.start.getTime() && resolvedAt < weekWindow.end.getTime();
-          });
-        const resolvedMarketIds = resolvedThisWeek.map((market) => market.id);
-        const resolvedBets = await fetchBetsByMarketIds(resolvedMarketIds);
-        const correctionRows = calculateWeeklyCorrectionRows({
-          users: usersData,
-          resolvedMarkets: resolvedThisWeek,
-          bets: resolvedBets
-        });
-        const correctionByUserId = correctionRows.reduce((acc, row) => {
-          acc[row.id] = row;
-          return acc;
-        }, {});
-
         const weeklyRowsData = calculateAllPortfolioValues({
           users: usersData,
           bets: openBets,
@@ -237,9 +314,7 @@ export default function LeaderboardPage() {
           portfolioValue: round2(row.portfolioValue),
           cashBalance: round2(row.cashBalance),
           positionsValue: round2(row.positionsValue),
-          weeklyNet: round2(row.weeklyNet),
-          weeklyCorrectionScore: round2(correctionByUserId[row.id]?.weeklyCorrectionScore || 0),
-          weeklyResolvedMarkets: Number(correctionByUserId[row.id]?.weeklyResolvedMarkets || 0)
+          weeklyNet: round2(row.weeklyNet)
         }));
         setWeeklyRows(weeklyRowsData);
 
@@ -274,131 +349,290 @@ export default function LeaderboardPage() {
     );
   }
 
+  const currentWeekNumber = getWeekNumber();
+  const topLifetime = lifetimeUsers[0];
+  const topOracle = oracleUsers[0];
+
   return (
-    <div className="min-h-screen bg-[var(--bg)] px-8 py-12">
-      <div className="mx-auto max-w-[1000px]">
-        <div className="mb-12">
+    <div className="min-h-screen bg-[var(--bg)] px-4 py-10 sm:px-5">
+      <div className="mx-auto max-w-[760px]">
+        <div className="mb-7">
           <p className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[var(--red)]">
             <span className="inline-block h-px w-5 bg-[var(--red)]" />
-            Season Rankings
+            Spring 2026 · Week {currentWeekNumber}
           </p>
-          <h1 className="mb-2 font-display text-5xl leading-[1.05] tracking-[-0.02em] text-[var(--text)]">
-            The <em className="text-[var(--red)]">Oracles</em> of Ithaca
+          <h1 className="mb-2 font-display text-[2.4rem] italic leading-[1] tracking-[-0.02em] text-[var(--text)]">
+            Leaderboard
           </h1>
-          <p className="font-mono text-[0.7rem] text-[var(--text-dim)]">
-            Week {weekLabel()} · next reset window {hoursToNextMonday()}
+          <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            {activeTradersCount} active traders · resets Sunday 11:59pm ET
           </p>
         </div>
 
-        <div className="mb-8 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Current Week</p>
-              <p className="text-base font-bold text-[var(--text)]">Week of {weekLabel()}</p>
-              <p className="font-mono text-[0.65rem] text-[var(--text-dim)]">{weeklyModeCopy}</p>
-              <p className="mt-1 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">{weeklyModeDetail}</p>
-            </div>
-            <div className="text-right">
-              <p className="font-mono text-2xl font-bold tracking-[-0.03em] text-[var(--amber-bright)]">{hoursToNextMonday()}</p>
-              <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">until reset window</p>
-            </div>
-          </div>
-          <div className="mt-4 inline-flex rounded border border-[var(--border2)] bg-[var(--surface2)] p-1">
-            <button
-              onClick={() => handleWeeklyModeChange('pnl')}
-              className={`rounded px-3 py-1.5 font-mono text-[0.6rem] uppercase tracking-[0.08em] ${
-                weeklyMode === 'pnl' ? 'bg-[var(--red-glow)] text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
-              }`}
-            >
-              Trading P&L
-            </button>
-            <button
-              onClick={() => handleWeeklyModeChange('correction')}
-              className={`rounded px-3 py-1.5 font-mono text-[0.6rem] uppercase tracking-[0.08em] ${
-                weeklyMode === 'correction' ? 'bg-[rgba(217,119,6,.12)] text-[var(--amber-bright)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
-              }`}
-            >
-              Correction Score
-            </button>
-          </div>
-        </div>
-
-        {viewer && meWeekly && (
-          <div className="relative mb-8 grid grid-cols-[auto_1fr_auto_auto] items-center gap-5 overflow-hidden rounded-[8px] border border-[var(--red-dim)] bg-[var(--surface)] px-6 py-5">
-            <span className="absolute bottom-0 left-0 top-0 w-[3px] bg-[var(--red)]" />
-            <span className="rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--red)]">
-              You
-            </span>
-            <div>
-              <p className="text-base font-bold text-[var(--text)]">{getPublicDisplayName(meWeekly)}</p>
-              <p className="font-mono text-[0.62rem] text-[var(--text-dim)]">
-                {weeklyMode === 'correction'
-                  ? `${Number(meWeekly.weeklyResolvedMarkets || 0)} resolved market${Number(meWeekly.weeklyResolvedMarkets || 0) === 1 ? '' : 's'} scored`
-                  : `Cash $${fmtMoney(meWeekly.cashBalance)} · Positions $${fmtMoney(meWeekly.positionsValue)}`}
+        {myRankData && (
+          <div className="mb-6 flex items-center gap-4 rounded-[8px] border border-[var(--border2)] bg-[var(--surface)] px-5 py-4">
+            <div className="min-w-[48px]">
+              <p className="font-mono text-[0.5rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Your rank</p>
+              <p className="font-mono text-[1.6rem] font-bold leading-none tracking-[-0.04em] text-[var(--amber-bright)]">
+                #{myRankData.rank}
               </p>
             </div>
-            <p className="text-right font-mono text-4xl font-bold tracking-[-0.04em] text-[var(--green-bright)]">#{meWeeklyRank + 1}</p>
-            <p className="text-right font-mono text-[0.65rem] text-[var(--text-dim)]">
-              {weeklyMode === 'correction' ? 'Correction Score' : 'Weekly P&L'}:{' '}
-              <strong className={weeklyMode === 'correction'
-                ? 'text-[var(--amber-bright)]'
-                : (Number(meWeekly.weeklyNet || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]')}
-              >
-                {weeklyMode === 'correction'
-                  ? `${Number(meWeekly.weeklyCorrectionScore || 0).toFixed(1)} pts`
-                  : `${Number(meWeekly.weeklyNet || 0) >= 0 ? '+' : ''}$${fmtMoney(meWeekly.weeklyNet)}`}
-              </strong>
-            </p>
+            <div className="flex-1">
+              <p className="text-[0.9rem] font-semibold text-[var(--text)]">
+                {myRankData.displayName}
+                <span className="ml-2 rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-1.5 py-[0.1rem] font-mono text-[0.44rem] uppercase tracking-[0.08em] text-[var(--red)]">
+                  you
+                </span>
+              </p>
+              <p className={`font-mono text-[0.7rem] ${rankMetricColorClass}`}>
+                {myRankData.metricLabel}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-mono text-[0.52rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                {myRankData.sub}
+              </p>
+            </div>
           </div>
         )}
 
-        <div className="mb-8 grid grid-cols-4 gap-[1px] overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
-          <StatCell label="Active Traders" value={`${activeTradersCount}`} tone="amber" />
-          <StatCell label="Total Traded" value={`$${Math.round(totalTraded).toLocaleString()}`} tone="dim" />
-          <StatCell label="Markets Open" value={`${openMarketsCount}`} tone="red" />
-          <StatCell
-            label={weeklyMode === 'correction' ? 'Top Score' : 'Top Profit'}
-            value={weeklyMode === 'correction'
-              ? `${Number(topWeekly?.weeklyCorrectionScore || 0).toFixed(1)} pts`
-              : `${(Number(topWeekly?.weeklyNet || 0)) >= 0 ? '+' : ''}$${Math.round(Number(topWeekly?.weeklyNet || 0))}`}
-            tone={weeklyMode === 'correction' ? 'amber' : 'green'}
-          />
+        <div className="mb-0 flex items-center border-b border-[var(--border)]">
+          {[
+            { id: 'weekly', label: 'This Week', dotColor: 'var(--green-bright)' },
+            { id: 'alltime', label: 'All-Time Balance', dotColor: 'var(--amber-bright)' },
+            { id: 'oracle', label: 'Oracle Score', dotColor: 'var(--blue-bright)' }
+          ].map(({ id, label, dotColor }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`mr-7 flex items-center gap-[6px] border-b-2 pb-2 font-mono text-[0.6rem] uppercase tracking-[0.1em] transition-colors ${
+                activeTab === id
+                  ? 'border-[var(--red)] text-[var(--text)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+              }`}
+            >
+              <span
+                className="inline-block h-[5px] w-[5px] rounded-full"
+                style={{ background: dotColor, opacity: activeTab === id ? 1 : 0.4 }}
+              />
+              {label}
+            </button>
+          ))}
         </div>
 
-        <TableBlock
-          title={weeklyMode === 'correction' ? 'Weekly Correction Rankings' : 'Weekly Trading Rankings'}
-          subtitle={weeklyMode === 'correction' ? 'truth-seeking performance' : 'traders of the week'}
-          users={weeklyUsers}
-          viewerId={viewer?.uid}
-          router={router}
-          metricFn={(user) => (weeklyMode === 'correction' ? Number(user.weeklyCorrectionScore || 0) : Number(user.weeklyNet || 0))}
-          detailsFn={(user) =>
-            weeklyMode === 'correction'
-              ? `${Number(user.weeklyResolvedMarkets || 0)} resolved market${Number(user.weeklyResolvedMarkets || 0) === 1 ? '' : 's'} scored`
-              : `Portfolio $${fmtMoney(user.portfolioValue)} · Cash $${fmtMoney(user.cashBalance)} · Pos $${fmtMoney(user.positionsValue)}`}
-          metricLabel={weeklyMode === 'correction' ? 'Correction Score' : 'Net Profit (Week)'}
-          metricDisplayFn={(value) =>
-            weeklyMode === 'correction'
-              ? `${Number(value || 0).toFixed(1)} pts`
-              : `${Number(value || 0) >= 0 ? '+' : '-'}$${fmtMoney(Math.abs(Number(value || 0)))}`}
-          metricClassFn={(value) => {
-            if (weeklyMode === 'correction') return 'text-[var(--amber-bright)]';
-            return Number(value || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]';
-          }}
-          barClassFn={(value) => {
-            if (weeklyMode === 'correction') return 'bg-[var(--amber-bright)]';
-            return Number(value || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]';
-          }}
-        />
+        <div className="flex items-center justify-between border-b border-[var(--border)] py-3">
+          <div className="font-mono text-[0.56rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            {activeTab === 'weekly' && (
+              <>
+                <strong className="text-[var(--text-dim)]">Trading P&L</strong>
+                {' '}— portfolio value vs. your balance at week start. Resets on Sunday night.
+                <FormulaTooltip formula="Weekly P&L = (Cash + Open Positions at current price) − Balance at week start" />
+              </>
+            )}
+            {activeTab === 'alltime' && (
+              <>
+                <strong className="text-[var(--text-dim)]">All-Time Balance</strong>
+                {' '}— cumulative wealth since joining. Early users have a head start; use for personal context.
+                <FormulaTooltip formula="Portfolio Value = Cash on hand + (YES shares × current prob) + (NO shares × (1 − current prob))" />
+              </>
+            )}
+            {activeTab === 'oracle' && (
+              <>
+                <strong className="text-[var(--text-dim)]">Oracle Score</strong>
+                {' '}— forecasting accuracy across all resolved markets. Updates on resolution, not trading.
+                <FormulaTooltip formula="Oracle Score = Σ net shares × (1 − avg entry price) on winning side, per resolved market" />
+              </>
+            )}
+          </div>
+          {activeTab === 'weekly' && (
+            <span className="flex items-center gap-[5px] rounded border border-[var(--border2)] px-2 py-[3px] font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              <span className="inline-block h-[5px] w-[5px] animate-pulse rounded-full bg-[var(--green-bright)]" />
+              Live
+            </span>
+          )}
+        </div>
 
-        <AllTimeSection
-          allTimeMode={allTimeMode}
-          setAllTimeMode={setAllTimeMode}
-          lifetimeUsers={lifetimeUsers}
-          oracleUsers={oracleUsers}
-          viewerId={viewer?.uid}
-          router={router}
-        />
+        {activeTab === 'weekly' && (
+          <section className="mb-12">
+            <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  <th className="w-[48px] px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">#</th>
+                  <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
+                  <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Weekly P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklyUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-6 text-center font-mono text-[0.68rem] text-[var(--text-muted)]">
+                      No trading activity yet this week.
+                    </td>
+                  </tr>
+                )}
+                {weeklyUsers.map((user, index) => (
+                  <tr
+                    key={user.id}
+                    onClick={() => router.push(`/user/${user.id}`)}
+                    className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${
+                      viewer?.uid === user.id ? 'bg-[rgba(220,38,38,.03)]' : ''
+                    }`}
+                  >
+                    <td className="w-[48px] px-5 py-4">
+                      <span className={`font-mono text-[0.8rem] font-bold ${rankColorClass(index)}`}>
+                        {rankDisplay(index)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[var(--text)]">
+                          {getPublicDisplayName(user)}
+                        </span>
+                        {viewer?.uid === user.id && <YouBadge />}
+                      </div>
+                      <p className="mt-[2px] font-mono text-[0.52rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                        {positionLabel(user)}
+                      </p>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <span className={`block font-mono text-[0.9rem] font-bold ${
+                        Number(user.weeklyNet || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'
+                      }`}>
+                        {Number(user.weeklyNet || 0) >= 0 ? '+' : '-'}${fmtMoney(Math.abs(Number(user.weeklyNet || 0)))}
+                      </span>
+                      <span className="block font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        {pctReturn(user)}% this week
+                      </span>
+                      <BarMini
+                        value={Math.abs(Number(user.weeklyNet || 0))}
+                        max={maxWeeklyNet}
+                        colorClass={Number(user.weeklyNet || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]'}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+
+        {activeTab === 'alltime' && (
+          <section className="mb-12">
+            <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  <th className="w-[48px] px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">#</th>
+                  <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
+                  <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allTimeUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-6 text-center font-mono text-[0.68rem] text-[var(--text-muted)]">
+                      No all-time data yet.
+                    </td>
+                  </tr>
+                )}
+                {allTimeUsers.map((user, index) => (
+                  <tr
+                    key={user.id}
+                    onClick={() => router.push(`/user/${user.id}`)}
+                    className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${
+                      viewer?.uid === user.id ? 'bg-[rgba(220,38,38,.03)]' : ''
+                    }`}
+                  >
+                    <td className="w-[48px] px-5 py-4">
+                      <span className={`font-mono text-[0.8rem] font-bold ${rankColorClass(index)}`}>
+                        {rankDisplay(index)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[var(--text)]">
+                          {getPublicDisplayName(user)}
+                        </span>
+                        {viewer?.uid === user.id && <YouBadge />}
+                      </div>
+                      {joinWeekLabel(user) && (
+                        <p className="mt-[2px] font-mono text-[0.52rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                          {joinWeekLabel(user)}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">
+                        ${fmtMoney(Number(user.portfolioValue || 0))}
+                      </span>
+                      <BarMini
+                        value={Number(user.portfolioValue || 0)}
+                        max={maxPortfolioValue}
+                        colorClass="bg-[var(--amber-bright)]"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+
+        {activeTab === 'oracle' && (
+          <section className="mb-12">
+            <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  <th className="w-[48px] px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">#</th>
+                  <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Forecaster</th>
+                  <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {oracleUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-6 text-center font-mono text-[0.68rem] text-[var(--text-muted)]">
+                      No oracle scores yet. Scores appear after markets resolve.
+                    </td>
+                  </tr>
+                )}
+                {oracleUsers.map((user, index) => (
+                  <tr
+                    key={user.id}
+                    onClick={() => router.push(`/user/${user.id}`)}
+                    className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${
+                      viewer?.uid === user.id ? 'bg-[rgba(220,38,38,.03)]' : ''
+                    }`}
+                  >
+                    <td className="w-[48px] px-5 py-4">
+                      <span className={`font-mono text-[0.8rem] font-bold ${rankColorClass(index)}`}>
+                        {rankDisplay(index)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[var(--text)]">
+                          {getPublicDisplayName(user)}
+                        </span>
+                        {viewer?.uid === user.id && <YouBadge />}
+                      </div>
+                      {/* TODO: surface resolved market count per user once oracleMarketsCount is stored on user docs. */}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--blue-bright)]">
+                        {Number(user.oracleScore || 0).toFixed(1)} pts
+                      </span>
+                      <BarMini
+                        value={Number(user.oracleScore || 0)}
+                        max={maxOracleScore}
+                        colorClass="bg-[var(--blue-bright)]"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <PastWeeksSection
           weeklySnapshots={weeklySnapshots}
@@ -411,261 +645,15 @@ export default function LeaderboardPage() {
   );
 }
 
-function StatCell({ label, value, tone }) {
-  const toneClass = tone === 'amber'
-    ? 'text-[var(--amber-bright)]'
-    : tone === 'red'
-      ? 'text-[var(--red)]'
-      : tone === 'green'
-        ? 'text-[var(--green-bright)]'
-        : 'text-[var(--text-dim)]';
-  return (
-    <div className="bg-[var(--surface)] px-5 py-4">
-      <p className="mb-1 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">{label}</p>
-      <p className={`font-mono text-[1.3rem] font-bold tracking-[-0.03em] ${toneClass}`}>{value}</p>
-    </div>
-  );
-}
-
-function TableBlock({
-  title,
-  subtitle,
-  users,
-  viewerId,
-  router,
-  metricFn,
-  detailsFn,
-  lifetime = false,
-  metricLabel,
-  metricDisplayFn,
-  metricClassFn,
-  barClassFn
-}) {
-  const maxAbs = Math.max(...users.map((user) => Math.abs(metricFn(user))), 1);
-  return (
-    <section className="mb-12">
-      <div className="mb-4 flex items-baseline justify-between">
-        <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-          <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
-          {title}
-        </span>
-        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">{subtitle}</span>
-      </div>
-
-      <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
-        <thead>
-          <tr className="border-b border-[var(--border)]">
-            <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Rank</th>
-            <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
-            <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">
-              {metricLabel || (lifetime ? 'Net Profit (All-Time)' : 'Net Profit (Week)')}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user, index) => {
-            const profit = metricFn(user);
-            const pos = profit >= 0;
-            const barWidth = Math.max(2, Math.round((Math.abs(profit) / maxAbs) * 80));
-            const rankText = lifetime && index === 0 ? '🔮' : String(index + 1).padStart(2, '0');
-            const rankColor = index === 0
-              ? 'text-[var(--amber-bright)]'
-              : index === 1
-                ? 'text-[#9ca3af]'
-                : index === 2
-                  ? 'text-[#b45309]'
-                  : 'text-[var(--text)]';
-
-            return (
-              <tr
-                key={user.id}
-                onClick={() => router.push(`/user/${user.id}`)}
-                className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${viewerId === user.id ? 'bg-[rgba(220,38,38,.04)]' : ''}`}
-              >
-                <td className="px-5 py-4">
-                  <span className={`font-mono text-[0.8rem] font-bold ${rankColor}`}>{rankText}</span>
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-[var(--text)]">{getPublicDisplayName(user)}</span>
-                    {viewerId === user.id && (
-                      <span className="rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-1.5 py-[0.1rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">
-                        you
-                      </span>
-                    )}
-                    {lifetime && index === 0 && (
-                      <span className="rounded border border-[rgba(217,119,6,.2)] bg-[rgba(217,119,6,.1)] px-1.5 py-[0.1rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
-                        oracle
-                      </span>
-                    )}
-                  </div>
-                  {!!detailsFn(user) && (
-                    <p className="mt-1 font-mono text-[0.58rem] text-[var(--text-muted)]">{detailsFn(user)}</p>
-                  )}
-                </td>
-                <td className="px-5 py-4 text-right">
-                  <span className={`block font-mono text-[0.9rem] font-bold ${metricClassFn ? metricClassFn(profit) : (pos ? 'text-[var(--green-bright)]' : 'text-[var(--red)]')}`}>
-                    {metricDisplayFn ? metricDisplayFn(profit) : `${pos ? '+' : '-'}$${fmtMoney(Math.abs(profit))}`}
-                  </span>
-                  <span className="ml-auto mt-1 block h-[2px] w-20 rounded bg-[var(--surface3)]">
-                    <span
-                      className={`block h-[2px] rounded ${barClassFn ? barClassFn(profit) : (pos ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]')}`}
-                      style={{ width: `${barWidth}px` }}
-                    />
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
-function AllTimeSection({ allTimeMode, setAllTimeMode, lifetimeUsers, oracleUsers, viewerId, router }) {
-  const isPnl = allTimeMode === 'pnl';
-  const activeUsers = isPnl ? lifetimeUsers : oracleUsers;
-  const maxScore = Math.max(...oracleUsers.map((u) => Number(u.oracleScore || 0)), 1);
-  const maxPnl = Math.max(...lifetimeUsers.map((u) => Math.abs(Number(u.lifetimeRep || 0))), 1);
-
-  return (
-    <section className="mb-12">
-      <div className="mb-4 flex items-baseline justify-between">
-        <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-          <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
-          All-Time Rankings
-        </span>
-        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">the oracles of ithaca</span>
-      </div>
-
-      {/* Mode toggle tabs */}
-      <div className="mb-3 flex items-center gap-4 border-b border-[var(--border)]">
-        <button
-          onClick={() => setAllTimeMode('pnl')}
-          className={`pb-2 font-mono text-[0.62rem] uppercase tracking-[0.12em] transition-colors ${
-            isPnl
-              ? 'border-b-2 border-[var(--red)] text-[var(--red)]'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
-          }`}
-        >
-          Lifetime P&L
-        </button>
-        <button
-          onClick={() => setAllTimeMode('oracle')}
-          className={`pb-2 font-mono text-[0.62rem] uppercase tracking-[0.12em] transition-colors ${
-            !isPnl
-              ? 'border-b-2 border-[var(--red)] text-[var(--red)]'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
-          }`}
-        >
-          Oracle Score
-        </button>
-      </div>
-
-      {!isPnl && (
-        <p className="mb-3 font-mono text-[0.65rem] text-[var(--text-dim)]">
-          Rewards correct predictions, weighted by conviction and how contrarian you were at entry.
-        </p>
-      )}
-
-      <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
-        <thead>
-          <tr className="border-b border-[var(--border)]">
-            <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Rank</th>
-            <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
-            <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">
-              {isPnl ? 'Net Profit (All-Time)' : 'Oracle Score'}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {activeUsers.length === 0 && (
-            <tr>
-              <td colSpan={3} className="px-5 py-6 font-mono text-[0.68rem] text-[var(--text-muted)] text-center">
-                {isPnl ? 'No lifetime data yet.' : 'No oracle scores yet. Scores appear after markets resolve.'}
-              </td>
-            </tr>
-          )}
-          {activeUsers.map((user, index) => {
-            const rankText = index === 0 ? '🔮' : String(index + 1).padStart(2, '0');
-            const rankColor = index === 0
-              ? 'text-[var(--amber-bright)]'
-              : index === 1
-                ? 'text-[#9ca3af]'
-                : index === 2
-                  ? 'text-[#b45309]'
-                  : 'text-[var(--text)]';
-
-            return (
-              <tr
-                key={user.id}
-                onClick={() => router.push(`/user/${user.id}`)}
-                className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${viewerId === user.id ? 'bg-[rgba(220,38,38,.04)]' : ''}`}
-              >
-                <td className="px-5 py-4">
-                  <span className={`font-mono text-[0.8rem] font-bold ${rankColor}`}>{rankText}</span>
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-[var(--text)]">{getPublicDisplayName(user)}</span>
-                    {viewerId === user.id && (
-                      <span className="rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-1.5 py-[0.1rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)]">
-                        you
-                      </span>
-                    )}
-                    {index === 0 && !isPnl && (
-                      <span className="rounded border border-[rgba(217,119,6,.2)] bg-[rgba(217,119,6,.1)] px-1.5 py-[0.1rem] font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
-                        oracle
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-5 py-4 text-right">
-                  {isPnl ? (
-                    <>
-                      <span className={`block font-mono text-[0.9rem] font-bold ${Number(user.lifetimeRep || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}`}>
-                        {Number(user.lifetimeRep || 0) >= 0 ? '+' : '-'}${fmtMoney(Math.abs(Number(user.lifetimeRep || 0)))}
-                      </span>
-                      <span className="ml-auto mt-1 block h-[2px] w-20 rounded bg-[var(--surface3)]">
-                        <span
-                          className={`block h-[2px] rounded ${Number(user.lifetimeRep || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]'}`}
-                          style={{ width: `${Math.max(2, Math.round((Math.abs(Number(user.lifetimeRep || 0)) / maxPnl) * 80))}px` }}
-                        />
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">
-                        {Number(user.oracleScore || 0).toFixed(1)} pts
-                      </span>
-                      <span className="ml-auto mt-1 block h-[2px] w-20 rounded bg-[var(--surface3)]">
-                        <span
-                          className="block h-[2px] rounded bg-[var(--amber-bright)]"
-                          style={{ width: `${Math.max(2, Math.round((Number(user.oracleScore || 0) / maxScore) * 80))}px` }}
-                        />
-                      </span>
-                    </>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
 function PastWeeksSection({ weeklySnapshots, expandedWeeks, setExpandedWeeks }) {
   return (
     <section className="mb-12">
       <div className="mb-4 flex items-baseline justify-between">
         <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
           <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
-          Past Weeks
+          Weekly Archive
         </span>
-        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">weekly snapshot archive</span>
+        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">past week champions</span>
       </div>
 
       <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">

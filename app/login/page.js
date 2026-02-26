@@ -65,6 +65,7 @@ export default function LoginPage() {
         await Promise.all([
           setDoc(userDocRef, {
             weeklyRep: 1000,
+            weeklyStartingBalance: 1000,
             lifetimeRep: 0,
             oracleScore: 0,
             quickTakesUsedToday: 0,
@@ -86,6 +87,7 @@ export default function LoginPage() {
         const current = userDoc.data() || {};
         const patch = {};
         if (!Number.isFinite(Number(current.weeklyRep))) patch.weeklyRep = 1000;
+        if (!Number.isFinite(Number(current.weeklyStartingBalance))) patch.weeklyStartingBalance = 1000;
         if (!Number.isFinite(Number(current.lifetimeRep))) patch.lifetimeRep = 0;
         if (!current.displayName || !current.displayNameNormalized) {
           patch.displayName = current.displayName || defaultDisplayName;

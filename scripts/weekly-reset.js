@@ -9,7 +9,6 @@ const path = require('path');
 const admin = require('firebase-admin');
 
 const MARKET_STATUS_CANCELLED = 'CANCELLED';
-const WEEKLY_BASELINE = 1000;
 
 function round2(num) {
   return Math.round((Number(num) + Number.EPSILON) * 100) / 100;
@@ -114,6 +113,7 @@ function calculatePortfolioRows({ users, bets, openMarkets }) {
     }
 
     const cashBalance = round2(toNumber(user.weeklyRep, 0));
+    const weeklyBaseline = round2(toNumber(user.weeklyStartingBalance, 1000));
     const roundedPositions = round2(positionsValue);
     const portfolioValue = round2(cashBalance + roundedPositions);
     return {
@@ -121,20 +121,9 @@ function calculatePortfolioRows({ users, bets, openMarkets }) {
       cashBalance,
       positionsValue: roundedPositions,
       portfolioValue,
-      weeklyNet: round2(portfolioValue - WEEKLY_BASELINE)
+      weeklyNet: round2(portfolioValue - weeklyBaseline)
     };
   });
-}
-
-async function commitResetInChunks(db, userIds) {
-  const chunks = chunkArray(userIds, 400);
-  for (const chunk of chunks) {
-    const batch = db.batch();
-    chunk.forEach((userId) => {
-      batch.update(db.collection('users').doc(userId), { weeklyRep: WEEKLY_BASELINE });
-    });
-    await batch.commit();
-  }
 }
 
 async function run() {
@@ -185,16 +174,14 @@ async function run() {
     totalParticipants: participants
   });
 
-  await commitResetInChunks(db, users.map((row) => row.id));
-
   await db.collection('adminLog').add({
     action: 'RESET',
-    detail: `Weekly snapshot + reset completed (${rankings.length} ranked, ${participants} participants). All users set to $1,000.00`,
+    detail: `Weekly snapshot completed (${rankings.length} ranked, ${participants} participants). Balances NOT reset - stipend model active.`,
     adminEmail,
     timestamp: new Date()
   });
 
-  console.log('Weekly snapshot saved and balances reset to $1,000.00.');
+  console.log('Weekly snapshot saved. Balances carry over (stipend model).');
   process.exit(0);
 }
 

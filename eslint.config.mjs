@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local assistant worktrees and generated artifacts.
+    ".claude/**",
   ]),
 ]);
 

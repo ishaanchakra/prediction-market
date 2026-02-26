@@ -25,7 +25,7 @@ const faqs = [
   },
   {
     q: "What happens to my rep at the end of the week?",
-    a: "Weekly rep resets to 1,000 so the leaderboard stays competitive. Your lifetime P&L and Oracle Score accumulate permanently and reflect your track record over time."
+    a: "You start with $1,000 and receive a $50 stipend every Sunday night. Your balance carries over, so strong forecasters can compound over time. Lifetime P&L and Oracle Score still accumulate permanently."
   },
 ];
 

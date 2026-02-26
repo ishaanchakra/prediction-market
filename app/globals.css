@@ -19,6 +19,7 @@
   --green-bright: #22c55e;
   --amber: #d97706;
   --amber-bright: #f59e0b;
+  --blue-bright: #60a5fa;
   --mono: var(--font-space-mono), 'Space Mono', monospace;
   --display: var(--font-instrument-serif), 'Instrument Serif', serif;
   --sans: var(--font-syne), 'Syne', sans-serif;

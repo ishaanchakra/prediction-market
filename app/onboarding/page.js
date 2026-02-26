@@ -55,6 +55,7 @@ function defaultProfileForUser(user) {
   const normalized = normalizeDisplayName(netId);
   return {
     weeklyRep: 1000,
+    weeklyStartingBalance: 1000,
     lifetimeRep: 0,
     oracleScore: 0,
     quickTakesUsedToday: 0,

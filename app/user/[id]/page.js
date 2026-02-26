@@ -129,7 +129,8 @@ export default function UserProfilePage() {
 
   const username = getPublicDisplayName({ id, ...user });
   const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
-  const weeklyNet = Number(user.weeklyRep || 0) - 1000;
+  const weeklyBaseline = Number(user?.weeklyStartingBalance ?? 1000);
+  const weeklyNet = Number(user?.weeklyRep || 0) - weeklyBaseline;
   const memberSince = user?.createdAt?.toDate?.()
     ? user.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : 'Unknown';
@@ -159,7 +160,7 @@ export default function UserProfilePage() {
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
             <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Weekly Balance</p>
             <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${fmtMoney(user.weeklyRep)}</p>
-            <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Resets every Monday</p>
+            <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Carries over weekly (+$50 stipend on Sunday night)</p>
           </div>
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
             <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Lifetime Earnings</p>

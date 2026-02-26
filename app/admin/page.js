@@ -1,7 +1,8 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { auth, db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '@/lib/firebase';
 import {
   addDoc,
   collection,
@@ -221,6 +222,7 @@ export default function AdminPage() {
   const [loadingUserBetCounts, setLoadingUserBetCounts] = useState({});
   const [resetting, setResetting] = useState(false);
   const [launchResetting, setLaunchResetting] = useState(false);
+  const [injectingStipend, setInjectingStipend] = useState(false);
   const [weeklyResetSummary, setWeeklyResetSummary] = useState(null);
   const [launchResetSummary, setLaunchResetSummary] = useState(null);
 
@@ -1091,6 +1093,7 @@ export default function AdminPage() {
     try {
       await addDoc(collection(db, 'newsItems'), {
         marketId: market.id,
+        marketplaceId: market.marketplaceId || null,
         adminId: user.uid,
         headline: draft.headline.trim(),
         url: draft.url.trim(),
@@ -1530,7 +1533,7 @@ export default function AdminPage() {
 
   async function handleWeeklyReset() {
     if (!(await confirmToast(
-      'Snapshot weekly standings and reset now? This saves this week\'s rankings, then sets all weekly balances to $1,000.00.'
+      'Snapshot weekly standings now? This saves this week\'s rankings. Balances are NOT reset - use the stipend injection to add $50.'
     ))) return;
 
     setResetting(true);
@@ -1615,22 +1618,17 @@ export default function AdminPage() {
         correctionParticipants
       });
 
-      const batch = writeBatch(db);
-      usersSnapshot.docs.forEach((d) =>
-        batch.update(doc(db, 'users', d.id), { weeklyRep: 1000 })
-      );
-      await batch.commit();
-      notifySuccess('Weekly snapshot saved and leaderboard reset. All balances set to $1,000.00.');
+      notifySuccess('Weekly snapshot saved.');
       await addDoc(collection(db, 'adminLog'), {
         action: 'RESET',
-        detail: `Weekly snapshot + reset completed (${rankings.length} ranked, ${tradedUserIds.size} participants, ${correctionParticipants} correction participants). All users set to $1,000.00`,
+        detail: `Weekly snapshot completed (${rankings.length} ranked, ${tradedUserIds.size} participants). Stipend model active - no balance reset.`,
         adminEmail: user.email,
         timestamp: new Date()
       });
       setWeeklyResetSummary({
         status: 'success',
         ranAt: new Date(),
-        detail: `Reset ${usersRows.length} users to $1,000. Trading ranks: ${rankings.length}. Correction ranks: ${correctionRankings.length}.`,
+        detail: `Snapshot saved. Trading ranks: ${rankings.length}. Correction ranks: ${correctionRankings.length}.`,
         participants: tradedUserIds.size,
         correctionParticipants
       });
@@ -1645,6 +1643,26 @@ export default function AdminPage() {
       });
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function handleManualStipendInject() {
+    const confirmed = await confirmToast(
+      'Inject $50 stipend to all users? This adds $50 to every user\'s balance and snapshots weeklyStartingBalance. Cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    setInjectingStipend(true);
+    try {
+      const injectFn = httpsCallable(functions, 'manualStipendInject');
+      const result = await injectFn({ dryRun: false });
+      notifySuccess(`Stipend injected to ${result.data.injectedCount} users.`);
+      await Promise.all([fetchUsers(), fetchOverviewStats()]);
+    } catch (error) {
+      console.error('Error injecting stipend:', error);
+      notifyError('Stipend injection failed.');
+    } finally {
+      setInjectingStipend(false);
     }
   }
 
@@ -2733,17 +2751,17 @@ export default function AdminPage() {
             </p>
             <p style={{ fontFamily: 'var(--sans)', fontSize: '0.9rem',
               fontWeight: 700, color: 'var(--text)' }}>
-              Snapshots standings, then resets all balances to $1,000.00
+              Snapshots standings only. Balances carry over with stipend model.
             </p>
             <p style={{ fontFamily: 'var(--mono)', fontSize: '0.62rem',
               color: 'var(--text-dim)', marginTop: '0.15rem' }}>
-              Use weekly reset after markets close for the week
+              Use weekly snapshot after markets close for the week
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleWeeklyReset}
-              disabled={resetting || launchResetting}
+              disabled={resetting || launchResetting || injectingStipend}
               style={{
                 fontFamily: 'var(--mono)', fontSize: '0.68rem',
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -2755,11 +2773,18 @@ export default function AdminPage() {
                 opacity: resetting ? 0.6 : 1
               }}
             >
-              {resetting ? 'Resetting...' : 'Run Weekly Reset →'}
+              {resetting ? 'Saving...' : 'Run Weekly Snapshot'}
+            </button>
+            <button
+              onClick={handleManualStipendInject}
+              disabled={injectingStipend || resetting || launchResetting}
+              className={BTN_NEUTRAL}
+            >
+              {injectingStipend ? 'Injecting...' : 'Inject $50 Stipend (All Users)'}
             </button>
             <button
               onClick={handleHardLaunchReset}
-              disabled={launchResetting || resetting}
+              disabled={launchResetting || resetting || injectingStipend}
               className={BTN_RED}
             >
               {launchResetting ? 'Resetting...' : 'Hard Launch Reset'}
