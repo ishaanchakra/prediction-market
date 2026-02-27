@@ -1,5 +1,6 @@
 import { Syne, Space_Mono, Instrument_Serif } from "next/font/google";
 import { Suspense } from "react";
+import { Analytics } from "@vercel/analytics/next"
 import "./globals.css";
 import Navigation from "./components/Navigation";
 import LaunchGate from "./components/LaunchGate";

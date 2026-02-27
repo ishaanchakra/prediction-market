@@ -15,6 +15,9 @@ export function categoryForNotificationType(type) {
   if (type === 'admin_adjustment') {
     return NOTIFICATION_CATEGORY.RANK_CHANGED;
   }
+  if (type === 'stipend') {
+    return NOTIFICATION_CATEGORY.RANK_CHANGED;
+  }
   if (type === 'rank_change') {
     return NOTIFICATION_CATEGORY.RANK_CHANGED;
   }

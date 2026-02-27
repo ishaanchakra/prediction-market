@@ -16,6 +16,8 @@ const MARKET_STATUS = {
 const ADMIN_EMAILS = new Set(['ic367@cornell.edu'])
 
 const DEFAULT_B = 100
+const SIGNIFICANT_TRADE_MIN_TRADES = 5
+const SIGNIFICANT_TRADE_MIN_PROB_CHANGE = 0.05
 
 function getMarketStatus(market) {
   if (!market) return MARKET_STATUS.OPEN
@@ -485,6 +487,14 @@ export const placeBet = onCall(async (request) => {
       if (latestBalance < amount) {
         throw new HttpsError('failed-precondition', `Insufficient balance. You have $${latestBalance.toFixed(2)} available.`)
       }
+      const oldProbabilityRaw = Number(latestMarket?.probability)
+      const oldProbability = Number.isFinite(oldProbabilityRaw)
+        ? Math.max(0, Math.min(1, oldProbabilityRaw))
+        : price(
+          Number(latestMarket?.outstandingShares?.yes || 0),
+          Number(latestMarket?.outstandingShares?.no || 0),
+          latestMarket?.b
+        )
 
       let result
       try {
@@ -534,9 +544,95 @@ export const placeBet = onCall(async (request) => {
       return {
         shares: result.shares,
         newProbability: result.newProbability,
-        newPool: result.newPool
+        newPool: result.newPool,
+        oldProbability,
+        marketQuestion: latestMarket?.question || 'Market',
+        marketplaceId: latestMarketplaceId
       }
     })
+
+    try {
+      const probabilityChange = Number((Number(txResult.newProbability || 0) - Number(txResult.oldProbability || 0)).toFixed(4))
+      if (Math.abs(probabilityChange) >= SIGNIFICANT_TRADE_MIN_PROB_CHANGE) {
+        const marketBetsSnap = await db.collection('bets')
+          .where('marketId', '==', marketId)
+          .where('marketplaceId', '==', (txResult.marketplaceId ?? null))
+          .get()
+
+        const tradeCountByUser = {}
+        const positionByUser = {}
+
+        for (const betDoc of marketBetsSnap.docs) {
+          const bet = betDoc.data()
+          const betUserId = bet?.userId
+          if (!betUserId) continue
+
+          tradeCountByUser[betUserId] = (tradeCountByUser[betUserId] || 0) + 1
+
+          if (!positionByUser[betUserId]) {
+            positionByUser[betUserId] = { yesShares: 0, noShares: 0 }
+          }
+          const held = positionByUser[betUserId]
+          const betSide = bet?.side === 'NO' ? 'NO' : 'YES'
+          const betType = bet?.type === 'SELL' ? 'SELL' : 'BUY'
+          const shares = Math.abs(Number(bet?.shares || 0))
+          if (!Number.isFinite(shares) || shares <= 0) continue
+
+          if (betSide === 'YES') {
+            held.yesShares += betType === 'SELL' ? -shares : shares
+          } else {
+            held.noShares += betType === 'SELL' ? -shares : shares
+          }
+        }
+
+        const recipients = []
+        for (const [betUserId, held] of Object.entries(positionByUser)) {
+          const yesShares = Math.max(0, round2(held.yesShares))
+          const noShares = Math.max(0, round2(held.noShares))
+          if (yesShares <= 0 && noShares <= 0) continue
+          if (betUserId === uid) continue
+
+          const tradeCount = Number(tradeCountByUser[betUserId] || 0)
+          if (tradeCount < SIGNIFICANT_TRADE_MIN_TRADES) continue
+
+          let userSide = null
+          if (yesShares > noShares) userSide = 'YES'
+          if (noShares > yesShares) userSide = 'NO'
+
+          recipients.push({
+            userId: betUserId,
+            userSide,
+            tradeCount
+          })
+        }
+
+        const chunks = chunkArray(recipients, 400)
+        for (const chunk of chunks) {
+          const batch = db.batch()
+          for (const recipient of chunk) {
+            const notificationRef = db.collection('notifications').doc()
+            batch.set(notificationRef, {
+              userId: recipient.userId,
+              type: 'significant_trade',
+              category: 'MARKET_MOVED',
+              marketId,
+              marketQuestion: txResult.marketQuestion,
+              tradeSide: side,
+              oldProbability: Number(txResult.oldProbability || 0),
+              newProbability: Number(txResult.newProbability || 0),
+              probabilityChange,
+              userSide: recipient.userSide,
+              tradeCount: recipient.tradeCount,
+              read: false,
+              createdAt: new Date()
+            })
+          }
+          await batch.commit()
+        }
+      }
+    } catch (notificationError) {
+      console.error('Error creating significant_trade notifications:', notificationError)
+    }
 
     return txResult
   } catch (error) {
