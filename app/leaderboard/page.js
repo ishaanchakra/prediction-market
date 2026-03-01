@@ -6,32 +6,12 @@ import { useRouter } from 'next/navigation';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { round2 } from '@/utils/round';
 import { calculateAllPortfolioValues } from '@/utils/portfolio';
+import { chunkArray } from '@/utils/marketplacePortfolio';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
 function fmtMoney(value) {
   return Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function weekLabel(date = new Date()) {
-  const start = new Date(date);
-  start.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-}
-
-function hoursToNextMonday() {
-  const now = new Date();
-  const next = new Date(now);
-  const day = now.getDay();
-  const daysUntilMonday = (8 - (day || 7)) % 7 || 7;
-  next.setDate(now.getDate() + daysUntilMonday);
-  next.setHours(0, 0, 0, 0);
-  const diffMs = next.getTime() - now.getTime();
-  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
-  return `${days}d ${hours}h`;
 }
 
 function getWeekNumber() {
@@ -65,14 +45,6 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
-function chunkArray(items, size) {
-  const chunks = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-}
-
 function isPermissionDenied(error) {
   return error?.code === 'permission-denied'
     || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
@@ -80,7 +52,7 @@ function isPermissionDenied(error) {
 
 async function fetchBetsByMarketIds(marketIds) {
   if (marketIds.length === 0) return [];
-  const chunks = chunkArray(marketIds, 10);
+  const chunks = chunkArray(marketIds, 30);
   const snapshots = await Promise.all(
     chunks.map((chunk) =>
       getDocs(
@@ -178,8 +150,6 @@ export default function LeaderboardPage() {
   const [expandedWeeks, setExpandedWeeks] = useState({});
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState(null);
-  const [openMarketsCount, setOpenMarketsCount] = useState(0);
-  const [totalTraded, setTotalTraded] = useState(0);
   const [activeTab, setActiveTab] = useState('oracle');
   const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
@@ -233,7 +203,7 @@ export default function LeaderboardPage() {
     if (!viewer?.uid) return null;
 
     if (activeTab === 'weekly') {
-      if (!meWeekly || meWeeklyRank < 0) return null;
+      if (!meWeekly) return null;
       return {
         rank: meWeeklyRank + 1,
         displayName: getPublicDisplayName(meWeekly),
@@ -277,32 +247,35 @@ export default function LeaderboardPage() {
     return () => unsubscribe();
   }, []);
 
-  const weekWindow = useMemo(() => getCurrentWeekWindow(), []);
-  const rankMetricColorClass = activeTab === 'alltime'
+  const rankMetricColorClass = (activeTab === 'alltime' || activeTab === 'oracle')
     ? 'text-[var(--amber-bright)]'
-    : activeTab === 'oracle'
-      ? 'text-[var(--amber-bright)]'
-      : (Number(myRankData?.metric || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]');
+    : (Number(myRankData?.metric || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]');
 
   useEffect(() => {
     async function fetchAll() {
       try {
         const usersQ = query(collection(db, 'users'), orderBy('lifetimeRep', 'desc'), limit(300));
-        const usersSnap = await getDocs(usersQ);
-        const usersData = usersSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
-        setUsers(usersData);
-
         const openQ = query(
           collection(db, 'markets'),
           where('resolution', '==', null),
           where('marketplaceId', '==', null)
         );
-        const openSnap = await getDocs(openQ);
+        const snapshotsQ = query(collection(db, 'weeklySnapshots'), orderBy('snapshotDate', 'desc'), limit(12));
+
+        const [usersSnap, openSnap, snapshotsSnap] = await Promise.all([
+          getDocs(usersQ),
+          getDocs(openQ),
+          getDocs(snapshotsQ),
+        ]);
+
+        const usersData = usersSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+        setUsers(usersData);
+        setWeeklySnapshots(snapshotsSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+
         const openMarkets = openSnap.docs
           .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
           .filter((market) => !market.marketplaceId)
           .filter((market) => market.status !== 'CANCELLED');
-        setOpenMarketsCount(openMarkets.length);
 
         const openMarketIds = openMarkets.map((market) => market.id);
         const openBets = await fetchBetsByMarketIds(openMarketIds);
@@ -319,19 +292,6 @@ export default function LeaderboardPage() {
           weeklyNet: round2(row.weeklyNet)
         }));
         setWeeklyRows(weeklyRowsData);
-
-        const allBetsSnap = await getDocs(query(collection(db, 'bets'), where('marketplaceId', '==', null)));
-        setTotalTraded(
-          round2(allBetsSnap.docs.reduce((sum, snapshotDoc) => {
-            const bet = snapshotDoc.data();
-            if (bet.marketplaceId) return sum;
-            return sum + Math.abs(Number(bet.amount || 0));
-          }, 0))
-        );
-
-        const snapshotsQ = query(collection(db, 'weeklySnapshots'), orderBy('snapshotDate', 'desc'), limit(12));
-        const snapshotsSnap = await getDocs(snapshotsQ);
-        setWeeklySnapshots(snapshotsSnap.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
       } catch (error) {
         if (!isPermissionDenied(error)) {
           console.error('Error fetching leaderboard:', error);
@@ -378,11 +338,9 @@ export default function LeaderboardPage() {
               </p>
             </div>
             <div className="flex-1">
-              <p className="text-[0.9rem] font-semibold text-[var(--text)]">
+              <p className="flex items-center gap-2 text-[0.9rem] font-semibold text-[var(--text)]">
                 {myRankData.displayName}
-                <span className="ml-2 rounded border border-[rgba(220,38,38,.2)] bg-[var(--red-glow)] px-1.5 py-[0.1rem] font-mono text-[0.44rem] uppercase tracking-[0.08em] text-[var(--red)]">
-                  you
-                </span>
+                <YouBadge />
               </p>
               <p className={`font-mono text-[0.7rem] ${rankMetricColorClass}`}>
                 {myRankData.metricLabel}
@@ -534,7 +492,9 @@ export default function LeaderboardPage() {
                     </td>
                   </tr>
                 )}
-                {allTimeUsers.map((user, index) => (
+                {allTimeUsers.map((user, index) => {
+                  const weekJoinLabel = joinWeekLabel(user);
+                  return (
                   <tr
                     key={user.id}
                     onClick={() => router.push(`/user/${user.id}`)}
@@ -554,9 +514,9 @@ export default function LeaderboardPage() {
                         </span>
                         {viewer?.uid === user.id && <YouBadge />}
                       </div>
-                      {joinWeekLabel(user) && (
+                      {weekJoinLabel && (
                         <p className="mt-[2px] font-mono text-[0.52rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-                          {joinWeekLabel(user)}
+                          {weekJoinLabel}
                         </p>
                       )}
                     </td>
@@ -571,7 +531,8 @@ export default function LeaderboardPage() {
                       />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </section>

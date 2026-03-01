@@ -305,16 +305,13 @@ function mapPlaceBetCalculationError(error) {
   throw new HttpsError('invalid-argument', 'Could not calculate this trade. Please check your amount and try again.')
 }
 
-function mapSellCalculationError() {
+function mapSellCalculationError(error) {
   throw new HttpsError('invalid-argument', 'Could not calculate payout for that sale. Please try a smaller amount.')
 }
 
 function validateSellResult(result) {
-  if (!Number.isFinite(result.payout) || result.payout < 0 || result.payout > 1_000_000) {
+  if (!Number.isFinite(result.payout) || result.payout <= 0 || result.payout > 1_000_000) {
     throw new HttpsError('failed-precondition', 'Invalid sell payout calculated.')
-  }
-  if (result.payout <= 0) {
-    throw new HttpsError('failed-precondition', 'Invalid sell: payout and shares must be positive.')
   }
 }
 
@@ -395,8 +392,7 @@ async function runWeeklyStipendInjection({ dryRun = false, actor = 'system' } = 
         })
       }
 
-      await userBatch.commit()
-      await notificationBatch.commit()
+      await Promise.all([userBatch.commit(), notificationBatch.commit()])
       injectedCount += chunk.length
     }
 
@@ -430,7 +426,9 @@ export const placeBet = onCall(async (request) => {
     const requestedMarketplaceId = normalizeMarketplaceId(request.data?.marketplaceId)
 
     const marketRef = db.collection('markets').doc(marketId)
-    const marketSnap = await marketRef.get()
+    const walletRef = getWalletRef(uid, requestedMarketplaceId)
+    const [marketSnap, walletSnap] = await Promise.all([marketRef.get(), walletRef.get()])
+
     if (!marketSnap.exists) {
       throw new HttpsError('not-found', 'Market not found.')
     }
@@ -441,8 +439,6 @@ export const placeBet = onCall(async (request) => {
     assertOpenMarket(marketData, 'Trading is currently locked for this market.')
 
     const isMarketplaceMarket = Boolean(marketMarketplaceId)
-    const walletRef = getWalletRef(uid, marketMarketplaceId)
-    const walletSnap = await walletRef.get()
     if (!walletSnap.exists) {
       throw new HttpsError('failed-precondition', getWalletMissingMessage(isMarketplaceMarket))
     }
@@ -538,13 +534,11 @@ export const placeBet = onCall(async (request) => {
       if (txIsMarketplaceMarket) {
         tx.update(walletRef, {
           balance: round2(latestBalance - amount),
-          lifetimeRep: Number(walletData?.lifetimeRep) || 0,
           updatedAt: now
         })
       } else {
         tx.update(walletRef, {
-          weeklyRep: round2(latestBalance - amount),
-          lifetimeRep: Number(walletData?.lifetimeRep) || 0
+          weeklyRep: round2(latestBalance - amount)
         })
       }
 
@@ -668,16 +662,14 @@ export const sellShares = onCall(async (request) => {
 
     const isMarketplaceMarket = Boolean(marketMarketplaceId)
     const walletRef = getWalletRef(uid, marketMarketplaceId)
-    const walletSnap = await walletRef.get()
-    if (!walletSnap.exists) {
-      throw new HttpsError('failed-precondition', getWalletMissingMessage(isMarketplaceMarket))
-    }
-
     const userBetsQuery = db.collection('bets')
       .where('marketId', '==', marketId)
       .where('marketplaceId', '==', marketMarketplaceId)
       .where('userId', '==', uid)
-    const userBetsSnapshot = await userBetsQuery.get()
+    const [walletSnap, userBetsSnapshot] = await Promise.all([walletRef.get(), userBetsQuery.get()])
+    if (!walletSnap.exists) {
+      throw new HttpsError('failed-precondition', getWalletMissingMessage(isMarketplaceMarket))
+    }
     const heldShares = aggregateHeldShares(userBetsSnapshot.docs.map((snapshot) => snapshot.data()))
     const availableShares = side === 'YES' ? heldShares.yesShares : heldShares.noShares
     if (sharesToSell > availableShares) {
@@ -777,13 +769,11 @@ export const sellShares = onCall(async (request) => {
       if (txIsMarketplaceMarket) {
         tx.update(walletRef, {
           balance: round2(currentBalance + result.payout),
-          lifetimeRep: Number(walletData?.lifetimeRep) || 0,
           updatedAt: now
         })
       } else {
         tx.update(walletRef, {
-          weeklyRep: round2(currentBalance + result.payout),
-          lifetimeRep: Number(walletData?.lifetimeRep) || 0
+          weeklyRep: round2(currentBalance + result.payout)
         })
       }
 
