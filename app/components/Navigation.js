@@ -3,39 +3,134 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { collection, query, where, doc, onSnapshot, orderBy, limit, getDoc } from 'firebase/firestore';
 import { ADMIN_EMAILS } from '@/utils/adminEmails';
 import { toMarketplaceMemberId } from '@/utils/marketplace';
-import { CATEGORIES } from '@/utils/categorize';
-
-function initialsFor(user) {
-  if (!user?.email) return 'PC';
-  const prefix = user.email.split('@')[0];
-  const parts = prefix.split(/[._-]/).filter(Boolean);
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  return prefix.slice(0, 2).toUpperCase();
-}
 
 function isPermissionDenied(error) {
   return error?.code === 'permission-denied'
     || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
 }
 
+function NavIcon({ icon, className = 'h-[18px] w-[18px]' }) {
+  const baseProps = {
+    className,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: '1.8',
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true
+  };
+
+  if (icon === 'feed') {
+    return (
+      <svg {...baseProps}>
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <path d="M8 21h8M12 17v4" />
+      </svg>
+    );
+  }
+  if (icon === 'markets') {
+    return (
+      <svg {...baseProps}>
+        <path d="M3 3h18M3 9h18M3 15h12M3 21h8" />
+      </svg>
+    );
+  }
+  if (icon === 'leaderboard') {
+    return (
+      <svg {...baseProps}>
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+        <polyline points="16 7 22 7 22 13" />
+      </svg>
+    );
+  }
+  if (icon === 'portfolio' || icon === 'profile') {
+    return (
+      <svg {...baseProps}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+      </svg>
+    );
+  }
+  if (icon === 'notifications') {
+    return (
+      <svg {...baseProps}>
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </svg>
+    );
+  }
+  if (icon === 'admin') {
+    return (
+      <svg {...baseProps}>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.1a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.1a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2H9a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.1a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1V9c0 .4.2.8.6.9H20a2 2 0 1 1 0 4h-.1a1 1 0 0 0-.9.6z" />
+      </svg>
+    );
+  }
+  if (icon === 'home') {
+    return (
+      <svg {...baseProps}>
+        <path d="M3 11.5L12 4l9 7.5" />
+        <path d="M6 10.5V20h12v-9.5" />
+        <path d="M10 20v-6h4v6" />
+      </svg>
+    );
+  }
+  if (icon === 'call') {
+    return (
+      <svg {...baseProps}>
+        <path d="M3 11v2a2 2 0 0 0 2 2h1l3 4h3l-1.5-4H13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2" />
+        <path d="M15 9l6-3v12l-6-3" />
+      </svg>
+    );
+  }
+  if (icon === 'about') {
+    return (
+      <svg {...baseProps}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5" />
+        <path d="M12 8h.01" />
+      </svg>
+    );
+  }
+  return null;
+}
+
+function SidebarItem({ href, icon, label, active, badge = 0 }) {
+  return (
+    <Link
+      href={href}
+      title={label}
+      className={`relative flex h-10 w-10 items-center justify-center rounded-[6px] transition-colors ${
+        active
+          ? 'bg-[var(--surface2)] text-[var(--text)]'
+          : 'text-[var(--text-muted)] hover:bg-[var(--surface2)] hover:text-[var(--text-dim)]'
+      }`}
+    >
+      <NavIcon icon={icon} />
+      {badge > 0 && (
+        <span className="absolute -right-[3px] -top-[3px] flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--red)] px-[3px] font-mono text-[8px] font-bold text-white">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </Link>
+  );
+}
+
 export default function Navigation() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [balance, setBalance] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileMenuPath, setMobileMenuPath] = useState('');
-  const [desktopMarketsOpen, setDesktopMarketsOpen] = useState(false);
-  const [desktopMenuPath, setDesktopMenuPath] = useState('');
   const [joinedMarketplaces, setJoinedMarketplaces] = useState([]);
   const [activeMarketplace, setActiveMarketplace] = useState(null);
   const [activeMarketplaceBalance, setActiveMarketplaceBalance] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   const routeMarketplaceId = useMemo(() => {
     if (!pathname?.startsWith('/marketplace/')) return null;
@@ -44,6 +139,7 @@ export default function Navigation() {
     if (!id || id === 'enter') return null;
     return id;
   }, [pathname]);
+
   const routeMarketId = useMemo(() => {
     if (!pathname?.startsWith('/market/')) return null;
     const [, segment, id] = pathname.split('/');
@@ -51,28 +147,16 @@ export default function Navigation() {
     if (!id || id === 'active') return null;
     return id;
   }, [pathname]);
+
   const [marketRouteMarketplaceId, setMarketRouteMarketplaceId] = useState(null);
   const activeMarketplaceId = routeMarketplaceId || marketRouteMarketplaceId;
   const inMarketplaceContext = !!activeMarketplaceId;
-  const validMarketStatuses = useMemo(() => new Set(['all', 'active', 'resolved', 'cancelled']), []);
-  const activeGlobalCategory = useMemo(() => {
-    if (pathname !== '/markets') return 'all';
-    const raw = searchParams.get('category');
-    return CATEGORIES.some((category) => category.id === raw) ? raw : 'all';
-  }, [pathname, searchParams]);
-  const activeGlobalStatus = useMemo(() => {
-    if (pathname !== '/markets') return 'all';
-    const raw = searchParams.get('status');
-    return validMarketStatuses.has(raw) ? raw : 'all';
-  }, [pathname, searchParams, validMarketStatuses]);
-
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
   const displayBalance = inMarketplaceContext
     ? Number(activeMarketplaceBalance ?? balance)
     : Number(balance);
-  const displayBalanceLabel = inMarketplaceContext
-    ? `${activeMarketplace?.name || 'Marketplace'} wallet`
-    : 'Global wallet';
+
+  const joinedMarketplaceCount = joinedMarketplaces.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -232,18 +316,6 @@ export default function Navigation() {
     };
   }, [activeMarketplaceId, user]);
 
-  const menuVisible = mobileMenuOpen && mobileMenuPath === pathname;
-  const desktopMenuVisible = desktopMarketsOpen && desktopMenuPath === pathname && !menuVisible;
-
-  useEffect(() => {
-    if (menuVisible) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [menuVisible]);
-
   async function handleLogout() {
     try {
       await signOut(auth);
@@ -255,314 +327,116 @@ export default function Navigation() {
 
   if (pathname === '/onboarding') return null;
 
+  const isActive = (href) => {
+    if (!pathname) return false;
+    if (href === '/markets') {
+      return pathname === '/markets'
+        || pathname.startsWith('/marketplace')
+        || pathname.startsWith('/market/');
+    }
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
+  const bottomTabs = [
+    { href: '/feed', icon: 'feed', label: 'Feed', badge: 0 },
+    { href: '/markets', icon: 'markets', label: 'Markets', badge: 0 },
+    { href: '/leaderboard', icon: 'leaderboard', label: 'Board', badge: 0 },
+    { href: '/call-for-markets', icon: 'call', label: 'Call', badge: 0, accent: true },
+    { href: '/how-it-works', icon: 'about', label: 'About', badge: 0 },
+    { href: '/notifications', icon: 'notifications', label: 'Notifs', badge: unreadCount },
+    { href: '/profile', icon: 'profile', label: 'Profile', badge: 0 },
+  ];
+
   return (
-    <nav
-      className="sticky top-0 z-50 border-b border-[var(--border)] bg-[rgba(8,8,8,0.92)] backdrop-blur-[16px]"
-      style={{
-        paddingTop: 'calc(0.75rem + var(--safe-top))',
-        paddingBottom: '0.75rem',
-        paddingLeft: 'max(1rem, var(--safe-left))',
-        paddingRight: 'max(1rem, var(--safe-right))'
-      }}
-    >
-      <div className="grid grid-cols-[1fr_auto] items-center gap-2 md:grid-cols-[1fr_auto_1fr]">
-        <Link href="/" className="justify-self-start flex items-center gap-2 no-underline">
-          <span className="dot-pulse h-[7px] w-[7px] rounded-full bg-[var(--red)] shadow-[0_0_6px_var(--red)]" />
-          <span className="font-sans text-sm font-extrabold tracking-[-0.025em] text-[var(--text)] md:text-base">
-            Predict <em className="not-italic text-[var(--red)]">Cornell</em>
-          </span>
-          <span className="rounded border border-[rgba(217,119,6,0.35)] bg-[rgba(217,119,6,0.12)] px-1.5 py-[0.15rem] font-mono text-[0.52rem] font-bold uppercase tracking-[0.08em] text-[var(--amber-bright)]">
-            Beta
-          </span>
+    <>
+      <nav className="hidden md:flex fixed left-0 top-0 bottom-0 z-50 w-16 flex-col items-center gap-[2px] border-r border-[var(--border)] bg-[rgba(8,8,8,0.96)] py-3 backdrop-blur-[12px]">
+        <Link
+          href="/"
+          title="Home"
+          className="mb-4 flex h-10 w-10 items-center justify-center rounded-[6px] border border-[var(--border2)] bg-[var(--surface)]"
+        >
+          <NavIcon icon="home" />
         </Link>
 
-        <ul className="hidden md:flex md:justify-self-center list-none items-center gap-[0.15rem]">
-          <li
-            className="relative"
-            onMouseEnter={() => {
-              setDesktopMenuPath(pathname || '');
-              setDesktopMarketsOpen(true);
-            }}
-            onMouseLeave={() => setDesktopMarketsOpen(false)}
+        <SidebarItem href="/feed" icon="feed" label="Feed" active={isActive('/feed')} />
+        <SidebarItem
+          href="/markets"
+          icon="markets"
+          label={joinedMarketplaceCount > 0 ? `Markets (${joinedMarketplaceCount} joined)` : 'Markets'}
+          active={isActive('/markets')}
+        />
+        <SidebarItem href="/leaderboard" icon="leaderboard" label="Leaderboard" active={isActive('/leaderboard')} />
+        <Link
+          href="/call-for-markets"
+          title="Call for Markets"
+          className={`relative flex h-10 w-10 items-center justify-center rounded-[6px] transition-colors ${
+            isActive('/call-for-markets')
+              ? 'bg-[rgba(217,119,6,0.15)] text-[var(--amber-bright)]'
+              : 'text-[var(--amber-bright)] hover:bg-[rgba(217,119,6,0.12)]'
+          }`}
+        >
+          <NavIcon icon="call" />
+        </Link>
+        <SidebarItem href="/how-it-works" icon="about" label="About" active={isActive('/how-it-works')} />
+
+        <div className="my-2 w-full border-t border-[var(--border)]" />
+        <div className="flex flex-col items-center gap-[2px] py-1">
+          <span className="font-mono text-[0.42rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">bal</span>
+          <span className="font-mono text-[0.65rem] font-bold text-[var(--text)]">
+            ${displayBalance.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+          </span>
+        </div>
+        <div className="w-full border-t border-[var(--border)]" />
+
+        <SidebarItem href="/profile" icon="profile" label="Profile" active={isActive('/profile')} />
+        <SidebarItem href="/notifications" icon="notifications" label="Notifications" active={isActive('/notifications')} badge={unreadCount} />
+        {isAdmin && <SidebarItem href="/admin" icon="admin" label="Admin" active={isActive('/admin')} />}
+
+        {user && (
+          <button
+            onClick={handleLogout}
+            title="Logout"
+            className="mt-auto flex h-10 w-10 items-center justify-center rounded-[6px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text-dim)]"
           >
-            <button
-              onClick={() => {
-                setDesktopMarketsOpen(false);
-                router.push('/markets');
-              }}
-              className={`inline-flex items-center gap-1 rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] transition-colors ${
-                pathname === '/markets' || pathname?.startsWith('/marketplace/')
-                  ? 'bg-[var(--surface2)] text-[var(--text)]'
-                  : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
+            <span className="font-mono text-[0.5rem] uppercase tracking-[0.06em]">exit</span>
+          </button>
+        )}
+      </nav>
+
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-[var(--border)] bg-[rgba(8,8,8,0.96)] backdrop-blur-[12px]"
+        style={{
+          paddingBottom: 'calc(8px + var(--safe-bottom, 0px))',
+          height: 'calc(56px + var(--safe-bottom, 0px))',
+          paddingLeft: 'max(0px, var(--safe-left, 0px))',
+          paddingRight: 'max(0px, var(--safe-right, 0px))'
+        }}
+      >
+        {bottomTabs.map(({ href, icon, label, badge, accent }) => {
+          const active = isActive(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`relative flex flex-col items-center justify-center gap-[3px] px-4 py-2 ${
+                active
+                  ? (accent ? 'text-[var(--amber-bright)]' : 'text-[var(--text)]')
+                  : (accent ? 'text-[var(--amber-bright)]' : 'text-[var(--text-muted)]')
               }`}
             >
-              Markets
-              <span className="text-[0.55rem]">▾</span>
-            </button>
-            {desktopMenuVisible && (
-              <div className="absolute left-0 top-full pt-1">
-                <div className="min-w-[240px] overflow-hidden rounded border border-[var(--border2)] bg-[var(--surface)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-                  <Link
-                    href="/markets"
-                    onClick={() => setDesktopMarketsOpen(false)}
-                    className={`flex min-h-[42px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.64rem] uppercase tracking-[0.06em] transition-colors ${
-                      pathname === '/markets'
-                        ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
-                        : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
-                    }`}
-                  >
-                    <span className="mr-2">📊</span>
-                    All Markets
-                    {pathname === '/markets' && <span className="ml-auto text-[var(--red)]">✓</span>}
-                  </Link>
-                  <div className="border-b border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                    Global Categories
-                  </div>
-                  {CATEGORIES.filter((category) => category.id !== 'all').map((category) => {
-                    const href = `/markets?status=active&category=${category.id}`;
-                    const isCategoryActive = pathname === '/markets'
-                      && activeGlobalStatus === 'active'
-                      && activeGlobalCategory === category.id;
-                    return (
-                      <Link
-                        key={`global-category-${category.id}`}
-                        href={href}
-                        onClick={() => setDesktopMarketsOpen(false)}
-                        className={`flex min-h-[40px] items-center border-b border-[var(--border)] px-3 font-mono text-[0.62rem] uppercase tracking-[0.06em] transition-colors ${
-                          isCategoryActive
-                            ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
-                            : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
-                        }`}
-                      >
-                        <span className="mr-2">{category.emoji}</span>
-                        {category.label}
-                        {isCategoryActive && <span className="ml-auto text-[var(--red)]">✓</span>}
-                      </Link>
-                    );
-                  })}
-
-                  <div className="border-b border-t border-[var(--border)] px-3 py-2 font-mono text-[0.52rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                    Joined Marketplaces
-                  </div>
-                  {joinedMarketplaces.length === 0 ? (
-                    <span className="flex min-h-[42px] items-center px-3 font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-                      none yet
-                    </span>
-                  ) : joinedMarketplaces.map((entry) => {
-                    const isActive = pathname?.startsWith(`/marketplace/${entry.marketplace.id}`);
-                    return (
-                      <Link
-                        key={entry.marketplace.id}
-                        href={`/marketplace/${entry.marketplace.id}`}
-                        onClick={() => setDesktopMarketsOpen(false)}
-                        className={`flex min-h-[42px] items-center border-t border-[var(--border)] px-3 font-mono text-[0.62rem] uppercase tracking-[0.06em] ${
-                          isActive
-                            ? 'bg-[rgba(220,38,38,0.12)] text-[var(--text)]'
-                            : 'text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]'
-                        }`}
-                      >
-                        {entry.marketplace.name}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </li>
-          <li>
-            <Link href="/leaderboard" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
-              Leaderboard
+              <span className={`transition-transform ${active ? 'scale-110' : ''}`}>
+                <NavIcon icon={icon} className="h-[18px] w-[18px]" />
+              </span>
+              <span className="font-mono text-[0.42rem] uppercase tracking-[0.08em]">{label}</span>
+              {badge > 0 && (
+                <span className="absolute right-[6px] top-[4px] flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--red)] px-[3px] font-mono text-[8px] font-bold text-white">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
             </Link>
-          </li>
-          <li>
-            <Link href="/marketplace/enter" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
-              Enter Marketplace
-            </Link>
-          </li>
-          <li>
-            <Link href="/call-for-markets" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--amber-bright)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--amber-bright)]">
-              Call for Markets
-            </Link>
-          </li>
-          <li>
-            <Link href="/how-it-works" className="rounded px-[0.7rem] py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text)]">
-              About
-            </Link>
-          </li>
-        </ul>
-
-        <div className="justify-self-end flex items-center gap-2 md:gap-3">
-          {user ? (
-            <>
-              <div className="flex items-center gap-1.5">
-                <div className={`flex items-center gap-2 rounded-md border px-2.5 py-[0.35rem] font-mono md:px-3 ${
-                  inMarketplaceContext
-                    ? 'border-[var(--red-dim)] bg-[var(--red-glow)]'
-                    : 'border-[var(--border2)] bg-[var(--surface)]'
-                }`}>
-                  <span className={`hidden sm:inline text-[0.54rem] uppercase tracking-[0.08em] ${
-                    inMarketplaceContext ? 'text-[var(--red)]' : 'text-[var(--text-muted)]'
-                  }`}>{displayBalanceLabel}</span>
-                  <strong className={`text-[0.82rem] md:text-[0.9rem] ${
-                    inMarketplaceContext ? 'text-[var(--amber-bright)]' : 'text-[var(--text)]'
-                  }`}>
-                    ${displayBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </strong>
-                </div>
-              </div>
-              <Link
-                href="/notifications"
-                style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}
-              >
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor"
-                  strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ color: unreadCount > 0 ? 'var(--text)' : 'var(--text-muted)', transition: 'color 0.12s' }}
-                >
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-                {unreadCount > 0 && (
-                  <span style={{
-                    position: 'absolute', top: '-2px', right: '-2px',
-                    minWidth: '16px', height: '16px',
-                    background: 'var(--red)',
-                    borderRadius: '99px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'var(--mono)', fontSize: '9px',
-                    fontWeight: 700, color: 'white',
-                    padding: '0 3px',
-                    lineHeight: 1
-                  }}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </Link>
-              <Link href="/profile" className="relative flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--red-glow)] font-mono text-[0.6rem] font-bold text-[var(--red)]">
-                {initialsFor(user)}
-              </Link>
-              <div className="hidden md:flex md:items-center md:gap-3">
-                {isAdmin && (
-                  <Link href="/admin" className="inline-flex h-7 items-center justify-center rounded px-[0.5rem] py-[0.25rem] font-mono text-[0.58rem] leading-none uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]">
-                    Admin
-                  </Link>
-                )}
-                <button onClick={handleLogout} className="inline-flex h-7 items-center justify-center rounded px-[0.5rem] py-[0.25rem] font-mono text-[0.58rem] leading-none uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)]">
-                  Logout
-                </button>
-              </div>
-            </>
-          ) : (
-            <Link href="/login" className="inline-flex items-center justify-center rounded border border-[var(--border2)] px-3 py-[0.35rem] font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-dim)] hover:bg-[var(--surface2)] hover:text-[var(--text)] md:min-h-0 md:min-w-0 md:h-7 md:py-0">
-              Sign In
-            </Link>
-          )}
-
-          <button
-            onClick={() => {
-              if (mobileMenuOpen && mobileMenuPath !== (pathname || '')) {
-                setMobileMenuPath(pathname || '');
-                return;
-              }
-              setMobileMenuOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setMobileMenuPath(pathname || '');
-                }
-                return next;
-              });
-            }}
-            className="md:hidden flex h-11 w-11 items-center justify-center rounded border border-[var(--border2)] text-[var(--text-dim)]"
-            aria-label="Toggle menu"
-          >
-            <span className="font-mono text-lg">{menuVisible ? '×' : '≡'}</span>
-          </button>
-        </div>
-      </div>
-
-      {menuVisible && (
-        <div
-          className="md:hidden fixed left-0 right-0 z-[70] border-b border-[var(--border)] bg-[rgba(8,8,8,0.98)]"
-          style={{ top: 'calc(56px + var(--safe-top))', paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
-        >
-          <div className="flex flex-col px-4 py-2">
-            <Link
-              href="/markets"
-              onClick={() => setMobileMenuOpen(false)}
-              className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
-            >
-              📊 All Markets
-            </Link>
-            <div className="border-b border-[var(--border)] py-1">
-              <div className="px-1 pb-1 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                Global Categories
-              </div>
-              {CATEGORIES.filter((category) => category.id !== 'all').map((category) => {
-                const href = `/markets?status=active&category=${category.id}`;
-                const isCategoryActive = pathname === '/markets'
-                  && activeGlobalStatus === 'active'
-                  && activeGlobalCategory === category.id;
-                return (
-                  <Link
-                    key={`mobile-global-category-${category.id}`}
-                    href={href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex min-h-[46px] items-center px-1 font-mono text-[0.66rem] uppercase tracking-[0.08em] ${
-                      isCategoryActive ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'
-                    }`}
-                  >
-                    <span className="mr-2">{category.emoji}</span>
-                    {category.label}
-                  </Link>
-                );
-              })}
-            </div>
-            <Link onClick={() => setMobileMenuOpen(false)} href="/leaderboard" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
-              Leaderboard
-            </Link>
-            <Link onClick={() => setMobileMenuOpen(false)} href="/marketplace/enter" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
-              Enter Marketplace
-            </Link>
-            {joinedMarketplaces.length > 0 && (
-              <div className="border-b border-[var(--border)] py-1">
-                <div className="px-1 pb-1 font-mono text-[0.62rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                  Joined Marketplaces
-                </div>
-                {joinedMarketplaces.map((entry) => (
-                  <Link
-                    key={entry.marketplace.id}
-                    href={`/marketplace/${entry.marketplace.id}`}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex min-h-[48px] items-center px-1 font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
-                  >
-                    {entry.marketplace.name}
-                  </Link>
-                ))}
-              </div>
-            )}
-            <Link onClick={() => setMobileMenuOpen(false)} href="/call-for-markets" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--amber-bright)]">
-              Call for Markets
-            </Link>
-            <Link onClick={() => setMobileMenuOpen(false)} href="/how-it-works" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
-              About
-            </Link>
-            {user && isAdmin && (
-              <Link onClick={() => setMobileMenuOpen(false)} href="/admin" className="flex min-h-[52px] items-center border-b border-[var(--border)] px-1 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]">
-                Admin
-              </Link>
-            )}
-            {user && (
-              <button
-                onClick={handleLogout}
-                className="flex min-h-[52px] items-center px-1 text-left font-mono text-[0.7rem] uppercase tracking-[0.08em] text-[var(--text-dim)]"
-              >
-                Logout
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </nav>
+          );
+        })}
+      </nav>
+    </>
   );
 }

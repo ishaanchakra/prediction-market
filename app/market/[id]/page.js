@@ -11,7 +11,9 @@ import {
   orderBy,
   getDocs,
   limit,
-  deleteDoc
+  deleteDoc,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, auth, functions } from '@/lib/firebase';
@@ -660,7 +662,7 @@ export default function MarketPage() {
   async function handlePlaceBet() {
     if (!currentUser) {
       if (await confirmToast('You need to sign in to place bets. Go to login page?')) {
-        window.location.href = '/login';
+        router.push('/login');
       }
       return;
     }
@@ -897,6 +899,31 @@ export default function MarketPage() {
     }
   }
 
+  async function handleLikeComment(comment) {
+    if (!currentUser) {
+      notifyError('Sign in to like comments.');
+      return;
+    }
+    const uid = currentUser.uid;
+    const likedBy = Array.isArray(comment.likedBy) ? comment.likedBy : [];
+    const alreadyLiked = likedBy.includes(uid);
+    try {
+      await updateDoc(doc(db, 'comments', comment.id), {
+        likedBy: alreadyLiked ? arrayRemove(uid) : arrayUnion(uid),
+      });
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === comment.id
+            ? { ...c, likedBy: alreadyLiked ? likedBy.filter((id) => id !== uid) : [...likedBy, uid] }
+            : c
+        )
+      );
+    } catch (error) {
+      console.error('Error liking comment:', error);
+      notifyError('Unable to like comment.');
+    }
+  }
+
   async function handleShareMarket() {
     if (typeof window === 'undefined') return;
     const shareUrl = window.location.href;
@@ -950,7 +977,7 @@ export default function MarketPage() {
 
   const marketTags = Array.isArray(market?.tags) ? market.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [];
   const categoryLabel = market?.category || market?.topic || marketTags[0] || 'Campus';
-  const truncatedQuestion = (market?.question || '').length > 36 ? `${market.question.slice(0, 36)}...` : (market?.question || 'Market');
+  const truncatedQuestion = (market?.question || '').length > 36 ? `${market.question.slice(0, 36)}…` : (market?.question || 'Market');
   const statusTagLabel = isResolved ? 'Resolved' : isCancelled ? 'Cancelled' : isLocked ? 'Locked' : '● Live';
   const statusTagClass = isResolved
     ? 'border-[rgba(22,163,74,.28)] bg-[rgba(22,163,74,.08)] text-[var(--green-bright)]'
@@ -976,9 +1003,11 @@ export default function MarketPage() {
     replyingTo === parentId ? (
       <div className="mt-[0.6rem] ml-4 border-l border-[var(--border)] pl-4">
         <textarea
-          placeholder="Write a reply..."
+          aria-label="Reply text"
+          placeholder="Write a reply…"
           value={replyText}
           onChange={(e) => setReplyText(e.target.value)}
+          autoComplete="off"
           className="min-h-[52px] w-full resize-none rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[0.82rem] text-[var(--text)]"
         />
         <div className="mt-2 flex justify-end gap-2">
@@ -1017,7 +1046,7 @@ export default function MarketPage() {
             <div className="h-6 w-6 rounded-full border border-[var(--border2)] bg-[var(--surface3)] font-mono text-[0.52rem] font-bold text-[var(--text-dim)] flex items-center justify-center">
               {getInitials(displayName)}
             </div>
-            <span className="text-sm font-semibold text-[var(--text)]">{displayName}</span>
+            <span className="min-w-0 truncate text-sm font-semibold text-[var(--text)]">{displayName}</span>
             {comment.userSide && (
               <span className={`ml-auto rounded px-1.5 py-0.5 font-mono text-[0.58rem] font-bold uppercase ${sideClass}`}>
                 {comment.userSide}
@@ -1031,8 +1060,10 @@ export default function MarketPage() {
           {editingCommentId === comment.id ? (
             <div className="space-y-2">
               <textarea
+                aria-label="Edit comment"
                 value={editingText}
                 onChange={(e) => setEditingText(e.target.value)}
+                autoComplete="off"
                 className="w-full rounded border border-[var(--border2)] bg-[var(--surface2)] p-2 text-sm text-[var(--text)]"
                 rows={2}
                 maxLength={400}
@@ -1057,9 +1088,16 @@ export default function MarketPage() {
           )}
 
           <div className="mt-3 flex items-center gap-3">
-            <span className="font-mono text-[0.58rem] text-[var(--text-muted)]">
+            <button
+              onClick={() => handleLikeComment(comment)}
+              className={`font-mono text-[0.58rem] hover:text-[var(--text-dim)] transition-colors ${
+                currentUser && Array.isArray(comment.likedBy) && comment.likedBy.includes(currentUser.uid)
+                  ? 'text-[var(--red)]'
+                  : 'text-[var(--text-muted)]'
+              }`}
+            >
               ♥ {Array.isArray(comment.likedBy) ? comment.likedBy.length : Number(comment.likes || 0)}
-            </span>
+            </button>
             <button
               onClick={() => {
                 if (!currentUser) {
@@ -1096,7 +1134,7 @@ export default function MarketPage() {
     );
   };
 
-  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading...</div>;
+  if (loading) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">Loading…</div>;
   if (!market) return <div className="p-8 bg-[var(--bg)] text-[var(--text-muted)] font-mono min-h-screen text-center">{marketLoadError || 'Market not found'}</div>;
 
   return (
@@ -1125,7 +1163,7 @@ export default function MarketPage() {
                 <p className="font-mono text-[1.35rem] font-bold tracking-[-0.03em] text-[var(--amber-bright)]">
                   {marketplaceMembership
                     ? `$${Number(marketplaceMembership.balance || 0).toFixed(2)}`
-                    : 'Loading...'}
+                    : 'Loading…'}
                 </p>
               </div>
             </div>
@@ -1138,7 +1176,7 @@ export default function MarketPage() {
             <span className={`rounded border px-2 py-1 font-mono text-[0.55rem] uppercase tracking-[0.08em] ${statusTagClass}`}>{statusTagLabel}</span>
           </div>
 
-          <h1 className="mb-7 max-w-[640px] font-display text-[2rem] leading-tight tracking-[-0.015em] text-[var(--text)]">{market.question}</h1>
+          <h1 className="mb-7 max-w-[640px] font-display text-[2rem] leading-tight tracking-[-0.015em] text-[var(--text)] text-pretty">{market.question}</h1>
 
           <div className="mb-6 flex flex-col gap-4 border-b border-[var(--border)] pb-6 md:flex-row md:flex-wrap md:items-end md:gap-8">
             <div>
@@ -1158,10 +1196,21 @@ export default function MarketPage() {
                 <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">bettors</span>
               </div>
               <div>
-                <span className={`block font-mono text-lg font-bold ${daysRemaining !== null && daysRemaining <= 2 ? 'text-[var(--red)]' : 'text-[var(--text)]'}`}>
-                  {daysRemaining === null ? 'N/A' : `${daysRemaining}d`}
-                </span>
-                <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">remaining</span>
+                {isResolved || isCancelled ? (
+                  <>
+                    <span className="block font-mono text-lg font-bold text-[var(--text-dim)]">—</span>
+                    <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      {isResolved ? 'resolved' : 'cancelled'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={`block font-mono text-lg font-bold ${daysRemaining !== null && daysRemaining <= 2 ? 'text-[var(--red)]' : 'text-[var(--text)]'}`}>
+                      {daysRemaining === null ? 'N/A' : `${daysRemaining}d`}
+                    </span>
+                    <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">remaining</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1179,7 +1228,7 @@ export default function MarketPage() {
 
           <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
             <p className="mb-2 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+              <span aria-hidden="true" className="inline-block h-px w-3 bg-[var(--red)]" />
               How this resolves
             </p>
             <p className="mb-2 text-sm text-[var(--text-dim)]">
@@ -1193,7 +1242,7 @@ export default function MarketPage() {
           {(isResolved || isCancelled) && (
             <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
               <p className="mb-2 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                <span className="inline-block h-px w-3 bg-[var(--amber-bright)]" />
+                <span aria-hidden="true" className="inline-block h-px w-3 bg-[var(--amber-bright)]" />
                 Resolution Audit
               </p>
               <p className="text-sm text-[var(--text-dim)]">
@@ -1352,7 +1401,7 @@ export default function MarketPage() {
                         <button
                           onClick={() => setSelectedSide('YES')}
                           disabled={!canTrade}
-                          className={`w-full min-h-[52px] rounded-md border px-4 py-3 text-center transition ${
+                          className={`w-full min-h-[52px] rounded-md border px-4 py-3 text-center transition-colors ${
                             selectedSide === 'YES'
                               ? 'border-[var(--green-bright)] bg-[rgba(22,163,74,.08)]'
                               : 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface3)]'
@@ -1365,7 +1414,7 @@ export default function MarketPage() {
                         <button
                           onClick={() => setSelectedSide('NO')}
                           disabled={!canTrade}
-                          className={`w-full min-h-[52px] rounded-md border px-4 py-3 text-center transition ${
+                          className={`w-full min-h-[52px] rounded-md border px-4 py-3 text-center transition-colors ${
                             selectedSide === 'NO'
                               ? 'border-[var(--red)] bg-[var(--red-glow)]'
                               : 'border-[var(--border2)] bg-[var(--surface2)] text-[var(--text)] hover:bg-[var(--surface3)]'
@@ -1384,6 +1433,9 @@ export default function MarketPage() {
                     type="number"
                     inputMode="numeric"
                     pattern="[0-9]*"
+                    aria-label="Bet amount in dollars"
+                    name="bet-amount"
+                    autoComplete="off"
                     value={betAmount}
                     onChange={(e) => setBetAmount(e.target.value)}
                     placeholder={currentUser ? '$0.00' : 'Sign in to trade'}
@@ -1396,7 +1448,7 @@ export default function MarketPage() {
                     disabled={!currentUser || !betAmount || submitting || !isTradeableMarket(market)}
                     className="min-h-[52px] w-full whitespace-nowrap rounded bg-[var(--red)] px-5 py-2 font-mono text-[0.7rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed sm:w-auto"
                   >
-                    {submitting ? 'Placing...' : `Bet ${selectedSide} →`}
+                    {submitting ? 'Placing…' : `Bet ${selectedSide} →`}
                   </button>
                 </div>
                 {preview && currentUser && (
@@ -1422,7 +1474,7 @@ export default function MarketPage() {
           </div>
 
           {commentsLoading ? (
-            <p className="font-mono text-sm text-[var(--text-muted)]">Loading timeline...</p>
+            <p className="font-mono text-sm text-[var(--text-muted)]">Loading timeline…</p>
           ) : timelineItems.length === 0 ? (
             <p className="font-mono text-sm text-[var(--text-muted)]">No timeline items yet.</p>
           ) : (
@@ -1439,7 +1491,7 @@ export default function MarketPage() {
                   );
                   return (
                     <div key={item.id} className="relative pb-4">
-                      <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--amber)] bg-[rgba(217,119,6,.12)] text-[0.5rem]">⚡</span>
+                      <span aria-hidden="true" className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--amber)] bg-[rgba(217,119,6,.12)] text-[0.5rem]">⚡</span>
                       <div className="rounded-r-md border border-[var(--border)] border-l-[3px] border-l-[var(--amber-bright)] bg-[var(--surface)] p-4">
                         <p className="mb-2 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--amber-bright)]">News · {news.source}</p>
                         <a href={news.url} target="_blank" rel="noreferrer" className="mb-3 block text-sm font-semibold text-[var(--text)] hover:text-[var(--amber-bright)]">
@@ -1484,7 +1536,7 @@ export default function MarketPage() {
                   const up = event.delta >= 0;
                   return (
                     <div key={item.id} className="relative pb-4">
-                      <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--red-dim)] bg-[var(--red-glow)] text-[0.48rem]">◆</span>
+                      <span aria-hidden="true" className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--red-dim)] bg-[var(--red-glow)] text-[0.48rem]">◆</span>
                       <div className="flex items-center justify-between gap-3 rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2">
                         <p className="font-mono text-[0.68rem] text-[var(--text-dim)]">
                           <strong className="text-[var(--red)]">{Math.round(Math.abs(event.delta) * 100)}% move</strong> — YES from {Math.round((event.before || 0) * 100)}% to {Math.round((event.after || 0) * 100)}%
@@ -1502,7 +1554,7 @@ export default function MarketPage() {
                 const replies = (repliesByParent[comment.id] || []).sort((a, b) => safeDate(a.timestamp || a.createdAt) - safeDate(b.timestamp || b.createdAt));
                 return (
                   <div key={item.id} className="relative pb-4">
-                    <span className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--bg)] text-[0.5rem]">💬</span>
+                    <span aria-hidden="true" className="absolute -left-[34px] top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--bg)] text-[0.5rem]">💬</span>
                     {renderCommentCard(comment)}
                     {replies.map((reply) => (
                       <div key={reply.id}>{renderCommentCard(reply, true)}</div>
@@ -1523,10 +1575,12 @@ export default function MarketPage() {
                     {getInitials(currentDisplayName)}
                   </div>
                   <textarea
+                    aria-label="Comment text"
                     inputMode="text"
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     placeholder="What's your take? Your position shows automatically."
+                    autoComplete="off"
                     maxLength={400}
                     className="min-h-[80px] flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[16px] text-[var(--text)]"
                   />
@@ -1540,7 +1594,7 @@ export default function MarketPage() {
                     disabled={!newComment.trim() || postingComment}
                     className="rounded bg-[var(--red)] px-4 py-2 font-mono text-[0.65rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)]"
                   >
-                    {postingComment ? 'Posting...' : 'Post →'}
+                    {postingComment ? 'Posting…' : 'Post →'}
                   </button>
                 </div>
               </>
@@ -1563,37 +1617,37 @@ export default function MarketPage() {
           </div>
 
           <section>
-            <p className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+            <h2 className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              <span aria-hidden="true" className="inline-block h-px w-3 bg-[var(--red)]" />
               Whale Watch
-            </p>
+            </h2>
             <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
               {topBettors.length === 0 ? (
                 <p className="px-4 py-3 text-xs text-[var(--text-dim)]">No bettors yet.</p>
               ) : topBettors.map((bettor, idx) => (
                 <div key={`${bettor.userId}-${idx}`} className="grid grid-cols-[20px_1fr_auto_auto] items-center gap-2 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--surface2)]">
                   <span className={`text-center font-mono text-[0.6rem] ${idx === 0 ? 'text-[var(--amber-bright)]' : 'text-[var(--text-muted)]'}`}>{idx + 1}</span>
-                  <span className="text-sm text-[var(--text)]">{bettor.name}</span>
+                  <span className="truncate text-sm text-[var(--text)]">{bettor.name}</span>
                   <span className={`rounded px-1.5 py-0.5 font-mono text-[0.56rem] font-bold ${bettor.dominantSide === 'YES' ? 'bg-[rgba(22,163,74,.1)] text-[var(--green-bright)]' : 'bg-[var(--red-glow)] text-[var(--red)]'}`}>
                     {bettor.dominantSide}
                   </span>
-                  <span className="text-right font-mono text-[0.72rem] font-bold text-[var(--amber-bright)]">${bettor.invested.toFixed(2)}</span>
+                  <span className="text-right font-mono text-[0.72rem] font-bold tabular-nums text-[var(--amber-bright)]">${bettor.invested.toFixed(2)}</span>
                 </div>
               ))}
             </div>
           </section>
 
           <section>
-            <p className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+            <h2 className="mb-3 flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              <span aria-hidden="true" className="inline-block h-px w-3 bg-[var(--red)]" />
               Related Markets
-            </p>
+            </h2>
             <div className="space-y-2">
               {relatedMarkets.length === 0 ? (
                 <p className="text-xs text-[var(--text-dim)]">No related markets.</p>
               ) : relatedMarkets.map((entry) => (
                 <Link key={entry.id} href={`/market/${entry.id}`} className="flex items-center justify-between rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-3 hover:border-[var(--border2)] hover:bg-[var(--surface2)]">
-                  <span className="mr-3 text-sm leading-5 text-[var(--text-dim)]">{entry.question}</span>
+                  <span className="mr-3 min-w-0 line-clamp-2 text-sm leading-5 text-[var(--text-dim)]">{entry.question}</span>
                   <span className="whitespace-nowrap font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">{Math.round((entry.probability || 0) * 100)}%</span>
                 </Link>
               ))}
@@ -1603,9 +1657,19 @@ export default function MarketPage() {
       </div>
 
       {showSellModal && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 p-0 md:p-4">
-          <div className="bg-[var(--surface)] rounded-t-xl md:rounded-xl p-6 max-w-md w-full shadow-xl border border-[var(--border)]" style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))' }}>
-            <h2 className="text-2xl font-bold mb-4 text-[var(--text)]">Sell {sellSide} Shares</h2>
+        <div
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 p-0 md:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sell-modal-title"
+          onClick={() => { if (!selling) { setShowSellModal(false); setSellAmount(''); setSellPreview(null); } }}
+        >
+          <div
+            className="bg-[var(--surface)] rounded-t-xl md:rounded-xl p-6 max-w-md w-full shadow-xl border border-[var(--border)]"
+            style={{ paddingBottom: 'calc(1.5rem + var(--safe-bottom))', overscrollBehavior: 'contain' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="sell-modal-title" className="text-2xl font-bold mb-4 text-[var(--text)]">Sell {sellSide} Shares</h2>
 
             <div className="bg-[var(--surface2)] rounded-lg p-4 mb-4">
               <div className="flex justify-between text-sm mb-1">
@@ -1619,13 +1683,16 @@ export default function MarketPage() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-[var(--text-dim)] mb-2">Shares to Sell</label>
+              <label htmlFor="sell-shares-input" className="block text-sm font-medium text-[var(--text-dim)] mb-2">Shares to Sell</label>
               <div className="flex gap-2">
                 <input
+                  id="sell-shares-input"
                   type="number"
+                  inputMode="decimal"
+                  autoComplete="off"
                   value={sellAmount}
                   onChange={(e) => setSellAmount(e.target.value)}
-                  placeholder="Enter amount"
+                  placeholder="0.00…"
                   className="flex-1 rounded-lg border border-[var(--border2)] bg-[var(--surface2)] px-4 py-2 text-[var(--text)]"
                   min="0.01"
                   step="0.01"
@@ -1656,7 +1723,7 @@ export default function MarketPage() {
                 disabled={!sellAmount || selling || parseFloat(sellAmount) <= 0 || !isTradeableMarket(market)}
                 className="flex-1 rounded-lg bg-[var(--red)] px-6 py-3 font-semibold text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed"
               >
-                {selling ? 'Selling...' : isLocked ? 'Market Locked' : 'Confirm'}
+                {selling ? 'Selling…' : isLocked ? 'Market Locked' : 'Confirm'}
               </button>
 
               <button

@@ -1,114 +1,147 @@
-/**
- * Oracle Score utility.
- *
- * Measures prediction accuracy across resolved markets.
- * Rewards correct predictions weighted by conviction (shares held)
- * and how contrarian the user was at entry (bought when crowd disagreed).
- */
+function toMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.seconds === 'number') {
+    const nanos = Number(value.nanoseconds || 0);
+    return (value.seconds * 1000) + Math.floor(nanos / 1e6);
+  }
+  const parsed = new Date(value);
+  const ts = parsed.getTime();
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
+function clamp01(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num < 0) return 0;
+  if (num > 1) return 1;
+  return num;
+}
+
+function getBetSortTime(bet) {
+  return toMillis(bet?.createdAt || bet?.timestamp);
+}
+
+function normalizeType(value) {
+  return value === 'SELL' ? 'SELL' : 'BUY';
+}
+
+function normalizeSide(value) {
+  return value === 'NO' ? 'NO' : 'YES';
+}
+
+function outcomeFromResolution(resolution) {
+  if (resolution === 'YES') return 1;
+  if (resolution === 'NO') return 0;
+  return null;
+}
+
+function toDisplayOracleScore(rawBrierAvg) {
+  const rescaled = ((rawBrierAvg - 0.75) / 0.25) * 100;
+  if (rescaled < 0) return 0;
+  if (rescaled > 100) return 100;
+  return rescaled;
+}
 
 /**
- * Calculate a single user's Oracle Score contribution from one resolved market.
+ * Calculate contribution from a single market.
  *
  * @param {Object} params
- * @param {Array}  params.userBets  - All bets by this user on this market (not refunded)
- * @param {'YES'|'NO'} params.resolution - How the market resolved
- * @returns {{ contribution: number, sharesOnCorrectSide: number, avgEntryPrice: number } | null}
- *   null if user had no qualifying position on the correct side
+ * @param {Array} params.userBets
+ * @param {'YES'|'NO'} params.resolution
+ * @returns {{ brierScore: number, impliedProbability: number, lastActionType: string } | null}
  */
 export function calculateMarketContribution({ userBets, resolution }) {
-  if (!resolution || (resolution !== 'YES' && resolution !== 'NO')) return null;
+  const outcome = outcomeFromResolution(resolution);
+  if (outcome == null) return null;
   if (!Array.isArray(userBets) || userBets.length === 0) return null;
 
-  const winningSide = resolution;
+  const nonRefunded = userBets.filter((bet) => bet && bet.refunded !== true);
+  if (nonRefunded.length === 0) return null;
 
-  // BUYs on the winning side (exclude refunded)
-  const winningBuys = userBets.filter(
-    (bet) => bet.refunded !== true && bet.type !== 'SELL' && bet.side === winningSide
-  );
+  const sorted = [...nonRefunded].sort((a, b) => getBetSortTime(b) - getBetSortTime(a));
+  const lastAction = sorted[0];
+  if (!lastAction) return null;
 
-  // SELLs on the winning side (exclude refunded)
-  const winningSells = userBets.filter(
-    (bet) => bet.refunded !== true && bet.type === 'SELL' && bet.side === winningSide
-  );
-
-  const buyShares = winningBuys.reduce((sum, bet) => sum + Math.abs(Number(bet.shares || 0)), 0);
-  const sellShares = winningSells.reduce((sum, bet) => sum + Math.abs(Number(bet.shares || 0)), 0);
-  const netShares = buyShares - sellShares;
-
-  if (netShares <= 0) return null;
-
-  // Weighted average entry price = sum(price_i * shares_i) / sum(shares_i)
-  // where price_i = abs(amount) / shares  (effective cost per share paid)
-  let totalWeightedPrice = 0;
-  let totalBuyShares = 0;
-
-  for (const bet of winningBuys) {
+  // Only score users who held a net position at resolution (fully exited positions don't count).
+  let netYesShares = 0;
+  let netNoShares = 0;
+  for (const bet of nonRefunded) {
+    const betType = normalizeType(bet.type);
+    const betSide = normalizeSide(bet.side);
     const shares = Math.abs(Number(bet.shares || 0));
-    const amount = Math.abs(Number(bet.amount || 0));
-    if (shares <= 0) continue;
-    const entryPrice = amount / shares;
-    totalWeightedPrice += entryPrice * shares;
-    totalBuyShares += shares;
+    if (betSide === 'YES') {
+      netYesShares += betType === 'BUY' ? shares : -shares;
+    } else {
+      netNoShares += betType === 'BUY' ? shares : -shares;
+    }
   }
+  if (Math.max(0, netYesShares) <= 0.001 && Math.max(0, netNoShares) <= 0.001) return null;
 
-  if (totalBuyShares === 0) return null;
+  const side = normalizeSide(lastAction.side);
+  const type = normalizeType(lastAction.type);
+  const impliedProbability = clamp01(lastAction.marketProbabilityAtBet ?? lastAction.probability);
+  if (impliedProbability == null) return null;
 
-  const avgEntryPrice = totalWeightedPrice / totalBuyShares;
-
-  // Contrarian bonus: how far from certainty was the market when the user entered?
-  // Buying at 20% on a YES that resolves YES = bonus of 0.80. Same formula for NO side.
-  const contrarianBonus = 1 - avgEntryPrice;
-  if (contrarianBonus <= 0) return null;
-
-  const contribution = netShares * contrarianBonus;
+  const error = outcome - impliedProbability;
+  const brierScore = 1 - (error * error);
 
   return {
-    contribution,
-    sharesOnCorrectSide: netShares,
-    avgEntryPrice
+    brierScore,
+    impliedProbability,
+    lastActionType: `${type}_${side}`
   };
 }
 
 /**
- * Calculate Oracle Score for a user across multiple resolved markets.
+ * Calculate full Oracle Score across markets.
  *
  * @param {Object} params
- * @param {Array}  params.bets        - All bets by this user (refunded bets are skipped internally)
- * @param {Object} params.marketsById - Map of marketId -> market doc (only resolved, non-cancelled)
- * @returns {{ oracleScore: number, marketsScored: number, details: Array }}
+ * @param {Array} params.bets
+ * @param {Object} params.marketsById
+ * @returns {{ oracleScore: number, rawBrierAvg: number, marketsScored: number, details: Array }}
  */
 export function calculateUserOracleScore({ bets, marketsById }) {
-  // Group non-refunded bets by marketId
-  const betsByMarket = {};
-  for (const bet of bets) {
-    if (bet.refunded === true) continue;
-    const { marketId } = bet;
-    if (!marketId) continue;
-    if (!betsByMarket[marketId]) betsByMarket[marketId] = [];
-    betsByMarket[marketId].push(bet);
+  if (!Array.isArray(bets) || bets.length === 0) {
+    return { oracleScore: 0, rawBrierAvg: 0, marketsScored: 0, details: [] };
   }
 
-  let oracleScore = 0;
+  const betsByMarket = {};
+  for (const bet of bets) {
+    if (!bet?.marketId) continue;
+    if (!betsByMarket[bet.marketId]) betsByMarket[bet.marketId] = [];
+    betsByMarket[bet.marketId].push(bet);
+  }
+
+  let rawBrierSum = 0;
   let marketsScored = 0;
   const details = [];
 
-  for (const [marketId, marketBets] of Object.entries(betsByMarket)) {
-    const market = marketsById[marketId];
+  for (const [marketId, userBets] of Object.entries(betsByMarket)) {
+    const market = marketsById?.[marketId];
     if (!market) continue;
-
-    // Only resolved (YES/NO), non-cancelled markets contribute
-    const resolution = market.resolution;
-    if (resolution !== 'YES' && resolution !== 'NO') continue;
     if (market.status === 'CANCELLED') continue;
 
-    const result = calculateMarketContribution({ userBets: marketBets, resolution });
+    const resolution = market.resolution;
+    const contribution = calculateMarketContribution({ userBets, resolution });
+    if (!contribution) continue;
 
-    if (result && result.contribution > 0) {
-      oracleScore += result.contribution;
-      marketsScored++;
-      details.push({ marketId, ...result });
-    }
+    rawBrierSum += contribution.brierScore;
+    marketsScored += 1;
+    details.push({
+      marketId,
+      brierScore: contribution.brierScore,
+      impliedProbability: contribution.impliedProbability,
+      resolution,
+      lastActionType: contribution.lastActionType
+    });
   }
 
-  return { oracleScore, marketsScored, details };
+  if (marketsScored === 0) {
+    return { oracleScore: 0, rawBrierAvg: 0, marketsScored: 0, details: [] };
+  }
+
+  const rawBrierAvg = rawBrierSum / marketsScored;
+  const oracleScore = toDisplayOracleScore(rawBrierAvg);
+  return { oracleScore, rawBrierAvg, marketsScored, details };
 }

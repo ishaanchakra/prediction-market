@@ -40,9 +40,9 @@ describe('leaderboard redesign - source code checks', () => {
     expect(youBadgeMatches.length).toBeGreaterThanOrEqual(3);
   });
 
-  test('oracle tab uses blue accent color', () => {
+  test('oracle tab uses amber accent color', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toContain('--blue-bright');
+    expect(source).toContain('--amber-bright');
   });
 
   test('blue-bright CSS variable is defined in globals.css', () => {
@@ -73,8 +73,8 @@ describe('leaderboard redesign - source code checks', () => {
 
   test('tab bar renders three buttons with dot indicators', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toContain('This Week');
-    expect(source).toContain('All-Time Balance');
+    expect(source).toContain('Weekly PnL');
+    expect(source).toContain('All-Time PnL');
     expect(source).toContain('Oracle Score');
   });
 

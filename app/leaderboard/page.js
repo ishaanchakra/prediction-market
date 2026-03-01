@@ -109,6 +109,14 @@ function rankColorClass(index) {
   return 'text-[var(--text-muted)]';
 }
 
+function initialsForName(name) {
+  const safe = String(name || '').trim();
+  if (!safe) return 'PC';
+  const parts = safe.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
 function pctReturn(user) {
   const baseline = Number(user.weeklyStartingBalance || 1000);
   if (baseline === 0) return '0.0';
@@ -172,7 +180,7 @@ export default function LeaderboardPage() {
   const [viewer, setViewer] = useState(null);
   const [openMarketsCount, setOpenMarketsCount] = useState(0);
   const [totalTraded, setTotalTraded] = useState(0);
-  const [activeTab, setActiveTab] = useState('weekly');
+  const [activeTab, setActiveTab] = useState('oracle');
   const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
   const lifetimeUsers = useMemo(
@@ -182,7 +190,7 @@ export default function LeaderboardPage() {
   const oracleUsers = useMemo(
     () =>
       [...users]
-        .filter((u) => Number(u.oracleScore || 0) > 0)
+        .filter((u) => Number(u.oracleMarketsScored || 0) >= 1)
         .sort((a, b) => Number(b.oracleScore || 0) - Number(a.oracleScore || 0))
         .slice(0, 50),
     [users]
@@ -204,7 +212,6 @@ export default function LeaderboardPage() {
 
   const meWeekly = useMemo(() => weeklyUsers.find((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
   const meWeeklyRank = useMemo(() => weeklyUsers.findIndex((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
-  const topWeekly = weeklyUsers[0];
   const activeTradersCount = useMemo(
     () => weeklyRows.filter((row) => Math.abs(Number(row.weeklyNet || 0)) > 0.001).length,
     [weeklyRows]
@@ -222,11 +229,6 @@ export default function LeaderboardPage() {
     () => Math.max(...allTimeUsers.map((u) => Number(u.portfolioValue || 0)), 1),
     [allTimeUsers]
   );
-  const maxOracleScore = useMemo(
-    () => Math.max(...oracleUsers.map((u) => Number(u.oracleScore || 0)), 1),
-    [oracleUsers]
-  );
-
   const myRankData = useMemo(() => {
     if (!viewer?.uid) return null;
 
@@ -263,7 +265,7 @@ export default function LeaderboardPage() {
         displayName: getPublicDisplayName(row),
         metric: row.oracleScore,
         metricLabel: `${Number(row.oracleScore || 0).toFixed(1)} pts`,
-        sub: 'oracle score'
+        sub: `${Number(row.oracleMarketsScored || 0)} markets scored`
       };
     }
 
@@ -279,7 +281,7 @@ export default function LeaderboardPage() {
   const rankMetricColorClass = activeTab === 'alltime'
     ? 'text-[var(--amber-bright)]'
     : activeTab === 'oracle'
-      ? 'text-[var(--blue-bright)]'
+      ? 'text-[var(--amber-bright)]'
       : (Number(myRankData?.metric || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]');
 
   useEffect(() => {
@@ -350,8 +352,6 @@ export default function LeaderboardPage() {
   }
 
   const currentWeekNumber = getWeekNumber();
-  const topLifetime = lifetimeUsers[0];
-  const topOracle = oracleUsers[0];
 
   return (
     <div className="min-h-screen bg-[var(--bg)] px-4 py-10 sm:px-5">
@@ -398,9 +398,9 @@ export default function LeaderboardPage() {
 
         <div className="mb-0 flex items-center border-b border-[var(--border)]">
           {[
-            { id: 'weekly', label: 'This Week', dotColor: 'var(--green-bright)' },
-            { id: 'alltime', label: 'All-Time Balance', dotColor: 'var(--amber-bright)' },
-            { id: 'oracle', label: 'Oracle Score', dotColor: 'var(--blue-bright)' }
+            { id: 'oracle', label: 'Oracle Score', dotColor: 'var(--amber-bright)' },
+            { id: 'weekly', label: 'Weekly PnL', dotColor: 'var(--green-bright)' },
+            { id: 'alltime', label: 'All-Time PnL', dotColor: 'var(--amber-bright)' }
           ].map(({ id, label, dotColor }) => (
             <button
               key={id}
@@ -431,7 +431,7 @@ export default function LeaderboardPage() {
             )}
             {activeTab === 'alltime' && (
               <>
-                <strong className="text-[var(--text-dim)]">All-Time Balance</strong>
+                <strong className="text-[var(--text-dim)]">All-Time PnL</strong>
                 {' '}— cumulative wealth since joining. Early users have a head start; use for personal context.
                 <FormulaTooltip formula="Portfolio Value = Cash on hand + (YES shares × current prob) + (NO shares × (1 − current prob))" />
               </>
@@ -439,8 +439,8 @@ export default function LeaderboardPage() {
             {activeTab === 'oracle' && (
               <>
                 <strong className="text-[var(--text-dim)]">Oracle Score</strong>
-                {' '}— forecasting accuracy across all resolved markets. Updates on resolution, not trading.
-                <FormulaTooltip formula="Oracle Score = Σ net shares × (1 − avg entry price) on winning side, per resolved market" />
+                {' '}— calibration quality across resolved markets, scored from your last market action before resolution.
+                <FormulaTooltip formula="How well-calibrated your predictions are. Your final position before each market resolves is scored against the actual outcome — the closer you were, the higher your score. Averaged across all resolved markets. Scale: 0–100." />
               </>
             )}
           </div>
@@ -610,22 +610,22 @@ export default function LeaderboardPage() {
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--surface2)] font-mono text-[0.52rem] font-bold text-[var(--text-dim)]">
+                          {initialsForName(getPublicDisplayName(user))}
+                        </span>
                         <span className="text-sm font-semibold text-[var(--text)]">
                           {getPublicDisplayName(user)}
                         </span>
                         {viewer?.uid === user.id && <YouBadge />}
                       </div>
-                      {/* TODO: surface resolved market count per user once oracleMarketsCount is stored on user docs. */}
+                      <p className="mt-[2px] font-mono text-[0.52rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                        {Number(user.oracleMarketsScored || 0)} markets scored
+                      </p>
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--blue-bright)]">
+                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">
                         {Number(user.oracleScore || 0).toFixed(1)} pts
                       </span>
-                      <BarMini
-                        value={Number(user.oracleScore || 0)}
-                        max={maxOracleScore}
-                        colorClass="bg-[var(--blue-bright)]"
-                      />
                     </td>
                   </tr>
                 ))}

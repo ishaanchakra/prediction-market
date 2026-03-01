@@ -4,7 +4,6 @@ import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from '
 import { db, auth } from '@/lib/firebase';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
-import { calculateAllPortfolioValues } from '@/utils/portfolio';
 import MutedTrendBackground from '@/app/components/MutedTrendBackground';
 import { useRouter } from 'next/navigation';
 
@@ -276,15 +275,13 @@ export default function Home() {
           const usersSnapshot = await getDocs(usersQuery);
           const users = usersSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
           const me = users.find((u) => u.id === user.uid);
-          const ranked = calculateAllPortfolioValues({
-            users,
-            bets: allBetDocs,
-            openMarkets: active
-          }).sort((a, b) => b.portfolioValue - a.portfolioValue);
-          const rankIdx = ranked.findIndex((u) => u.id === user.uid);
+          const oracleRanked = users
+            .filter((u) => Number(u.oracleMarketsScored || 0) >= 1)
+            .sort((a, b) => Number(b.oracleScore || 0) - Number(a.oracleScore || 0));
+          const oracleRankIdx = oracleRanked.findIndex((u) => u.id === user.uid);
           setStats({
             balance: Number(me?.weeklyRep || 1042.5),
-            rank: rankIdx >= 0 ? `#${rankIdx + 1}` : '#3',
+            rank: oracleRankIdx >= 0 ? `#${oracleRankIdx + 1}` : '—',
             totalTraded: Math.round(totalTraded || 28440)
           });
         } else {
@@ -351,7 +348,7 @@ export default function Home() {
               <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--border)]">
                 <HeroStat label="Active Markets" value={displayStats.activeMarkets} tone="red" settled={displayStats.settled} />
                 <HeroStat label="Your Balance" value={displayStats.balance} tone="amber" settled={displayStats.settled} />
-                <HeroStat label="Your Rank" value={displayStats.rank} tone="green" settled={displayStats.settled} />
+                <HeroStat label="Your Oracle Rank" value={displayStats.rank} tone="green" settled={displayStats.settled} />
                 <HeroStat label="Total Traded" value={displayStats.totalTraded} tone="dim" settled={displayStats.settled} />
               </div>
             </div>

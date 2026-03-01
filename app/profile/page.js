@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
+import { signOut } from 'firebase/auth';
 import {
   doc,
   getDoc,
@@ -365,14 +366,14 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {Number(user.oracleScore || 0) > 0 && (
+        {(Number(user.oracleMarketsScored || 0) > 0 || Number(user.oracleScore || 0) > 0) && (
           <div className="mb-6 flex items-center gap-3 rounded-[8px] border border-[rgba(217,119,6,.2)] bg-[rgba(217,119,6,.06)] px-5 py-4">
             <span className="text-lg">🔮</span>
             <div>
               <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Oracle Score</p>
               <p className="font-mono text-[1.1rem] font-bold text-[var(--amber-bright)]">{Number(user.oracleScore).toFixed(1)} pts</p>
             </div>
-            <p className="ml-auto font-mono text-[0.6rem] text-[var(--text-dim)]">Prediction accuracy · all-time</p>
+            <p className="ml-auto font-mono text-[0.6rem] text-[var(--text-dim)]">Forecast calibration · semester-long</p>
           </div>
         )}
 
@@ -382,6 +383,22 @@ export default function ProfilePage() {
           bets={bets}
           isOwnProfile
         />
+
+        <div className="mt-10 border-t border-[var(--border)] pt-6 md:hidden">
+          <button
+            onClick={async () => {
+              try {
+                await signOut(auth);
+                router.push('/login');
+              } catch (error) {
+                console.error('Error signing out:', error);
+              }
+            }}
+            className="rounded border border-[var(--border2)] px-4 py-2 font-mono text-[0.6rem] uppercase tracking-[0.06em] text-[var(--text-muted)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     </div>
   );

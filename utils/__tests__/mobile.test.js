@@ -155,17 +155,17 @@ describe('Navigation mobile UX (components/Navigation.js)', () => {
     source = fs.readFileSync(navPath, 'utf8');
   });
 
-  test('has mobile menu toggle state', () => {
-    // Should have some boolean state for open/close
-    expect(source).toMatch(/menuOpen|isOpen|mobileMenu|showMenu/);
+  test('uses bottom tab navigation on mobile', () => {
+    expect(source).toMatch(/bottomTabs/);
+    expect(source).toMatch(/md:hidden fixed bottom-0/);
   });
 
   test('uses usePathname to close menu on route change', () => {
     expect(source).toMatch(/usePathname/);
   });
 
-  test('nav accounts for safe-area-inset-top', () => {
-    expect(source).toMatch(/safe-top|safe-area-inset-top/);
+  test('nav accounts for safe-area-inset-bottom', () => {
+    expect(source).toMatch(/safe-bottom|safe-area-inset-bottom/);
   });
 });
 

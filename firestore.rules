@@ -157,6 +157,8 @@ service cloud.firestore {
       allow update: if (
         isAdmin()
         || (hasAllowedEmail() && request.auth.uid == resource.data.userId)
+        || (hasAllowedEmail()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']))
       )
         && request.resource.data.userId == resource.data.userId
         && canReadMarketplaceScoped(resource.data.marketplaceId)

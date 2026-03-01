@@ -68,6 +68,8 @@ export default function LoginPage() {
             weeklyStartingBalance: 1000,
             lifetimeRep: 0,
             oracleScore: 0,
+            oracleMarketsScored: 0,
+            oracleRawBrierSum: 0,
             quickTakesUsedToday: 0,
             quickTakeLastDate: null,
             quickTakeStreak: 0,
@@ -89,6 +91,9 @@ export default function LoginPage() {
         if (!Number.isFinite(Number(current.weeklyRep))) patch.weeklyRep = 1000;
         if (!Number.isFinite(Number(current.weeklyStartingBalance))) patch.weeklyStartingBalance = 1000;
         if (!Number.isFinite(Number(current.lifetimeRep))) patch.lifetimeRep = 0;
+        if (!Number.isFinite(Number(current.oracleScore))) patch.oracleScore = 0;
+        if (!Number.isFinite(Number(current.oracleMarketsScored))) patch.oracleMarketsScored = 0;
+        if (!Number.isFinite(Number(current.oracleRawBrierSum))) patch.oracleRawBrierSum = 0;
         if (!current.displayName || !current.displayNameNormalized) {
           patch.displayName = current.displayName || defaultDisplayName;
           patch.displayNameNormalized = normalizeDisplayName(patch.displayName);

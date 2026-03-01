@@ -1,11 +1,9 @@
 // scripts/backfill-oracle-scores.js
-// One-time script to compute and store Oracle Scores for all users
-// based on historically resolved markets.
+// Recompute Oracle Score using Brier calibration logic.
 //
-// Run with: node scripts/backfill-oracle-scores.js [--dry-run]
-//
-// This script is IDEMPOTENT — it overwrites (not increments) oracleScore,
-// so it can be safely re-run.
+// Run with:
+//   node scripts/backfill-oracle-scores.js
+//   node scripts/backfill-oracle-scores.js --dry-run
 
 const admin = require('firebase-admin');
 
@@ -16,55 +14,7 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
-
 const isDryRun = process.argv.includes('--dry-run');
-
-// ─── Oracle Score logic (mirrors utils/oracleScore.js) ────────────────────────
-
-function calculateMarketContribution({ userBets, resolution }) {
-  if (!resolution || (resolution !== 'YES' && resolution !== 'NO')) return null;
-  if (!Array.isArray(userBets) || userBets.length === 0) return null;
-
-  const winningSide = resolution;
-
-  const winningBuys = userBets.filter(
-    (bet) => bet.refunded !== true && bet.type !== 'SELL' && bet.side === winningSide
-  );
-  const winningSells = userBets.filter(
-    (bet) => bet.refunded !== true && bet.type === 'SELL' && bet.side === winningSide
-  );
-
-  const buyShares = winningBuys.reduce((sum, bet) => sum + Math.abs(Number(bet.shares || 0)), 0);
-  const sellShares = winningSells.reduce((sum, bet) => sum + Math.abs(Number(bet.shares || 0)), 0);
-  const netShares = buyShares - sellShares;
-
-  if (netShares <= 0) return null;
-
-  let totalWeightedPrice = 0;
-  let totalBuyShares = 0;
-  for (const bet of winningBuys) {
-    const shares = Math.abs(Number(bet.shares || 0));
-    const amount = Math.abs(Number(bet.amount || 0));
-    if (shares <= 0) continue;
-    const entryPrice = amount / shares;
-    totalWeightedPrice += entryPrice * shares;
-    totalBuyShares += shares;
-  }
-
-  if (totalBuyShares === 0) return null;
-
-  const avgEntryPrice = totalWeightedPrice / totalBuyShares;
-  const contrarianBonus = 1 - avgEntryPrice;
-  if (contrarianBonus <= 0) return null;
-
-  return {
-    contribution: netShares * contrarianBonus,
-    sharesOnCorrectSide: netShares,
-    avgEntryPrice
-  };
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function chunkArray(items, size) {
   const chunks = [];
@@ -74,8 +24,91 @@ function chunkArray(items, size) {
   return chunks;
 }
 
-async function commitBatch(ops) {
-  const chunks = chunkArray(ops, 400);
+function toMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.seconds === 'number') {
+    const nanos = Number(value.nanoseconds || 0);
+    return (value.seconds * 1000) + Math.floor(nanos / 1e6);
+  }
+  const parsed = new Date(value);
+  const ts = parsed.getTime();
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
+function clamp01(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num < 0) return 0;
+  if (num > 1) return 1;
+  return num;
+}
+
+function normalizeType(value) {
+  return value === 'SELL' ? 'SELL' : 'BUY';
+}
+
+function normalizeSide(value) {
+  return value === 'NO' ? 'NO' : 'YES';
+}
+
+function outcomeFromResolution(resolution) {
+  if (resolution === 'YES') return 1;
+  if (resolution === 'NO') return 0;
+  return null;
+}
+
+function toDisplayOracleScore(rawBrierAvg) {
+  const rescaled = ((rawBrierAvg - 0.75) / 0.25) * 100;
+  if (rescaled < 0) return 0;
+  if (rescaled > 100) return 100;
+  return rescaled;
+}
+
+function calculateMarketContribution({ userBets, resolution }) {
+  const outcome = outcomeFromResolution(resolution);
+  if (outcome == null) return null;
+  if (!Array.isArray(userBets) || userBets.length === 0) return null;
+
+  const nonRefunded = userBets.filter((bet) => bet && bet.refunded !== true);
+  if (nonRefunded.length === 0) return null;
+
+  const sorted = [...nonRefunded].sort(
+    (a, b) => toMillis(b.createdAt || b.timestamp) - toMillis(a.createdAt || a.timestamp)
+  );
+  const lastAction = sorted[0];
+  if (!lastAction) return null;
+
+  // Only score users who held a net position at resolution (fully exited positions don't count).
+  let netYesShares = 0;
+  let netNoShares = 0;
+  for (const bet of nonRefunded) {
+    const betType = normalizeType(bet.type);
+    const betSide = normalizeSide(bet.side);
+    const shares = Math.abs(Number(bet.shares || 0));
+    if (betSide === 'YES') {
+      netYesShares += betType === 'BUY' ? shares : -shares;
+    } else {
+      netNoShares += betType === 'BUY' ? shares : -shares;
+    }
+  }
+  if (Math.max(0, netYesShares) <= 0.001 && Math.max(0, netNoShares) <= 0.001) return null;
+
+  const impliedProbability = clamp01(lastAction.marketProbabilityAtBet ?? lastAction.probability);
+  if (impliedProbability == null) return null;
+
+  const error = outcome - impliedProbability;
+  const brierScore = 1 - (error * error);
+
+  return {
+    brierScore,
+    impliedProbability,
+    lastActionType: `${normalizeType(lastAction.type)}_${normalizeSide(lastAction.side)}`
+  };
+}
+
+async function commitBatch(writeOps) {
+  const chunks = chunkArray(writeOps, 400);
   for (const chunk of chunks) {
     const batch = db.batch();
     for (const { ref, data } of chunk) {
@@ -85,39 +118,34 @@ async function commitBatch(ops) {
   }
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 async function backfillOracleScores() {
-  console.log(`🔮 Oracle Score backfill${isDryRun ? ' (DRY RUN)' : ''}...\n`);
+  console.log(`\\n🔮 Oracle Score Brier backfill${isDryRun ? ' (DRY RUN)' : ''}\\n`);
 
-  // 1. Fetch all resolved markets (YES or NO), exclude CANCELLED
-  console.log('Fetching resolved markets...');
+  console.log('1) Fetching resolved global markets...');
   const [yesSnap, noSnap] = await Promise.all([
     db.collection('markets').where('resolution', '==', 'YES').get(),
     db.collection('markets').where('resolution', '==', 'NO').get()
   ]);
 
   const resolvedMarkets = [
-    ...yesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    ...noSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
-  ].filter((m) => m.status !== 'CANCELLED' && !m.marketplaceId);
-
-  console.log(`  Found ${resolvedMarkets.length} resolved global markets.\n`);
+    ...yesSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })),
+    ...noSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+  ].filter((market) => !market.marketplaceId && market.status !== 'CANCELLED');
 
   if (resolvedMarkets.length === 0) {
-    console.log('No resolved markets found. Nothing to backfill.');
+    console.log('No resolved global YES/NO markets found. Nothing to do.');
     return;
   }
 
-  // 2. Build marketsById
-  const marketsById = Object.fromEntries(resolvedMarkets.map((m) => [m.id, m]));
-  const resolvedMarketIds = resolvedMarkets.map((m) => m.id);
+  console.log(`   Found ${resolvedMarkets.length} resolved global markets.`);
 
-  // 3. Fetch all non-refunded bets for resolved markets (in chunks of 10 for 'in' queries)
-  console.log('Fetching bets for resolved markets...');
-  const idChunks = chunkArray(resolvedMarketIds, 10);
-  const betSnapshots = await Promise.all(
-    idChunks.map((chunk) =>
+  const resolvedMarketIds = resolvedMarkets.map((market) => market.id);
+  const marketsById = Object.fromEntries(resolvedMarkets.map((market) => [market.id, market]));
+
+  console.log('2) Fetching bets for those markets (client-side filtering for marketProbabilityAtBet)...');
+  const marketChunks = chunkArray(resolvedMarketIds, 10);
+  const betSnaps = await Promise.all(
+    marketChunks.map((chunk) =>
       db.collection('bets')
         .where('marketId', 'in', chunk)
         .where('marketplaceId', '==', null)
@@ -125,13 +153,16 @@ async function backfillOracleScores() {
     )
   );
 
-  const allBets = betSnapshots.flatMap((snap) =>
-    snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-  ).filter((bet) => bet.refunded !== true);
+  const allBets = betSnaps.flatMap((snapshot) =>
+    snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+  );
 
-  console.log(`  Found ${allBets.length} qualifying bets.\n`);
+  const betsWithProbability = allBets.filter((bet) => Number.isFinite(Number(bet.marketProbabilityAtBet)));
 
-  // 4. Group bets by userId, then by marketId
+  console.log(`   Loaded ${allBets.length} total global bets on resolved markets.`);
+  console.log(`   ${betsWithProbability.length} bets include marketProbabilityAtBet.`);
+
+  console.log('3) Grouping bets by user and market...');
   const betsByUserByMarket = {};
   for (const bet of allBets) {
     if (!bet.userId || !bet.marketId) continue;
@@ -140,75 +171,86 @@ async function backfillOracleScores() {
     betsByUserByMarket[bet.userId][bet.marketId].push(bet);
   }
 
-  // 5. Compute oracle score per user
-  console.log('Computing oracle scores...');
-  const oracleScoreByUser = {};
+  console.log('4) Calculating oracleRawBrierSum / oracleMarketsScored / oracleScore per user...');
+  const oracleByUser = {};
 
   for (const [userId, byMarket] of Object.entries(betsByUserByMarket)) {
-    let total = 0;
+    let rawBrierSum = 0;
+    let marketsScored = 0;
+
     for (const [marketId, userBets] of Object.entries(byMarket)) {
       const market = marketsById[marketId];
       if (!market) continue;
 
       const result = calculateMarketContribution({ userBets, resolution: market.resolution });
-      if (result && result.contribution > 0) {
-        total += result.contribution;
-      }
+      if (!result || !Number.isFinite(result.brierScore)) continue;
+
+      rawBrierSum += result.brierScore;
+      marketsScored += 1;
     }
-    if (total > 0) {
-      oracleScoreByUser[userId] = total;
-    }
+
+    const rawBrierAvg = marketsScored > 0 ? rawBrierSum / marketsScored : 0;
+    const oracleScore = marketsScored > 0 ? toDisplayOracleScore(rawBrierAvg) : 0;
+
+    oracleByUser[userId] = {
+      oracleRawBrierSum: rawBrierSum,
+      oracleMarketsScored: marketsScored,
+      oracleScore
+    };
   }
 
-  const scoredUsers = Object.keys(oracleScoreByUser);
-  console.log(`  Computed scores for ${scoredUsers.length} users.\n`);
+  const scoredUsers = Object.entries(oracleByUser)
+    .filter(([, data]) => Number(data.oracleMarketsScored || 0) > 0)
+    .sort((a, b) => Number(b[1].oracleScore || 0) - Number(a[1].oracleScore || 0));
 
-  if (scoredUsers.length === 0) {
-    console.log('No scores to write. Done.');
-    return;
+  console.log(`   Computed scores for ${scoredUsers.length} users (marketsScored >= 1).`);
+
+  if (scoredUsers.length > 0) {
+    console.log('   Top 10 by Oracle Score:');
+    scoredUsers.slice(0, 10).forEach(([userId, data], index) => {
+      console.log(
+        `   ${String(index + 1).padStart(2, '0')}. ${userId} — ${Number(data.oracleScore).toFixed(2)} pts (${data.oracleMarketsScored} markets)`
+      );
+    });
   }
-
-  // Print top 10 for review
-  const sorted = scoredUsers
-    .map((uid) => ({ uid, score: oracleScoreByUser[uid] }))
-    .sort((a, b) => b.score - a.score);
-
-  console.log('Top 10 oracle scores:');
-  sorted.slice(0, 10).forEach((entry, i) => {
-    console.log(`  ${String(i + 1).padStart(2, '0')}. ${entry.uid} — ${entry.score.toFixed(2)} pts`);
-  });
-  console.log('');
 
   if (isDryRun) {
-    console.log('DRY RUN: no writes performed.');
+    console.log('\\nDRY RUN: no writes performed.');
     return;
   }
 
-  // 6. Fetch all users to ensure refs exist, then write oracleScore
-  console.log('Writing oracle scores to user documents...');
+  console.log('5) Writing all three oracle fields to users in batch...');
+  const usersSnap = await db.collection('users').get();
 
-  // First: reset oracleScore to 0 for users NOT in scoredUsers
-  // (so re-running this script clears stale scores)
-  const allUsersSnap = await db.collection('users').get();
-  const allUserIds = allUsersSnap.docs.map((d) => d.id);
+  const writeOps = usersSnap.docs.map((userDoc) => {
+    const stats = oracleByUser[userDoc.id] || {
+      oracleRawBrierSum: 0,
+      oracleMarketsScored: 0,
+      oracleScore: 0
+    };
 
-  const writeOps = [];
-  for (const userId of allUserIds) {
-    const ref = db.collection('users').doc(userId);
-    const score = oracleScoreByUser[userId] || 0;
-    writeOps.push({ ref, data: { oracleScore: score } });
-  }
+    return {
+      ref: userDoc.ref,
+      data: {
+        oracleRawBrierSum: Number(stats.oracleRawBrierSum || 0),
+        oracleMarketsScored: Number(stats.oracleMarketsScored || 0),
+        oracleScore: Number(stats.oracleScore || 0)
+      }
+    };
+  });
 
   await commitBatch(writeOps);
-  console.log(`✅ Wrote oracleScore for ${writeOps.length} user documents (${scoredUsers.length} non-zero).`);
+
+  console.log(`✅ Updated ${writeOps.length} users.`);
+  console.log(`✅ Users with >=1 scored market: ${scoredUsers.length}.`);
 }
 
 backfillOracleScores()
   .then(() => {
-    console.log('\nDone.');
+    console.log('\\nDone.');
     process.exit(0);
   })
-  .catch((err) => {
-    console.error('Fatal error:', err);
+  .catch((error) => {
+    console.error('Fatal error:', error);
     process.exit(1);
   });

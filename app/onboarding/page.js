@@ -58,6 +58,8 @@ function defaultProfileForUser(user) {
     weeklyStartingBalance: 1000,
     lifetimeRep: 0,
     oracleScore: 0,
+    oracleMarketsScored: 0,
+    oracleRawBrierSum: 0,
     quickTakesUsedToday: 0,
     quickTakeLastDate: null,
     quickTakeStreak: 0,

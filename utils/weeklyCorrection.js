@@ -41,9 +41,9 @@ export function calculateWeeklyCorrectionRows({ users = [], resolvedMarkets = []
       resolution: market.resolution
     });
 
-    if (!result || result.contribution <= 0) return;
+    if (!result || !Number.isFinite(result.brierScore)) return;
 
-    scoreByUser.set(userId, round2((scoreByUser.get(userId) || 0) + result.contribution));
+    scoreByUser.set(userId, round2((scoreByUser.get(userId) || 0) + result.brierScore));
     marketCountByUser.set(userId, (marketCountByUser.get(userId) || 0) + 1);
   });
 

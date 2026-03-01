@@ -10,7 +10,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
@@ -820,6 +819,7 @@ export default function AdminPage() {
     try {
       const marketRef = doc(db, 'markets', marketId);
       let marketQuestion = 'Market';
+      let resolvedMarketplaceId = null;
       const resolvedAt = new Date();
       const rationale = String(auditInput.rationale || '').trim();
       const sourceUrl = String(auditInput.sourceUrl || '').trim();
@@ -833,6 +833,7 @@ export default function AdminPage() {
         }
 
         const marketData = marketSnap.data();
+        resolvedMarketplaceId = marketData.marketplaceId || null;
         const status = getMarketStatus(marketData);
         if (status === MARKET_STATUS.RESOLVED || marketData.resolution != null) {
           throw new Error('This market has already been resolved.');
@@ -962,29 +963,40 @@ export default function AdminPage() {
 
       await commitOperationChunks(operationFns);
 
-      // Update Oracle Scores for users who had positions in this market.
-      // Group non-refunded bets by userId and compute each user's contribution.
-      const oracleOps = [];
-      const betsByUser = {};
-      betsSnapshot.docs.forEach((betDoc) => {
-        const bet = betDoc.data();
-        if (!bet?.userId || bet.refunded === true) return;
-        if (!betsByUser[bet.userId]) betsByUser[bet.userId] = [];
-        betsByUser[bet.userId].push(bet);
-      });
+      // Update Oracle Score aggregates for global markets only.
+      if (!resolvedMarketplaceId) {
+        const betsByUser = {};
+        betsSnapshot.docs.forEach((betDoc) => {
+          const bet = betDoc.data();
+          if (!bet?.userId) return;
+          if (!betsByUser[bet.userId]) betsByUser[bet.userId] = [];
+          betsByUser[bet.userId].push(bet);
+        });
 
-      for (const [userId, userBets] of Object.entries(betsByUser)) {
-        const result = calculateMarketContribution({ userBets, resolution });
-        if (result && result.contribution > 0) {
+        for (const [userId, userBets] of Object.entries(betsByUser)) {
+          const result = calculateMarketContribution({ userBets, resolution });
+          if (!result || !Number.isFinite(result.brierScore)) continue;
+
           const userRef = doc(db, 'users', userId);
-          oracleOps.push((batch) => {
-            batch.update(userRef, { oracleScore: increment(result.contribution) });
+          await runTransaction(db, async (tx) => {
+            const userSnap = await tx.get(userRef);
+            if (!userSnap.exists()) return;
+
+            const userData = userSnap.data() || {};
+            const currentRawSum = Number(userData.oracleRawBrierSum || 0);
+            const currentMarketsScored = Number(userData.oracleMarketsScored || 0);
+            const nextRawSum = currentRawSum + result.brierScore;
+            const nextMarketsScored = currentMarketsScored + 1;
+            const nextRawAvg = nextRawSum / Math.max(1, nextMarketsScored);
+            const nextOracleScore = Math.max(0, Math.min(100, ((nextRawAvg - 0.75) / 0.25) * 100));
+
+            tx.update(userRef, {
+              oracleRawBrierSum: nextRawSum,
+              oracleMarketsScored: nextMarketsScored,
+              oracleScore: nextOracleScore
+            });
           });
         }
-      }
-
-      if (oracleOps.length > 0) {
-        await commitOperationChunks(oracleOps);
       }
 
       setResolutionNotesByMarket((prev) => ({ ...prev, [marketId]: '' }));
@@ -1829,10 +1841,10 @@ export default function AdminPage() {
       <button
         key={section}
         onClick={() => setActiveSection(section)}
-        className={`w-full border-l-2 px-4 py-2 text-left font-mono text-[0.65rem] uppercase tracking-[0.06em] transition-colors ${
+        className={`rounded-[4px] border px-3 py-2 text-left font-mono text-[0.65rem] uppercase tracking-[0.06em] transition-colors ${
           isActive
-            ? 'border-[var(--red)] text-[var(--text)]'
-            : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+            ? 'border-[rgba(220,38,38,0.35)] bg-[var(--red-glow)] text-[var(--text)]'
+            : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text-dim)]'
         }`}
       >
         {section}
@@ -3066,23 +3078,27 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <aside className="w-full border-b border-[var(--border)] bg-[var(--bg)] px-4 py-4 md:fixed md:left-0 md:top-14 md:h-[calc(100vh-56px)] md:w-[220px] md:border-b-0 md:border-r md:py-6">
-        <p className="mb-2 flex items-center gap-2 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-          <span className="inline-block h-px w-3 bg-[var(--red)]" />
-          Admin
-        </p>
-        <p className="mb-6 text-xl italic text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
-          Predict <span className="text-[var(--red)]">Cornell</span>
-        </p>
+      <aside className="sticky top-0 z-30 w-full border-b border-[var(--border)] bg-[rgba(8,8,8,0.94)] px-4 py-4 backdrop-blur-[10px] md:px-8">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="mb-1 flex items-center gap-2 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              <span className="inline-block h-px w-3 bg-[var(--red)]" />
+              Admin
+            </p>
+            <p className="text-xl italic text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
+              Predict <span className="text-[var(--red)]">Cornell</span>
+            </p>
+          </div>
 
-        <nav className="grid grid-cols-2 gap-1 md:grid-cols-1 md:space-y-1">{SECTIONS.map(renderSectionNavButton)}</nav>
+          <nav className="flex flex-wrap gap-1">{SECTIONS.map(renderSectionNavButton)}</nav>
+        </div>
 
-        <p className="mt-4 font-mono text-[0.58rem] text-[var(--text-muted)] break-all md:absolute md:bottom-5 md:left-4 md:right-4">
+        <p className="mt-3 font-mono text-[0.58rem] text-[var(--text-muted)] break-all">
           {user.email}
         </p>
       </aside>
 
-      <main className="px-4 py-6 md:ml-[220px] md:px-8 md:py-8">
+      <main className="px-4 py-6 md:px-8 md:py-8">
         <h1 className="mb-1 text-2xl text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
           Admin Dashboard
         </h1>

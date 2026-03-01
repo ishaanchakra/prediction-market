@@ -60,6 +60,19 @@ body::after {
   animation-play-state: paused;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .carousel-track {
+    animation: none;
+  }
+  .dot-pulse {
+    animation: none;
+  }
+  .toast-fade {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 @keyframes market-scroll {
   0% {
     transform: translateX(0);
@@ -118,11 +131,18 @@ select {
   font-size: max(16px, 1rem);
 }
 
-input:focus,
-textarea:focus,
-select:focus {
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
   outline: none;
   border-color: var(--red);
+}
+
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
 }
 
 button,

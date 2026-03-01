@@ -21,7 +21,12 @@ function formatResolvedDate(bet) {
 }
 
 function inferStatusFromBet(bet) {
-  if (bet?.marketStatus) return bet.marketStatus;
+  // If we have a resolved/cancelled status from a fresh fetch, trust it.
+  // But if marketStatus is OPEN and we also have a marketResolution, the resolution
+  // is more specific — use it (handles the case where the market doc fetch fell
+  // back to OPEN in the catch block but bet enrichment also captured resolution).
+  const status = bet?.marketStatus;
+  if (status && status !== MARKET_STATUS.OPEN) return status;
   return getMarketStatus({
     status: bet?.status,
     resolution: bet?.marketResolution,

@@ -51,7 +51,11 @@ export default function RootLayout({ children }) {
         <Suspense fallback={null}>
           <Navigation />
         </Suspense>
-        <LaunchGate>{children}</LaunchGate>
+        <LaunchGate>
+          <div className="md:pl-[64px] pb-[calc(56px+var(--safe-bottom,0px))] md:pb-0">
+            {children}
+          </div>
+        </LaunchGate>
       </body>
     </html>
   );

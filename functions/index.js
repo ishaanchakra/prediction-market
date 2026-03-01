@@ -495,6 +495,11 @@ export const placeBet = onCall(async (request) => {
           Number(latestMarket?.outstandingShares?.no || 0),
           latestMarket?.b
         )
+      const marketProbabilityAtBet = price(
+        Number(latestMarket?.outstandingShares?.yes || 0),
+        Number(latestMarket?.outstandingShares?.no || 0),
+        latestMarket?.b
+      )
 
       let result
       try {
@@ -518,7 +523,9 @@ export const placeBet = onCall(async (request) => {
         amount,
         shares: result.shares,
         probability: result.newProbability,
+        marketProbabilityAtBet,
         timestamp: now,
+        createdAt: now,
         type: 'BUY'
       })
 
@@ -737,6 +744,11 @@ export const sellShares = onCall(async (request) => {
         mapSellCalculationError(error)
       }
       validateSellResult(result)
+      const marketProbabilityAtBet = price(
+        Number(latestMarket?.outstandingShares?.yes || 0),
+        Number(latestMarket?.outstandingShares?.no || 0),
+        latestMarket?.b
+      )
 
       const walletData = latestWalletSnap.data()
       const currentBalance = getAvailableBalanceOrThrow(walletData, txIsMarketplaceMarket)
@@ -750,7 +762,9 @@ export const sellShares = onCall(async (request) => {
         amount: -result.payout,
         shares: -sharesToSell,
         probability: result.newProbability,
+        marketProbabilityAtBet,
         timestamp: now,
+        createdAt: now,
         type: 'SELL'
       })
 

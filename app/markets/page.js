@@ -397,7 +397,7 @@ function AllMarketsContent() {
         </div>
 
         <div className="mt-3 border-t border-[var(--border)] pt-3 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-          {filteredMarkets.length} markets shown
+          {filteredMarkets.length} {filteredMarkets.length === 1 ? 'market' : 'markets'} shown
         </div>
 
         {hasActiveFilters && (
