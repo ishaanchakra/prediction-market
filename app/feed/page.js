@@ -20,12 +20,13 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { MARKET_STATUS } from '@/utils/marketStatus';
+import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
 import { getISOWeek } from '@/utils/isoWeek';
 import { getPublicDisplayName } from '@/utils/displayName';
 
 const DEFAULT_BET_AMOUNT = 100; // $100 per quick-take bet
 const MAX_MARKETS = 30;
+const MARKET_SCAN_LIMIT = 180;
 const CARD_EXIT_MS = 450;
 
 function chunkArray(items, size) {
@@ -284,34 +285,52 @@ export default function FeedPage() {
   const loadFeedCards = useCallback(async (currentUser) => {
     const currentWeek = getISOWeek();
 
-    const [marketsSnap, ffSnap] = await Promise.all([
-      getDocs(
+    let globalMarketDocs = [];
+    try {
+      const latestGlobalSnap = await getDocs(
         query(
           collection(db, 'markets'),
-          where('resolution', '==', null),
           where('marketplaceId', '==', null),
-          limit(MAX_MARKETS)
+          orderBy('createdAt', 'desc'),
+          limit(MARKET_SCAN_LIMIT)
         )
-      ),
-      getDocs(
+      );
+      globalMarketDocs = latestGlobalSnap.docs;
+    } catch (error) {
+      console.error('Error querying latest global markets, falling back to unordered scan:', error);
+      const fallbackGlobalSnap = await getDocs(
         query(
           collection(db, 'markets'),
-          where('isFiveFutures', '==', true),
-          where('fiveFuturesWeek', '==', currentWeek)
+          where('marketplaceId', '==', null),
+          limit(MARKET_SCAN_LIMIT)
         )
+      );
+      globalMarketDocs = fallbackGlobalSnap.docs;
+    }
+
+    const ffSnap = await getDocs(
+      query(
+        collection(db, 'markets'),
+        where('isFiveFutures', '==', true),
+        where('fiveFuturesWeek', '==', currentWeek)
       )
-    ]);
+    );
 
     const ffIds = new Set(ffSnap.docs.map((d) => d.id));
 
-    const markets = marketsSnap.docs
+    const markets = globalMarketDocs
       .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-      .filter((market) => market.status === MARKET_STATUS.OPEN);
+      .filter((market) => !market.marketplaceId)
+      .filter((market) => getMarketStatus(market) === MARKET_STATUS.OPEN)
+      .filter((market) => market.resolution == null)
+      .slice(0, MAX_MARKETS);
 
     ffSnap.docs.forEach((d) => {
       if (!markets.find((m) => m.id === d.id)) {
         const data = { id: d.id, ...d.data() };
-        if (data.status === MARKET_STATUS.OPEN) markets.push(data);
+        if (!data.marketplaceId && getMarketStatus(data) === MARKET_STATUS.OPEN && data.resolution == null) {
+          markets.push(data);
+        }
       }
     });
 
