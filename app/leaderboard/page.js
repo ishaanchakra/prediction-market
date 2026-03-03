@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { round2 } from '@/utils/round';
 import { calculateAllPortfolioValues } from '@/utils/portfolio';
-import { chunkArray } from '@/utils/marketplacePortfolio';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
@@ -50,6 +49,14 @@ function isPermissionDenied(error) {
     || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
 }
 
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 async function fetchBetsByMarketIds(marketIds) {
   if (marketIds.length === 0) return [];
   const chunks = chunkArray(marketIds, 30);
@@ -90,23 +97,14 @@ function initialsForName(name) {
 }
 
 function pctReturn(user) {
-  const baseline = Number(user.weeklyStartingBalance || 1000);
+  const baseline = Number(user.totalDeposits || 1000);
   if (baseline === 0) return '0.0';
-  const pct = ((Number(user.weeklyNet || 0) / baseline) * 100);
+  const pct = ((Number(user.netPnl || 0) / baseline) * 100);
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}`;
 }
 
 function positionLabel(user) {
   return Number(user.positionsValue || 0) > 0 ? 'has open positions' : 'no open positions';
-}
-
-function joinWeekLabel(user) {
-  if (!user.createdAt) return null;
-  const semesterStart = new Date('2026-01-19');
-  const joined = toDate(user.createdAt);
-  const diff = Math.floor((joined - semesterStart) / (7 * 24 * 60 * 60 * 1000));
-  const week = Math.max(1, diff + 1);
-  return `Joined Wk ${week}`;
 }
 
 function YouBadge() {
@@ -153,10 +151,6 @@ export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState('oracle');
   const { toasts, removeToast, resolveConfirm } = useToastQueue();
 
-  const lifetimeUsers = useMemo(
-    () => [...users].sort((a, b) => Number(b.lifetimeRep || 0) - Number(a.lifetimeRep || 0)).slice(0, 50),
-    [users]
-  );
   const oracleUsers = useMemo(
     () =>
       [...users]
@@ -165,64 +159,36 @@ export default function LeaderboardPage() {
         .slice(0, 50),
     [users]
   );
-  const weeklyUsers = useMemo(
+  const netPnlUsers = useMemo(
     () =>
       [...weeklyRows]
-        .sort((a, b) => Number(b.weeklyNet || 0) - Number(a.weeklyNet || 0))
-        .slice(0, 50),
-    [weeklyRows]
-  );
-  const allTimeUsers = useMemo(
-    () =>
-      [...weeklyRows]
-        .sort((a, b) => Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0))
+        .sort((a, b) => Number(b.netPnl || 0) - Number(a.netPnl || 0))
         .slice(0, 50),
     [weeklyRows]
   );
 
-  const meWeekly = useMemo(() => weeklyUsers.find((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
-  const meWeeklyRank = useMemo(() => weeklyUsers.findIndex((entry) => entry.id === viewer?.uid), [weeklyUsers, viewer]);
+  const meNetPnl = useMemo(() => netPnlUsers.find((entry) => entry.id === viewer?.uid), [netPnlUsers, viewer]);
+  const meNetPnlRank = useMemo(() => netPnlUsers.findIndex((entry) => entry.id === viewer?.uid), [netPnlUsers, viewer]);
   const activeTradersCount = useMemo(
-    () => weeklyRows.filter((row) => Math.abs(Number(row.weeklyNet || 0)) > 0.001).length,
+    () => weeklyRows.filter((row) => Math.abs(Number(row.netPnl || 0)) > 0.001).length,
     [weeklyRows]
   );
 
-  const maxWeeklyNet = useMemo(
-    () => Math.max(...weeklyUsers.map((u) => Math.abs(Number(u.weeklyNet || 0))), 1),
-    [weeklyUsers]
-  );
-  const maxLifetimeRep = useMemo(
-    () => Math.max(...lifetimeUsers.map((u) => Math.abs(Number(u.lifetimeRep || 0))), 1),
-    [lifetimeUsers]
-  );
-  const maxPortfolioValue = useMemo(
-    () => Math.max(...allTimeUsers.map((u) => Number(u.portfolioValue || 0)), 1),
-    [allTimeUsers]
+  const maxNetPnl = useMemo(
+    () => Math.max(...netPnlUsers.map((u) => Math.abs(Number(u.netPnl || 0))), 1),
+    [netPnlUsers]
   );
   const myRankData = useMemo(() => {
     if (!viewer?.uid) return null;
 
-    if (activeTab === 'weekly') {
-      if (!meWeekly) return null;
+    if (activeTab === 'netpnl') {
+      if (!meNetPnl) return null;
       return {
-        rank: meWeeklyRank + 1,
-        displayName: getPublicDisplayName(meWeekly),
-        metric: meWeekly.weeklyNet,
-        metricLabel: `${meWeekly.weeklyNet >= 0 ? '+' : ''}$${fmtMoney(Math.abs(meWeekly.weeklyNet))}`,
-        sub: `${meWeekly.weeklyNet >= 0 ? '+' : ''}${Number(((meWeekly.weeklyNet / Math.max(Number(meWeekly.weeklyStartingBalance || 1000), 1)) * 100)).toFixed(1)}% this week`
-      };
-    }
-
-    if (activeTab === 'alltime') {
-      const idx = allTimeUsers.findIndex((u) => u.id === viewer.uid);
-      if (idx < 0) return null;
-      const row = allTimeUsers[idx];
-      return {
-        rank: idx + 1,
-        displayName: getPublicDisplayName(row),
-        metric: row.portfolioValue,
-        metricLabel: `$${fmtMoney(Number(row.portfolioValue || 0))}`,
-        sub: 'all-time balance'
+        rank: meNetPnlRank + 1,
+        displayName: getPublicDisplayName(meNetPnl),
+        metric: meNetPnl.netPnl,
+        metricLabel: `${meNetPnl.netPnl >= 0 ? '+' : ''}$${fmtMoney(Math.abs(meNetPnl.netPnl))}`,
+        sub: `${pctReturn(meNetPnl)}% return`
       };
     }
 
@@ -240,14 +206,14 @@ export default function LeaderboardPage() {
     }
 
     return null;
-  }, [activeTab, allTimeUsers, oracleUsers, viewer, meWeekly, meWeeklyRank]);
+  }, [activeTab, oracleUsers, viewer, meNetPnl, meNetPnlRank]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => setViewer(currentUser));
     return () => unsubscribe();
   }, []);
 
-  const rankMetricColorClass = (activeTab === 'alltime' || activeTab === 'oracle')
+  const rankMetricColorClass = activeTab === 'oracle'
     ? 'text-[var(--amber-bright)]'
     : (Number(myRankData?.metric || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]');
 
@@ -289,7 +255,7 @@ export default function LeaderboardPage() {
           portfolioValue: round2(row.portfolioValue),
           cashBalance: round2(row.cashBalance),
           positionsValue: round2(row.positionsValue),
-          weeklyNet: round2(row.weeklyNet)
+          netPnl: round2(row.netPnl)
         }));
         setWeeklyRows(weeklyRowsData);
       } catch (error) {
@@ -325,7 +291,7 @@ export default function LeaderboardPage() {
             Leaderboard
           </h1>
           <p className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-            {activeTradersCount} active traders · resets Sunday 11:59pm ET
+            {activeTradersCount} active traders · updates continuously
           </p>
         </div>
 
@@ -357,8 +323,7 @@ export default function LeaderboardPage() {
         <div className="mb-0 flex items-center border-b border-[var(--border)]">
           {[
             { id: 'oracle', label: 'Oracle Score', dotColor: 'var(--amber-bright)' },
-            { id: 'weekly', label: 'Weekly PnL', dotColor: 'var(--green-bright)' },
-            { id: 'alltime', label: 'All-Time PnL', dotColor: 'var(--amber-bright)' }
+            { id: 'netpnl', label: 'Net P&L', dotColor: 'var(--green-bright)' }
           ].map(({ id, label, dotColor }) => (
             <button
               key={id}
@@ -380,18 +345,11 @@ export default function LeaderboardPage() {
 
         <div className="flex items-center justify-between border-b border-[var(--border)] py-3">
           <div className="font-mono text-[0.56rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-            {activeTab === 'weekly' && (
+            {activeTab === 'netpnl' && (
               <>
-                <strong className="text-[var(--text-dim)]">Trading P&L</strong>
-                {' '}— portfolio value vs. your balance at week start. Resets on Sunday night.
-                <FormulaTooltip formula="Weekly P&L = (Cash + Open Positions at current price) − Balance at week start" />
-              </>
-            )}
-            {activeTab === 'alltime' && (
-              <>
-                <strong className="text-[var(--text-dim)]">All-Time PnL</strong>
-                {' '}— cumulative wealth since joining. Early users have a head start; use for personal context.
-                <FormulaTooltip formula="Portfolio Value = Cash on hand + (YES shares × current prob) + (NO shares × (1 − current prob))" />
+                <strong className="text-[var(--text-dim)]">Net P&L</strong>
+                {' '}— portfolio value (cash + positions) minus total deposits. Measures real trading skill.
+                <FormulaTooltip formula="Net P&L = (Cash + Open Positions at current price) − Total Deposits" />
               </>
             )}
             {activeTab === 'oracle' && (
@@ -402,7 +360,7 @@ export default function LeaderboardPage() {
               </>
             )}
           </div>
-          {activeTab === 'weekly' && (
+          {activeTab === 'netpnl' && (
             <span className="flex items-center gap-[5px] rounded border border-[var(--border2)] px-2 py-[3px] font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
               <span className="inline-block h-[5px] w-[5px] animate-pulse rounded-full bg-[var(--green-bright)]" />
               Live
@@ -410,25 +368,25 @@ export default function LeaderboardPage() {
           )}
         </div>
 
-        {activeTab === 'weekly' && (
+        {activeTab === 'netpnl' && (
           <section className="mb-12">
             <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
               <thead>
                 <tr className="border-b border-[var(--border)]">
                   <th className="w-[48px] px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">#</th>
                   <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
-                  <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Weekly P&L</th>
+                  <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Net P&L</th>
                 </tr>
               </thead>
               <tbody>
-                {weeklyUsers.length === 0 && (
+                {netPnlUsers.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-5 py-6 text-center font-mono text-[0.68rem] text-[var(--text-muted)]">
-                      No trading activity yet this week.
+                      No trading activity yet.
                     </td>
                   </tr>
                 )}
-                {weeklyUsers.map((user, index) => (
+                {netPnlUsers.map((user, index) => (
                   <tr
                     key={user.id}
                     onClick={() => router.push(`/user/${user.id}`)}
@@ -454,85 +412,21 @@ export default function LeaderboardPage() {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <span className={`block font-mono text-[0.9rem] font-bold ${
-                        Number(user.weeklyNet || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'
+                        Number(user.netPnl || 0) >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'
                       }`}>
-                        {Number(user.weeklyNet || 0) >= 0 ? '+' : '-'}${fmtMoney(Math.abs(Number(user.weeklyNet || 0)))}
+                        {Number(user.netPnl || 0) >= 0 ? '+' : '-'}${fmtMoney(Math.abs(Number(user.netPnl || 0)))}
                       </span>
                       <span className="block font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                        {pctReturn(user)}% this week
+                        {pctReturn(user)}% return
                       </span>
                       <BarMini
-                        value={Math.abs(Number(user.weeklyNet || 0))}
-                        max={maxWeeklyNet}
-                        colorClass={Number(user.weeklyNet || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]'}
+                        value={Math.abs(Number(user.netPnl || 0))}
+                        max={maxNetPnl}
+                        colorClass={Number(user.netPnl || 0) >= 0 ? 'bg-[var(--green-bright)]' : 'bg-[var(--red)]'}
                       />
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </section>
-        )}
-
-        {activeTab === 'alltime' && (
-          <section className="mb-12">
-            <table className="w-full overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
-              <thead>
-                <tr className="border-b border-[var(--border)]">
-                  <th className="w-[48px] px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">#</th>
-                  <th className="px-5 py-3 text-left font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Trader</th>
-                  <th className="px-5 py-3 text-right font-mono text-[0.58rem] uppercase tracking-[0.1em] font-normal text-[var(--text-muted)]">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allTimeUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="px-5 py-6 text-center font-mono text-[0.68rem] text-[var(--text-muted)]">
-                      No all-time data yet.
-                    </td>
-                  </tr>
-                )}
-                {allTimeUsers.map((user, index) => {
-                  const weekJoinLabel = joinWeekLabel(user);
-                  return (
-                  <tr
-                    key={user.id}
-                    onClick={() => router.push(`/user/${user.id}`)}
-                    className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--surface2)] ${
-                      viewer?.uid === user.id ? 'bg-[rgba(220,38,38,.03)]' : ''
-                    }`}
-                  >
-                    <td className="w-[48px] px-5 py-4">
-                      <span className={`font-mono text-[0.8rem] font-bold ${rankColorClass(index)}`}>
-                        {rankDisplay(index)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[var(--text)]">
-                          {getPublicDisplayName(user)}
-                        </span>
-                        {viewer?.uid === user.id && <YouBadge />}
-                      </div>
-                      {weekJoinLabel && (
-                        <p className="mt-[2px] font-mono text-[0.52rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-                          {weekJoinLabel}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <span className="block font-mono text-[0.9rem] font-bold text-[var(--amber-bright)]">
-                        ${fmtMoney(Number(user.portfolioValue || 0))}
-                      </span>
-                      <BarMini
-                        value={Number(user.portfolioValue || 0)}
-                        max={maxPortfolioValue}
-                        colorClass="bg-[var(--amber-bright)]"
-                      />
-                    </td>
-                  </tr>
-                  );
-                })}
               </tbody>
             </table>
           </section>
@@ -612,15 +506,15 @@ function PastWeeksSection({ weeklySnapshots, expandedWeeks, setExpandedWeeks }) 
       <div className="mb-4 flex items-baseline justify-between">
         <span className="flex items-center gap-[0.6rem] font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
           <span className="inline-block h-px w-[18px] bg-[var(--red)]" />
-          Weekly Archive
+          Snapshot Archive
         </span>
-        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">past week champions</span>
+        <span className="font-display text-[0.85rem] italic text-[var(--text-dim)]">recent snapshot leaders</span>
       </div>
 
       <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
         {weeklySnapshots.length === 0 ? (
           <p className="px-5 py-4 font-mono text-[0.68rem] text-[var(--text-muted)]">
-            No weekly snapshots yet. Run weekly reset to capture standings.
+            No snapshots yet.
           </p>
         ) : (
           weeklySnapshots.map((snapshot) => {
@@ -637,7 +531,7 @@ function PastWeeksSection({ weeklySnapshots, expandedWeeks, setExpandedWeeks }) 
                   className="flex w-full items-center justify-between px-5 py-4 text-left hover:bg-[var(--surface2)]"
                 >
                   <div>
-                    <p className="font-mono text-[0.66rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Week Of {weekText}</p>
+                    <p className="font-mono text-[0.66rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Snapshot Date {weekText}</p>
                     <p className="text-sm text-[var(--text)]">
                       Champion: {top?.displayName || '—'} · {top ? `${top.netProfit >= 0 ? '+' : ''}$${fmtMoney(top.netProfit)}` : '—'}
                     </p>

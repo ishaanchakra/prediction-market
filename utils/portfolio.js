@@ -1,4 +1,5 @@
 import { MARKET_STATUS, getMarketStatus } from './marketStatus';
+import { calculateSell } from './lmsr';
 import { round2 } from './round';
 
 function toNumber(value, fallback = 0) {
@@ -50,6 +51,8 @@ export function aggregatePositions(bets = []) {
         marketProbability: clamp01(bet?.marketProbability),
         marketResolution: bet?.marketResolution || null,
         marketCategory: bet?.marketCategory || 'wildcard',
+        marketOutstandingShares: bet?.marketOutstandingShares || null,
+        marketB: bet?.marketB != null ? bet.marketB : null,
         resolvedDate: formatResolvedDate(bet),
         yesShares: 0,
         noShares: 0,
@@ -93,7 +96,22 @@ export function aggregatePositions(bets = []) {
 
     let marketValue;
     if ([MARKET_STATUS.OPEN, MARKET_STATUS.LOCKED].includes(status)) {
-      marketValue = round2((yesShares * probability) + (noShares * (1 - probability)));
+      if (entry.marketOutstandingShares && entry.marketB > 0) {
+        try {
+          let value = 0;
+          if (yesShares > 0) {
+            value += calculateSell(entry.marketOutstandingShares, yesShares, 'YES', entry.marketB).payout;
+          }
+          if (noShares > 0) {
+            value += calculateSell(entry.marketOutstandingShares, noShares, 'NO', entry.marketB).payout;
+          }
+          marketValue = round2(value);
+        } catch {
+          marketValue = round2((yesShares * probability) + (noShares * (1 - probability)));
+        }
+      } else {
+        marketValue = round2((yesShares * probability) + (noShares * (1 - probability)));
+      }
     } else if (status === MARKET_STATUS.RESOLVED) {
       const winPayout = entry.marketResolution === 'YES' ? yesShares : entry.marketResolution === 'NO' ? noShares : 0;
       marketValue = round2(Math.max(0, winPayout));
@@ -137,9 +155,9 @@ export function aggregatePositions(bets = []) {
 }
 
 export function calculatePortfolioSummary(user = {}, positions = []) {
-  const cashBalance = round2(toNumber(user?.weeklyRep, 0));
-  const weeklyBaseline = round2(
-    user?.weeklyStartingBalance == null ? 1000 : toNumber(user?.weeklyStartingBalance, 1000)
+  const cashBalance = round2(toNumber(user?.balance, 0));
+  const totalDeposits = round2(
+    user?.totalDeposits == null ? 1000 : toNumber(user?.totalDeposits, 1000)
   );
   const activePositions = positions.filter((pos) => [MARKET_STATUS.OPEN, MARKET_STATUS.LOCKED].includes(pos.marketStatus));
 
@@ -154,7 +172,7 @@ export function calculatePortfolioSummary(user = {}, positions = []) {
 
   const positionsValue = round2(activePositions.reduce((sum, pos) => sum + toNumber(pos.marketValue, 0), 0));
   const portfolioValue = round2(cashBalance + positionsValue);
-  const weeklyPnl = round2(portfolioValue - weeklyBaseline);
+  const netPnl = round2(portfolioValue - totalDeposits);
   const marketCount = activePositions.length;
 
   const base = portfolioValue > 0 ? portfolioValue : 1;
@@ -166,7 +184,7 @@ export function calculatePortfolioSummary(user = {}, positions = []) {
     cashBalance,
     positionsValue,
     portfolioValue,
-    weeklyPnl,
+    netPnl,
     yesExposure,
     noExposure,
     marketCount,
@@ -176,7 +194,7 @@ export function calculatePortfolioSummary(user = {}, positions = []) {
   };
 }
 
-export function calculatePortfolioValue({ cashBalance, weeklyStartingBalance, userBets = [], openMarketsById = {} }) {
+export function calculatePortfolioValue({ cashBalance, totalDeposits, userBets = [], openMarketsById = {} }) {
   const normalizedBets = userBets.map((bet) => {
     const market = openMarketsById[bet.marketId] || {};
     return {
@@ -185,12 +203,14 @@ export function calculatePortfolioValue({ cashBalance, weeklyStartingBalance, us
       marketStatus: MARKET_STATUS.OPEN,
       marketProbability: clamp01(market.probability),
       marketResolution: null,
-      marketCategory: market.category || 'wildcard'
+      marketCategory: market.category || 'wildcard',
+      marketOutstandingShares: market.outstandingShares || null,
+      marketB: market.b != null ? market.b : null
     };
   });
 
   const positions = aggregatePositions(normalizedBets);
-  const summary = calculatePortfolioSummary({ weeklyRep: cashBalance, weeklyStartingBalance }, positions);
+  const summary = calculatePortfolioSummary({ balance: cashBalance, totalDeposits }, positions);
 
   const positionsByMarket = {};
   for (const pos of positions) {
@@ -204,7 +224,7 @@ export function calculatePortfolioValue({ cashBalance, weeklyStartingBalance, us
     cashBalance: summary.cashBalance,
     positionsValue: summary.positionsValue,
     portfolioValue: summary.portfolioValue,
-    netProfit: summary.weeklyPnl,
+    netProfit: summary.netPnl,
     positionsByMarket
   };
 }
@@ -222,8 +242,8 @@ export function calculateAllPortfolioValues({ users = [], bets = [], openMarkets
   return users.map((user) => {
     const userId = user.id || user.uid;
     const result = calculatePortfolioValue({
-      cashBalance: user.weeklyRep,
-      weeklyStartingBalance: user.weeklyStartingBalance,
+      cashBalance: user.balance,
+      totalDeposits: user.totalDeposits,
       userBets: betsByUserId.get(userId) || [],
       openMarketsById
     });
@@ -234,7 +254,7 @@ export function calculateAllPortfolioValues({ users = [], bets = [], openMarkets
       cashBalance: result.cashBalance,
       positionsValue: result.positionsValue,
       portfolioValue: result.portfolioValue,
-      weeklyNet: result.netProfit
+      netPnl: result.netProfit
     };
   });
 }

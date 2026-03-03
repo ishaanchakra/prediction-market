@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase-admin/app'
 import { FieldPath, FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
-import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 initializeApp()
 
@@ -257,7 +256,7 @@ function getWalletMissingMessage(isMarketplaceMarket) {
 }
 
 function getAvailableBalanceOrThrow(walletData, isMarketplaceMarket) {
-  const balance = Number(isMarketplaceMarket ? walletData?.balance : walletData?.weeklyRep)
+  const balance = Number(walletData?.balance)
   if (!Number.isFinite(balance)) {
     throw new HttpsError('failed-precondition', 'Balance data is invalid. Please contact an admin.')
   }
@@ -338,83 +337,22 @@ function timestampToDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-async function runWeeklyStipendInjection({ dryRun = false, actor = 'system' } = {}) {
-  const STIPEND_AMOUNT = 50
-  const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000
-  const usersSnapshot = await db.collection('users')
-    .where('onboardingComplete', '==', true)
-    .get()
-  const users = usersSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
+function getISOWeek(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const dayNum = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
+}
 
-  let injectedCount = 0
-  let skippedCount = 0
-  const now = Date.now()
-  const operations = []
-
-  for (const user of users) {
-    const lastInjectedAt = timestampToDate(user.weeklyStipendLastInjectedAt)
-    if (lastInjectedAt && (now - lastInjectedAt.getTime()) < SIX_DAYS_MS) {
-      skippedCount += 1
-      continue
-    }
-
-    const currentBalance = round2(Number(user.weeklyRep || 0))
-    const newBalance = round2(currentBalance + STIPEND_AMOUNT)
-    operations.push({
-      id: user.id,
-      newBalance
-    })
-  }
-
-  if (!dryRun && operations.length > 0) {
-    const userChunks = chunkArray(operations, 400)
-    for (const chunk of userChunks) {
-      const userBatch = db.batch()
-      const notificationBatch = db.batch()
-
-      for (const row of chunk) {
-        const userRef = db.collection('users').doc(row.id)
-        userBatch.update(userRef, {
-          weeklyRep: row.newBalance,
-          weeklyStartingBalance: row.newBalance,
-          weeklyStipendLastInjectedAt: FieldValue.serverTimestamp()
-        })
-
-        const notificationRef = db.collection('notifications').doc()
-        notificationBatch.set(notificationRef, {
-          userId: row.id,
-          type: 'stipend',
-          category: 'balance',
-          amount: STIPEND_AMOUNT,
-          message: `+$${STIPEND_AMOUNT} weekly stipend added to your balance.`,
-          read: false,
-          createdAt: FieldValue.serverTimestamp()
-        })
-      }
-
-      await Promise.all([userBatch.commit(), notificationBatch.commit()])
-      injectedCount += chunk.length
-    }
-
-    await db.collection('adminLog').add({
-      action: 'STIPEND_INJECT',
-      detail: `Weekly stipend of $${STIPEND_AMOUNT} injected to ${injectedCount} users.`,
-      actor,
-      timestamp: new Date()
-    })
-  } else {
-    injectedCount = operations.length
-  }
-
-  const totalStipend = round2(injectedCount * STIPEND_AMOUNT)
-  return {
-    dryRun,
-    stipendAmount: STIPEND_AMOUNT,
-    eligibleCount: users.length,
-    injectedCount,
-    skippedCount,
-    totalStipend
-  }
+function getMondayOfISOWeek(date = new Date()) {
+  const d = new Date(date)
+  const day = d.getDay()
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+  d.setDate(diff)
+  d.setHours(0, 0, 0, 0)
+  return d
 }
 
 export const placeBet = onCall(async (request) => {
@@ -538,7 +476,7 @@ export const placeBet = onCall(async (request) => {
         })
       } else {
         tx.update(walletRef, {
-          weeklyRep: round2(latestBalance - amount)
+          balance: round2(latestBalance - amount)
         })
       }
 
@@ -773,7 +711,7 @@ export const sellShares = onCall(async (request) => {
         })
       } else {
         tx.update(walletRef, {
-          weeklyRep: round2(currentBalance + result.payout)
+          balance: round2(currentBalance + result.payout)
         })
       }
 
@@ -790,39 +728,81 @@ export const sellShares = onCall(async (request) => {
   }
 })
 
-export const injectWeeklyStipend = onSchedule(
-  {
-    schedule: 'every sunday 23:59',
-    timeZone: 'America/New_York',
-    region: 'us-central1'
-  },
-  async () => {
-    try {
-      const result = await runWeeklyStipendInjection({ dryRun: false, actor: 'scheduler' })
-      console.log(
-        `injectWeeklyStipend complete: injected=${result.injectedCount}, skipped=${result.skippedCount}, eligible=${result.eligibleCount}`
-      )
-    } catch (error) {
-      console.error('injectWeeklyStipend failed:', error)
-      throw error
-    }
-  }
-)
-
-export const manualStipendInject = onCall(async (request) => {
+export const distributeStipend = onCall(async (request) => {
   try {
+    const STIPEND_AMOUNT = 50
     const { email } = assertAdminCaller(request)
-    const dryRun = request.data?.dryRun === true
-    const result = await runWeeklyStipendInjection({ dryRun, actor: email })
+    const currentISOWeek = getISOWeek()
+    const mondayOfWeek = getMondayOfISOWeek()
+
+    const usersSnapshot = await db.collection('users')
+      .where('onboardingComplete', '==', true)
+      .get()
+    const users = usersSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
+
+    let distributedCount = 0
+    let skippedCount = 0
+    const operations = []
+
+    for (const user of users) {
+      if (user.lastStipendWeek === currentISOWeek) {
+        skippedCount += 1
+        continue
+      }
+
+      const accountCreated = timestampToDate(user.accountCreatedAt || user.createdAt)
+      if (accountCreated && accountCreated.getTime() >= mondayOfWeek.getTime()) {
+        skippedCount += 1
+        continue
+      }
+
+      operations.push({ id: user.id })
+    }
+
+    if (operations.length > 0) {
+      const chunks = chunkArray(operations, 400)
+      for (const chunk of chunks) {
+        const userBatch = db.batch()
+        const notificationBatch = db.batch()
+
+        for (const row of chunk) {
+          const userRef = db.collection('users').doc(row.id)
+          userBatch.update(userRef, {
+            balance: FieldValue.increment(STIPEND_AMOUNT),
+            totalDeposits: FieldValue.increment(STIPEND_AMOUNT),
+            lastStipendWeek: currentISOWeek
+          })
+
+          const notificationRef = db.collection('notifications').doc()
+          notificationBatch.set(notificationRef, {
+            userId: row.id,
+            type: 'stipend',
+            category: 'RANK_CHANGED',
+            message: 'You received your weekly $50 stipend.',
+            read: false,
+            createdAt: FieldValue.serverTimestamp()
+          })
+        }
+
+        await Promise.all([userBatch.commit(), notificationBatch.commit()])
+        distributedCount += chunk.length
+      }
+
+      await db.collection('adminLog').add({
+        action: 'STIPEND_DISTRIBUTE',
+        detail: `Weekly stipend of $${STIPEND_AMOUNT} distributed to ${distributedCount} users (week ${currentISOWeek}).`,
+        actor: email,
+        timestamp: new Date()
+      })
+    }
+
     return {
-      injectedCount: result.injectedCount,
-      skippedCount: result.skippedCount,
-      eligibleCount: result.eligibleCount,
-      totalStipend: result.totalStipend,
-      dryRun
+      eligible: users.length,
+      distributed: distributedCount,
+      skipped: skippedCount
     }
   } catch (error) {
-    throw toHttpsError(error, 'Unable to inject stipend right now.')
+    throw toHttpsError(error, 'Unable to distribute stipend right now.')
   }
 })
 

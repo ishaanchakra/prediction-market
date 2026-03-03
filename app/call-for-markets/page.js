@@ -130,7 +130,7 @@ export default function CallForMarketsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[var(--text)] mb-1">Liquidity (b) *</label>
+                <label className="block text-sm font-medium text-[var(--text)] mb-1">Sensitivty (b parameter in LMSR) *</label>
                 <input type="number" min="10" max="1000" step="10" value={form.liquidityB} onChange={(e) => setForm((prev) => ({ ...prev, liquidityB: Number(e.target.value) }))} className="w-full rounded-lg border px-3 py-2 text-[var(--text)]" required />
               </div>
             </div>

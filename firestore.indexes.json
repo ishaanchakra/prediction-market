@@ -461,6 +461,29 @@
       ],
       "density": "SPARSE_ALL"
     }
+    ,{
+      "collectionGroup": "markets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "isFiveFutures",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fiveFuturesWeek",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "resolution",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    }
   ],
   "fieldOverrides": []
 }

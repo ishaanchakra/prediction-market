@@ -5,89 +5,71 @@ function read(relPath) {
   return fs.readFileSync(path.resolve(__dirname, `../../${relPath}`), 'utf8');
 }
 
-describe('leaderboard redesign - source code checks', () => {
-  test('leaderboard has three tab ids: weekly, alltime, oracle', () => {
+describe('leaderboard source checks', () => {
+  test('uses two tab ids: oracle and netpnl', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toContain("'weekly'");
-    expect(source).toContain("'alltime'");
-    expect(source).toContain("'oracle'");
+    expect(source).toContain("id: 'oracle'");
+    expect(source).toContain("id: 'netpnl'");
+    expect(source).not.toContain("id: 'weekly'");
+    expect(source).not.toContain("id: 'alltime'");
   });
 
-  test('leaderboard uses activeTab state, not allTimeMode or weeklyMode', () => {
+  test('uses activeTab state and does not use legacy weekly/all-time mode flags', () => {
     const source = read('app/leaderboard/page.js');
     expect(source).toContain('activeTab');
     expect(source).not.toContain('allTimeMode');
     expect(source).not.toContain('weeklyMode');
-  });
-
-  test('leaderboard does not contain the old correction toggle', () => {
-    const source = read('app/leaderboard/page.js');
     expect(source).not.toContain('handleWeeklyModeChange');
-    expect(source).not.toContain('weeklyRowsWithModes');
-    expect(source).not.toContain("setWeeklyMode('correction')");
   });
 
-  test('all three tabs route to user profile on row click', () => {
+  test('net pnl explanation references cumulative deposits model', () => {
+    const source = read('app/leaderboard/page.js');
+    expect(source).toContain('minus total deposits');
+    expect(source).toContain('Net P&L = (Cash + Open Positions at current price) − Total Deposits');
+  });
+
+  test('global-scope query filters are present for markets and bets', () => {
+    const source = read('app/leaderboard/page.js');
+    expect(source).toContain("where('marketplaceId', '==', null)");
+    expect(source).toContain("collection(db, 'bets')");
+    expect(source).toContain("collection(db, 'markets')");
+  });
+
+  test('rows in both tabs route to user profile pages', () => {
     const source = read('app/leaderboard/page.js');
     const matches = source.split('router.push(`/user/').length - 1;
-    expect(matches).toBeGreaterThanOrEqual(3);
+    expect(matches).toBeGreaterThanOrEqual(2);
   });
 
-  test('YouBadge is rendered on all three tab panels', () => {
+  test('you badge is rendered in at least rank card + tab rows', () => {
     const source = read('app/leaderboard/page.js');
     const youBadgeMatches = source.match(/<YouBadge/g);
     expect(youBadgeMatches).not.toBeNull();
     expect(youBadgeMatches.length).toBeGreaterThanOrEqual(3);
   });
 
-  test('oracle tab uses amber accent color', () => {
+  test('snapshot archive section remains available', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toContain('--amber-bright');
-  });
-
-  test('blue-bright CSS variable is defined in globals.css', () => {
-    const css = read('app/globals.css');
-    expect(css).toContain('--blue-bright');
-    expect(css).toContain('#60a5fa');
-  });
-
-  test('pctReturn helper uses weeklyStartingBalance not hardcoded 1000', () => {
-    const source = read('app/leaderboard/page.js');
-    expect(source).toContain('weeklyStartingBalance');
-    expect(source).not.toContain('weeklyNet || 0) / 1000');
-  });
-
-  test('myRankData useMemo handles all three tab cases', () => {
-    const source = read('app/leaderboard/page.js');
-    expect(source).toContain('myRankData');
-    expect(source).toContain("activeTab === 'weekly'");
-    expect(source).toContain("activeTab === 'alltime'");
-    expect(source).toContain("activeTab === 'oracle'");
-  });
-
-  test('past weeks section is preserved', () => {
-    const source = read('app/leaderboard/page.js');
-    expect(source).toContain('weeklySnapshots');
     expect(source).toContain('PastWeeksSection');
+    expect(source).toContain('weeklySnapshots');
+    expect(source).toContain('Snapshot Archive');
   });
 
-  test('tab bar renders three buttons with dot indicators', () => {
+  test('empty states exist for both leaderboard tabs', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toContain('Weekly PnL');
-    expect(source).toContain('All-Time PnL');
-    expect(source).toContain('Oracle Score');
+    expect(source).toContain('No trading activity yet.');
+    expect(source).toContain('No oracle scores yet. Scores appear after markets resolve.');
   });
 
-  test('empty states exist for all three tabs', () => {
+  test('pctReturn helper uses totalDeposits rather than hardcoded baseline', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toContain('No trading activity yet this week');
-    expect(source).toContain('No all-time data yet');
-    expect(source).toContain('No oracle scores yet');
+    expect(source).toContain('totalDeposits');
+    expect(source).not.toContain('netPnl || 0) / 1000');
   });
 
-  test('weeklyUsers is sorted by weeklyNet not portfolioValue', () => {
+  test('no weekly reset copy remains in leaderboard header', () => {
     const source = read('app/leaderboard/page.js');
-    expect(source).toMatch(/weeklyUsers[\s\S]{0,200}weeklyNet/);
-    expect(source).not.toMatch(/weeklyUsers[\s\S]{0,100}portfolioValue[\s\S]{0,50}sort/);
+    expect(source).toContain('updates continuously');
+    expect(source).not.toContain('resets Sunday');
   });
 });

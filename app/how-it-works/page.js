@@ -8,8 +8,8 @@ const faqs = [
     a: "No. Aside from the legal implications real money would bring, the primary purpose of PredictCornell is to forecast student sentiment. Our approach to equitizing the weight of everyone's opinions is to provide the same amount of in-game currency to everyone."
   },
   {
-    q: "What's a marketplace?",
-    a: "A marketplace is a private community of markets you can share with a smaller group. Marketplaces are public, but require a password (set by the marketplace creator) to join. Marketplace markets operate in the exact same way public markets do, but afford you the ability to share more personal markets with friends."
+    q: 'How does my wallet work?',
+    a: 'You start at $1,000. Bets and sales change your cash in real time, and your performance is tracked cumulatively across the semester.'
   },
   {
     q: "Who makes the markets?",
@@ -25,7 +25,7 @@ const faqs = [
   },
   {
     q: "What happens to my rep at the end of the week?",
-    a: "You start with $1,000 and receive a $50 stipend every Sunday night. Your balance carries over, so strong forecasters can compound over time. Lifetime P&L and Oracle Score still accumulate permanently."
+    a: "Your wallet does not hard reset. Balance, total deposits, and performance all carry forward."
   },
 ];
 
@@ -171,7 +171,7 @@ export default function HowItWorksPage() {
           >
             {[
               { step: '01', title: 'Pick a market', body: "Find a question you have an opinion on. Anything from \"Will the men's hockey team make regionals?\" to \"Will Arts Quad construction finish before May.\"" },
-              { step: '02', title: 'Bet YES or NO', body: "Choose your side and decide how much of your weekly balance you want to risk. You'll see exactly how many shares you get before confirming." },
+              { step: '02', title: 'Bet YES or NO', body: "Choose your side and decide how much of your wallet you want to risk. You'll see exactly how many shares you get before confirming." },
               { step: '03', title: 'Watch the price', body: 'Every trade moves the probability. If more people bet YES after you, the price goes up and your position gains value. You can exit your position at any time for a profit or a loss, depending on how the market has moved since your bet.' },
               { step: '04', title: 'Collect your payout', body: 'When the market resolves, winning shares pay out 1:1. Your balance updates instantly and your rank on the leaderboard shifts.' },
             ].map(({ step, title, body }) => (

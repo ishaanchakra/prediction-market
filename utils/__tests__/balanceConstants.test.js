@@ -6,24 +6,23 @@ function read(relPath) {
 }
 
 describe('balance baseline constants', () => {
-  test('reset script uses weeklyRep 1000 and not 500', () => {
+  test('reset script uses balance 1000 and not 500', () => {
     const source = read('scripts/reset-database.js');
-    expect(source).toContain('weeklyRep: round2(1000)');
-    expect(source).not.toContain('weeklyRep: round2(500)');
+    expect(source).toContain('balance: round2(1000)');
+    expect(source).not.toContain('balance: round2(500)');
     expect(source).toContain('$1,000');
     expect(source).not.toContain('$500');
   });
 
-  test('login page sets new users weeklyRep to 1000 only', () => {
+  test('login page sets new users balance to 1000 only', () => {
     const source = read('app/login/page.js');
-    expect(source).toContain('weeklyRep: 1000');
-    expect(source).not.toContain('weeklyRep: 500');
-    expect(source).not.toMatch(/weeklyRep:\s*(?!1000)\d+/);
+    expect(source).toContain('balance: 1000');
+    expect(source).not.toContain('balance: 500');
   });
 
-  test('admin weekly reset does NOT set weeklyRep to 1000 (stipend model)', () => {
+  test('admin weekly reset does NOT set balance to 1000 (stipend model)', () => {
     const source = read('app/admin/page.js');
-    expect(source).not.toContain("batch.update(doc(db, 'users', d.id), { weeklyRep: 1000 })");
+    expect(source).not.toContain("batch.update(doc(db, 'users', d.id), { balance: 1000 })");
     expect(source).toContain('weeklySnapshots');
   });
 
@@ -35,9 +34,9 @@ describe('balance baseline constants', () => {
     expect(howItWorks).not.toContain('$500');
   });
 
-  test('user profile weeklyNet uses weeklyStartingBalance, not hardcoded 1000', () => {
+  test('user profile netPnl uses totalDeposits, not hardcoded 1000', () => {
     const source = read('app/user/[id]/page.js');
-    expect(source).toContain('weeklyStartingBalance');
-    expect(source).not.toMatch(/weeklyNet\s*=\s*Number\(user\.weeklyRep\s*\|\|\s*0\)\s*-\s*1000/);
+    expect(source).toContain('totalDeposits');
+    expect(source).not.toMatch(/netPnl\s*=\s*Number\(user\.balance\s*\|\|\s*0\)\s*-\s*1000/);
   });
 });

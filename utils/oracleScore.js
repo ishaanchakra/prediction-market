@@ -80,8 +80,15 @@ export function calculateMarketContribution({ userBets, resolution }) {
 
   const side = normalizeSide(lastAction.side);
   const type = normalizeType(lastAction.type);
-  const impliedProbability = clamp01(lastAction.marketProbabilityAtBet ?? lastAction.probability);
-  if (impliedProbability == null) return null;
+  const rawMarketProb = clamp01(lastAction.marketProbabilityAtBet ?? lastAction.probability);
+  if (rawMarketProb == null) return null;
+
+  // Use bet direction to derive implied probability so correct contrarian bets are rewarded.
+  // A YES bet at 30% (contrarian) should score equally to a YES bet at 70% (with-market)
+  // when both are correct. Wrong bets always score below the 0.75 threshold → display 0.
+  const impliedProbability = side === 'YES'
+    ? Math.max(rawMarketProb, 1 - rawMarketProb)  // user predicts YES
+    : Math.min(rawMarketProb, 1 - rawMarketProb); // user predicts NO
 
   const error = outcome - impliedProbability;
   const brierScore = 1 - (error * error);

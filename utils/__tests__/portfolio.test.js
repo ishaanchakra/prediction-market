@@ -1,5 +1,6 @@
 import { MARKET_STATUS } from '../marketStatus';
 import { aggregatePositions, calculatePortfolioSummary, calculatePortfolioValue, calculateAllPortfolioValues } from '../portfolio';
+import { calculateSell } from '../lmsr';
 
 describe('aggregatePositions', () => {
   test('one BUY creates one aggregated position with correct value', () => {
@@ -101,11 +102,86 @@ describe('aggregatePositions', () => {
     expect(positions[0].marketValue).toBe(70);
     expect(positions[0].unrealizedPnl).toBe(0);
   });
+
+  test('uses LMSR sell value when pool data is available', () => {
+    const pool = { yes: 100, no: 100 };
+    const b = 100;
+    const positions = aggregatePositions([
+      {
+        marketId: 'm1',
+        marketStatus: MARKET_STATUS.OPEN,
+        marketProbability: 0.5,
+        marketOutstandingShares: pool,
+        marketB: b,
+        side: 'YES',
+        type: 'BUY',
+        amount: 40,
+        shares: 50
+      }
+    ]);
+
+    const expectedLmsr = calculateSell(pool, 50, 'YES', b).payout;
+    const linearValue = 50 * 0.5; // 25
+
+    expect(positions[0].marketValue).toBeCloseTo(expectedLmsr, 1);
+    // LMSR sell value accounts for price impact, so it differs from linear
+    expect(positions[0].marketValue).not.toBeCloseTo(linearValue, 0);
+  });
+
+  test('falls back to linear when pool data is missing', () => {
+    const positions = aggregatePositions([
+      {
+        marketId: 'm1',
+        marketStatus: MARKET_STATUS.OPEN,
+        marketProbability: 0.6,
+        side: 'YES',
+        type: 'BUY',
+        amount: 40,
+        shares: 80
+      }
+    ]);
+
+    // Linear: 80 * 0.6 = 48
+    expect(positions[0].marketValue).toBe(48);
+  });
+
+  test('LMSR valuation works for both YES and NO shares', () => {
+    const pool = { yes: 120, no: 80 };
+    const b = 100;
+    const positions = aggregatePositions([
+      {
+        marketId: 'm1',
+        marketStatus: MARKET_STATUS.OPEN,
+        marketProbability: 0.6,
+        marketOutstandingShares: pool,
+        marketB: b,
+        side: 'YES',
+        type: 'BUY',
+        amount: 30,
+        shares: 40
+      },
+      {
+        marketId: 'm1',
+        marketStatus: MARKET_STATUS.OPEN,
+        marketProbability: 0.6,
+        marketOutstandingShares: pool,
+        marketB: b,
+        side: 'NO',
+        type: 'BUY',
+        amount: 20,
+        shares: 30
+      }
+    ]);
+
+    const expectedYes = calculateSell(pool, 40, 'YES', b).payout;
+    const expectedNo = calculateSell(pool, 30, 'NO', b).payout;
+    expect(positions[0].marketValue).toBeCloseTo(expectedYes + expectedNo, 1);
+  });
 });
 
 describe('calculatePortfolioSummary', () => {
   test('no positions equals cash balance', () => {
-    const summary = calculatePortfolioSummary({ weeklyRep: 950 }, []);
+    const summary = calculatePortfolioSummary({ balance: 950 }, []);
 
     expect(summary.cashBalance).toBe(950);
     expect(summary.positionsValue).toBe(0);
@@ -114,7 +190,7 @@ describe('calculatePortfolioSummary', () => {
 
   test('positions included in portfolio value', () => {
     const summary = calculatePortfolioSummary(
-      { weeklyRep: 900 },
+      { balance: 900 },
       [
         { marketStatus: MARKET_STATUS.OPEN, marketValue: 50, yesShares: 100, noShares: 0, marketProbability: 0.5 },
         { marketStatus: MARKET_STATUS.LOCKED, marketValue: 30, yesShares: 0, noShares: 40, marketProbability: 0.25 }
@@ -123,12 +199,12 @@ describe('calculatePortfolioSummary', () => {
 
     expect(summary.positionsValue).toBe(80);
     expect(summary.portfolioValue).toBe(980);
-    expect(summary.weeklyPnl).toBe(-20);
+    expect(summary.netPnl).toBe(-20);
   });
 
   test('allocation percentages sum near 100', () => {
     const summary = calculatePortfolioSummary(
-      { weeklyRep: 500 },
+      { balance: 500 },
       [
         { marketStatus: MARKET_STATUS.OPEN, marketValue: 250, yesShares: 500, noShares: 0, marketProbability: 0.5 }
       ]
@@ -140,7 +216,7 @@ describe('calculatePortfolioSummary', () => {
 
   test('zero portfolio edge case does not blow up percentages', () => {
     const summary = calculatePortfolioSummary(
-      { weeklyRep: 0 },
+      { balance: 0 },
       [
         { marketStatus: MARKET_STATUS.OPEN, marketValue: 0, yesShares: 100, noShares: 0, marketProbability: 0 }
       ]
@@ -153,54 +229,54 @@ describe('calculatePortfolioSummary', () => {
   });
 });
 
-describe('calculatePortfolioSummary - weeklyStartingBalance baseline', () => {
-  test('uses weeklyStartingBalance when present', () => {
-    const user = { weeklyRep: 1200, weeklyStartingBalance: 1100 };
+describe('calculatePortfolioSummary - totalDeposits baseline', () => {
+  test('uses totalDeposits when present', () => {
+    const user = { balance: 1200, totalDeposits: 1100 };
     const result = calculatePortfolioSummary(user, []);
-    expect(result.weeklyPnl).toBe(100);
+    expect(result.netPnl).toBe(100);
   });
 
-  test('falls back to 1000 when weeklyStartingBalance is missing', () => {
-    const user = { weeklyRep: 1200 };
+  test('falls back to 1000 when totalDeposits is missing', () => {
+    const user = { balance: 1200 };
     const result = calculatePortfolioSummary(user, []);
-    expect(result.weeklyPnl).toBe(200);
+    expect(result.netPnl).toBe(200);
   });
 
-  test('falls back to 1000 when weeklyStartingBalance is null', () => {
-    const user = { weeklyRep: 1200, weeklyStartingBalance: null };
+  test('falls back to 1000 when totalDeposits is null', () => {
+    const user = { balance: 1200, totalDeposits: null };
     const result = calculatePortfolioSummary(user, []);
-    expect(result.weeklyPnl).toBe(200);
+    expect(result.netPnl).toBe(200);
   });
 
-  test('falls back to 1000 when weeklyStartingBalance is undefined', () => {
-    const user = { weeklyRep: 1200, weeklyStartingBalance: undefined };
+  test('falls back to 1000 when totalDeposits is undefined', () => {
+    const user = { balance: 1200, totalDeposits: undefined };
     const result = calculatePortfolioSummary(user, []);
-    expect(result.weeklyPnl).toBe(200);
+    expect(result.netPnl).toBe(200);
   });
 
   test('handles user with more accumulated balance than baseline', () => {
-    const user = { weeklyRep: 2400, weeklyStartingBalance: 2350 };
+    const user = { balance: 2400, totalDeposits: 2350 };
     const result = calculatePortfolioSummary(user, []);
-    expect(result.weeklyPnl).toBe(50);
+    expect(result.netPnl).toBe(50);
   });
 
-  test('handles negative weekly pnl correctly', () => {
-    const user = { weeklyRep: 900, weeklyStartingBalance: 1050 };
+  test('handles negative net pnl correctly', () => {
+    const user = { balance: 900, totalDeposits: 1050 };
     const result = calculatePortfolioSummary(user, []);
-    expect(result.weeklyPnl).toBe(-150);
+    expect(result.netPnl).toBe(-150);
   });
 
-  test('weeklyStartingBalance of 0 does not cause division errors', () => {
-    const user = { weeklyRep: 50, weeklyStartingBalance: 0 };
+  test('totalDeposits of 0 does not cause division errors', () => {
+    const user = { balance: 50, totalDeposits: 0 };
     const result = calculatePortfolioSummary(user, []);
-    expect(Number.isFinite(result.weeklyPnl)).toBe(true);
-    expect(result.weeklyPnl).toBe(50);
+    expect(Number.isFinite(result.netPnl)).toBe(true);
+    expect(result.netPnl).toBe(50);
   });
 
-  test('weeklyPnl rounds to 2 decimal places', () => {
-    const user = { weeklyRep: 1100.005, weeklyStartingBalance: 1000.003 };
+  test('netPnl rounds to 2 decimal places', () => {
+    const user = { balance: 1100.005, totalDeposits: 1000.003 };
     const result = calculatePortfolioSummary(user, []);
-    const pnl = result.weeklyPnl;
+    const pnl = result.netPnl;
     expect(Math.round(pnl * 100) / 100).toBe(pnl);
   });
 });
@@ -242,14 +318,41 @@ describe('calculatePortfolioValue', () => {
     expect(result.positionsByMarket['m1'].yesShares).toBe(90);
     expect(result.positionsByMarket['m1'].noShares).toBe(0);
   });
+
+  test('Net P&L includes LMSR position value when pool data available', () => {
+    const pool = { yes: 200, no: 100 };
+    const b = 100;
+    const result = calculatePortfolioValue({
+      cashBalance: 800,
+      totalDeposits: 1000,
+      userBets: [{ marketId: 'm1', userId: 'u1', side: 'YES', type: 'BUY', amount: 200, shares: 200 }],
+      openMarketsById: { m1: { probability: 0.6, outstandingShares: pool, b } }
+    });
+
+    const expectedSellValue = calculateSell(pool, 200, 'YES', b).payout;
+    expect(result.positionsValue).toBeCloseTo(expectedSellValue, 1);
+    expect(result.portfolioValue).toBeCloseTo(800 + expectedSellValue, 1);
+    expect(result.netProfit).toBeCloseTo(800 + expectedSellValue - 1000, 1);
+  });
+
+  test('no positions means Net P&L is balance minus deposits', () => {
+    const result = calculatePortfolioValue({
+      cashBalance: 1000,
+      totalDeposits: 1000,
+      userBets: [],
+      openMarketsById: {}
+    });
+
+    expect(result.netProfit).toBe(0);
+  });
 });
 
 describe('calculateAllPortfolioValues', () => {
   test('users with no bets rank by cash balance', () => {
     const users = [
-      { id: 'u1', weeklyRep: 800 },
-      { id: 'u2', weeklyRep: 1200 },
-      { id: 'u3', weeklyRep: 1000 }
+      { id: 'u1', balance: 800 },
+      { id: 'u2', balance: 1200 },
+      { id: 'u3', balance: 1000 }
     ];
     const results = calculateAllPortfolioValues({ users, bets: [], openMarkets: [] })
       .sort((a, b) => b.portfolioValue - a.portfolioValue);
@@ -262,10 +365,10 @@ describe('calculateAllPortfolioValues', () => {
   test('user with lower cash but valuable open position ranks above cash-only leader (the homepage rank bug)', () => {
     // u1: $900 cash, 200 YES shares at prob 0.8 → portfolioValue = 900 + 160 = 1060
     // u2: $1050 cash, no positions → portfolioValue = 1050
-    // Raw weeklyRep rank: u2 (#1) > u1 (#2), but true portfolioValue rank: u1 (#1) > u2 (#2)
+    // Raw balance rank: u2 (#1) > u1 (#2), but true portfolioValue rank: u1 (#1) > u2 (#2)
     const users = [
-      { id: 'u1', weeklyRep: 900 },
-      { id: 'u2', weeklyRep: 1050 }
+      { id: 'u1', balance: 900 },
+      { id: 'u2', balance: 1050 }
     ];
     const bets = [
       { marketId: 'm1', userId: 'u1', side: 'YES', type: 'BUY', amount: 100, shares: 200 }
@@ -279,13 +382,13 @@ describe('calculateAllPortfolioValues', () => {
     expect(results[0].portfolioValue).toBe(1060);
     expect(results[1].id).toBe('u2');
     expect(results[1].portfolioValue).toBe(1050);
-    // Confirm sorting by weeklyRep alone would give the wrong order
-    const byWeeklyRep = [...users].sort((a, b) => b.weeklyRep - a.weeklyRep);
-    expect(byWeeklyRep[0].id).toBe('u2');
+    // Confirm sorting by balance alone would give the wrong order
+    const byBalance = [...users].sort((a, b) => b.balance - a.balance);
+    expect(byBalance[0].id).toBe('u2');
   });
 
   test('user not in users list gets rank -1 (no entry)', () => {
-    const users = [{ id: 'u1', weeklyRep: 1000 }];
+    const users = [{ id: 'u1', balance: 1000 }];
     const results = calculateAllPortfolioValues({ users, bets: [], openMarkets: [] });
     const rankIdx = results.findIndex((u) => u.id === 'unknown');
     expect(rankIdx).toBe(-1);
@@ -297,10 +400,32 @@ describe('calculateAllPortfolioValues', () => {
   });
 
   test('bets for unknown markets are treated as zero-value positions', () => {
-    const users = [{ id: 'u1', weeklyRep: 500 }];
+    const users = [{ id: 'u1', balance: 500 }];
     const bets = [{ marketId: 'unknown-market', userId: 'u1', side: 'YES', type: 'BUY', amount: 50, shares: 100 }];
     const results = calculateAllPortfolioValues({ users, bets, openMarkets: [] });
     // Market not in openMarketsById → probability defaults to 0.5
     expect(results[0].portfolioValue).toBeGreaterThanOrEqual(500);
+  });
+
+  test('LMSR position value flows through to Net P&L ranking', () => {
+    const pool = { yes: 150, no: 100 };
+    const b = 100;
+    const users = [
+      { id: 'u1', balance: 800, totalDeposits: 1000 },
+      { id: 'u2', balance: 1000, totalDeposits: 1000 }
+    ];
+    const bets = [
+      { marketId: 'm1', userId: 'u1', side: 'YES', type: 'BUY', amount: 200, shares: 150 }
+    ];
+    const openMarkets = [{ id: 'm1', probability: 0.6, outstandingShares: pool, b }];
+
+    const results = calculateAllPortfolioValues({ users, bets, openMarkets });
+    const u1 = results.find((r) => r.id === 'u1');
+    const u2 = results.find((r) => r.id === 'u2');
+
+    const expectedSellValue = calculateSell(pool, 150, 'YES', b).payout;
+    expect(u1.positionsValue).toBeCloseTo(expectedSellValue, 1);
+    expect(u1.netPnl).toBeCloseTo(800 + expectedSellValue - 1000, 1);
+    expect(u2.netPnl).toBe(0);
   });
 });

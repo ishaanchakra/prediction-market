@@ -53,6 +53,7 @@ function AllMarketsContent() {
   const [searchInput, setSearchInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [marketNotice, setMarketNotice] = useState('');
 
   const validStatusIds = useMemo(() => new Set(STATUS_OPTIONS.map((entry) => entry.id)), []);
   const validSortIds = useMemo(() => new Set(SORT_OPTIONS.map((entry) => entry.id)), []);
@@ -97,6 +98,14 @@ function AllMarketsContent() {
   useEffect(() => {
     setSearchInput(searchQuery);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedNotice = window.sessionStorage.getItem('predictcornell_market_notice');
+    if (!storedNotice) return;
+    setMarketNotice(storedNotice);
+    window.sessionStorage.removeItem('predictcornell_market_notice');
+  }, []);
 
   const currentQueryString = searchParams.toString();
   useEffect(() => {
@@ -255,6 +264,20 @@ function AllMarketsContent() {
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto bg-[var(--bg)] min-h-screen">
+      {marketNotice && (
+        <div className="mb-4 flex items-start gap-3 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-3 font-mono text-[0.65rem] text-[#f59e0b]">
+          <span className="text-[0.8rem] leading-none">!</span>
+          <div className="flex-1">{marketNotice}</div>
+          <button
+            type="button"
+            onClick={() => setMarketNotice('')}
+            className="rounded border border-[rgba(217,119,6,0.3)] px-2 py-1 text-[0.55rem] uppercase tracking-[0.06em] text-[#fbbf24]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {loadError && (
         <div className="mb-4 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
           {loadError}

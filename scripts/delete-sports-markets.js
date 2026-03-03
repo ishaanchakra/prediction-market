@@ -122,14 +122,14 @@ async function deleteSportsMarkets() {
 
       const refundOps = [];
 
-      // Update users' weeklyRep
+      // Update users' balance
       for (const userId of userIds) {
         const userRef = db.collection('users').doc(userId);
         const userSnap = await userRef.get();
         if (!userSnap.exists()) continue;
-        const current = Number(userSnap.data().weeklyRep || 0);
+        const current = Number(userSnap.data().balance || 0);
         refundOps.push((batch) => {
-          batch.update(userRef, { weeklyRep: round2(current + refunds[userId]) });
+          batch.update(userRef, { balance: round2(current + refunds[userId]) });
         });
         totalRefunded += refunds[userId];
       }

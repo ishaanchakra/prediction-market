@@ -76,6 +76,8 @@ export default function UserProfilePage() {
                 marketStatus: getMarketStatus(marketData),
                 marketResolution: marketData.resolution || null,
                 marketProbability: Number(marketData.probability || 0),
+                marketOutstandingShares: marketData.outstandingShares || null,
+                marketB: marketData.b != null ? marketData.b : null,
                 marketResolutionDate: marketData.resolutionDate || null,
                 marketResolvedAt: marketData.resolvedAt || null,
                 marketCancelledAt: marketData.cancelledAt || null,
@@ -129,10 +131,11 @@ export default function UserProfilePage() {
 
   const username = getPublicDisplayName({ id, ...user });
   const viewerIsAdmin = !!viewer?.email && ADMIN_EMAILS.includes(viewer.email);
-  const weeklyBaseline = Number(user?.weeklyStartingBalance ?? 1000);
-  const weeklyNet = Number(user?.weeklyRep || 0) - weeklyBaseline;
-  const memberSince = user?.createdAt?.toDate?.()
-    ? user.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  const totalDeposits = Number(user?.totalDeposits ?? 1000);
+  const netPnl = Number(user?.balance || 0) - totalDeposits;
+  const accountCreatedAt = user?.accountCreatedAt?.toDate?.() || user?.createdAt?.toDate?.() || null;
+  const memberSince = accountCreatedAt
+    ? accountCreatedAt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : 'Unknown';
   const resolvedBuys = bets.filter((bet) => bet.marketStatus === MARKET_STATUS.RESOLVED && Number(bet.amount || 0) > 0);
   const wins = resolvedBuys.filter((bet) => bet.side === bet.marketResolution).length;
@@ -158,15 +161,15 @@ export default function UserProfilePage() {
 
         <div className="mb-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
-            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Weekly Balance</p>
-            <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${fmtMoney(user.weeklyRep)}</p>
-            <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Carries over weekly (+$50 stipend on Sunday night)</p>
+            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Balance</p>
+            <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${fmtMoney(user.balance)}</p>
+            <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Live cash balance</p>
           </div>
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
             <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Lifetime Earnings</p>
             <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${fmtMoney(user.lifetimeRep)}</p>
             <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">
-              Cumulative resolved-market net · Week: {weeklyNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(weeklyNet))}
+              Cumulative resolved-market net · P&L: {netPnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(netPnl))}
             </p>
           </div>
         </div>

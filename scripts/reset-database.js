@@ -87,7 +87,7 @@ async function resetDatabase() {
     const usersBatch = db.batch();
     usersSnapshot.docs.forEach(doc => {
       usersBatch.update(doc.ref, {
-        weeklyRep: round2(1000),
+        balance: round2(1000),
         lifetimeRep: round2(0),
         onboardingComplete: true
       });

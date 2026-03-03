@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import {
@@ -10,8 +9,6 @@ import {
   query,
   where,
   getDocs,
-  orderBy,
-  limit,
   runTransaction,
   serverTimestamp
 } from 'firebase/firestore';
@@ -25,8 +22,6 @@ export default function ProfilePage() {
   const [bets, setBets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
-  const [weeklyRank, setWeeklyRank] = useState(null);
-  const [traderCount, setTraderCount] = useState(0);
   const [editingDisplayName, setEditingDisplayName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [nameStatus, setNameStatus] = useState('idle');
@@ -52,7 +47,7 @@ export default function ProfilePage() {
           setUser({
             uid: currentUser.uid,
             email: currentUser.email || '',
-            weeklyRep: 1000,
+            balance: 1000,
             lifetimeRep: 0
           });
           setDisplayNameDraft(currentUser.email?.split('@')[0] || 'trader');
@@ -79,6 +74,8 @@ export default function ProfilePage() {
                 marketStatus: getMarketStatus(marketData),
                 marketResolution: marketData.resolution || null,
                 marketProbability: Number(marketData.probability || 0),
+                marketOutstandingShares: marketData.outstandingShares || null,
+                marketB: marketData.b != null ? marketData.b : null,
                 marketResolutionDate: marketData.resolutionDate || null,
                 marketResolvedAt: marketData.resolvedAt || null,
                 marketCancelledAt: marketData.cancelledAt || null,
@@ -109,12 +106,6 @@ export default function ProfilePage() {
           })
         );
 
-        const usersQuery = query(collection(db, 'users'), orderBy('weeklyRep', 'desc'), limit(500));
-        const usersSnapshot = await getDocs(usersQuery);
-        const usersRows = usersSnapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
-        const rank = usersRows.findIndex((entry) => entry.id === currentUser.uid);
-        setWeeklyRank(rank >= 0 ? rank + 1 : null);
-        setTraderCount(usersRows.length);
       } catch (error) {
         console.error('Error fetching profile:', error);
         setProfileError('Unable to load full profile data right now.');
@@ -264,8 +255,9 @@ export default function ProfilePage() {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() || '')
     .join('') || 'PC';
-  const memberSince = user?.createdAt?.toDate?.()
-    ? user.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  const accountCreatedAt = user?.accountCreatedAt?.toDate?.() || user?.createdAt?.toDate?.() || null;
+  const memberSince = accountCreatedAt
+    ? accountCreatedAt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : 'Unknown';
   const resolvedBuys = bets.filter((bet) => bet.marketStatus === MARKET_STATUS.RESOLVED && Number(bet.amount || 0) > 0);
   const wins = resolvedBuys.filter((bet) => bet.side === bet.marketResolution).length;
@@ -344,20 +336,17 @@ export default function ProfilePage() {
         </div>
 
         <div className="mb-6 rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-          <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Global Profile Scope</p>
+          <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Profile Scope</p>
           <p className="mt-1 text-sm text-[var(--text-dim)]">
-            This profile shows global market performance by default. View marketplace wallets on each marketplace dashboard.
+            This profile tracks your global wallet, open positions, and cumulative performance over time.
           </p>
-          <Link href="/marketplace/enter" className="mt-2 inline-block font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--red)] hover:text-[var(--red-dim)]">
-            Open marketplaces →
-          </Link>
         </div>
 
         <div className="mb-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
-            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Global Weekly Balance</p>
-            <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${Number(user.weeklyRep || 0).toFixed(2)}</p>
-            <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Resets every Monday</p>
+            <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Balance</p>
+            <p className="font-mono text-[2.5rem] font-bold leading-none text-[var(--amber-bright)]">${Number(user.balance || 0).toFixed(2)}</p>
+            <p className="mt-2 font-mono text-[0.6rem] text-[var(--text-muted)]">Live cash balance</p>
           </div>
           <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center sm:text-left">
             <p className="font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Global Lifetime Earnings</p>
@@ -379,7 +368,7 @@ export default function ProfilePage() {
 
         <PortfolioView
           userId={user.uid}
-          user={{ ...user, weeklyRank, traderCount }}
+          user={user}
           bets={bets}
           isOwnProfile
         />

@@ -64,8 +64,10 @@ export default function LoginPage() {
       if (!userDoc.exists()) {
         await Promise.all([
           setDoc(userDocRef, {
-            weeklyRep: 1000,
-            weeklyStartingBalance: 1000,
+            balance: 1000,
+            totalDeposits: 1000,
+            accountCreatedAt: new Date(),
+            lastStipendWeek: null,
             lifetimeRep: 0,
             oracleScore: 0,
             oracleMarketsScored: 0,
@@ -88,8 +90,9 @@ export default function LoginPage() {
       } else {
         const current = userDoc.data() || {};
         const patch = {};
-        if (!Number.isFinite(Number(current.weeklyRep))) patch.weeklyRep = 1000;
-        if (!Number.isFinite(Number(current.weeklyStartingBalance))) patch.weeklyStartingBalance = 1000;
+        if (!Number.isFinite(Number(current.balance))) patch.balance = 1000;
+        if (!Number.isFinite(Number(current.totalDeposits))) patch.totalDeposits = 1000;
+        if (!current.accountCreatedAt) patch.accountCreatedAt = current.createdAt || new Date();
         if (!Number.isFinite(Number(current.lifetimeRep))) patch.lifetimeRep = 0;
         if (!Number.isFinite(Number(current.oracleScore))) patch.oracleScore = 0;
         if (!Number.isFinite(Number(current.oracleMarketsScored))) patch.oracleMarketsScored = 0;

@@ -1,17 +1,12 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { auth, db } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { usePathname, useRouter } from 'next/navigation';
-import { collection, query, where, doc, onSnapshot, orderBy, limit, getDoc } from 'firebase/firestore';
+import { collection, query, where, doc, onSnapshot } from 'firebase/firestore';
 import { ADMIN_EMAILS } from '@/utils/adminEmails';
-import { toMarketplaceMemberId } from '@/utils/marketplace';
-
-function isPermissionDenied(error) {
-  return error?.code === 'permission-denied'
-    || String(error?.message || '').toLowerCase().includes('missing or insufficient permissions');
-}
 
 function NavIcon({ icon, className = 'h-[18px] w-[18px]' }) {
   const baseProps = {
@@ -98,6 +93,24 @@ function NavIcon({ icon, className = 'h-[18px] w-[18px]' }) {
       </svg>
     );
   }
+  if (icon === 'login') {
+    return (
+      <svg {...baseProps}>
+        <path d="M10 17l5-5-5-5" />
+        <path d="M15 12H4" />
+        <path d="M20 20V4" />
+      </svg>
+    );
+  }
+  if (icon === 'logout') {
+    return (
+      <svg {...baseProps}>
+        <path d="M14 17l-5-5 5-5" />
+        <path d="M9 12h11" />
+        <path d="M4 20V4" />
+      </svg>
+    );
+  }
   return null;
 }
 
@@ -126,74 +139,15 @@ export default function Navigation() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [balance, setBalance] = useState(0);
-  const [joinedMarketplaces, setJoinedMarketplaces] = useState([]);
-  const [activeMarketplace, setActiveMarketplace] = useState(null);
-  const [activeMarketplaceBalance, setActiveMarketplaceBalance] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
 
-  const routeMarketplaceId = useMemo(() => {
-    if (!pathname?.startsWith('/marketplace/')) return null;
-    const [, segment, id] = pathname.split('/');
-    if (segment !== 'marketplace') return null;
-    if (!id || id === 'enter') return null;
-    return id;
-  }, [pathname]);
-
-  const routeMarketId = useMemo(() => {
-    if (!pathname?.startsWith('/market/')) return null;
-    const [, segment, id] = pathname.split('/');
-    if (segment !== 'market') return null;
-    if (!id || id === 'active') return null;
-    return id;
-  }, [pathname]);
-
-  const [marketRouteMarketplaceId, setMarketRouteMarketplaceId] = useState(null);
-  const activeMarketplaceId = routeMarketplaceId || marketRouteMarketplaceId;
-  const inMarketplaceContext = !!activeMarketplaceId;
   const isAdmin = useMemo(() => !!(user?.email && ADMIN_EMAILS.includes(user.email)), [user]);
-  const displayBalance = inMarketplaceContext
-    ? Number(activeMarketplaceBalance ?? balance)
-    : Number(balance);
-
-  const joinedMarketplaceCount = joinedMarketplaces.length;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolveMarketplaceFromMarketRoute() {
-      if (!routeMarketId) {
-        setMarketRouteMarketplaceId(null);
-        return;
-      }
-      setMarketRouteMarketplaceId(null);
-
-      try {
-        const marketSnap = await getDoc(doc(db, 'markets', routeMarketId));
-        if (cancelled) return;
-        if (!marketSnap.exists()) {
-          setMarketRouteMarketplaceId(null);
-          return;
-        }
-        setMarketRouteMarketplaceId(marketSnap.data().marketplaceId || null);
-      } catch (error) {
-        if (!isPermissionDenied(error)) {
-          console.error('Error resolving market route context:', error);
-        }
-        if (!cancelled) setMarketRouteMarketplaceId(null);
-      }
-    }
-
-    resolveMarketplaceFromMarketRoute();
-    return () => {
-      cancelled = true;
-    };
-  }, [routeMarketId]);
+  const displayBalance = Number(balance);
 
   useEffect(() => {
     let unsubscribeUnread = null;
     let unsubscribeBalance = null;
-    let unsubscribeMemberships = null;
 
     const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
@@ -205,10 +159,6 @@ export default function Navigation() {
       if (unsubscribeBalance) {
         unsubscribeBalance();
         unsubscribeBalance = null;
-      }
-      if (unsubscribeMemberships) {
-        unsubscribeMemberships();
-        unsubscribeMemberships = null;
       }
 
       if (currentUser) {
@@ -228,93 +178,25 @@ export default function Navigation() {
           (userDoc) => {
             if (userDoc.exists()) {
               const data = userDoc.data();
-              setBalance(Number(data.weeklyRep || 0));
+              setBalance(Number(data.balance || 0));
             } else {
               setBalance(0);
             }
           },
           (error) => console.error('Error listening to user balance:', error)
         );
-
-        const membershipsQuery = query(
-          collection(db, 'marketplaceMembers'),
-          where('userId', '==', currentUser.uid),
-          orderBy('joinedAt', 'desc'),
-          limit(30)
-        );
-        unsubscribeMemberships = onSnapshot(
-          membershipsQuery,
-          async (snapshot) => {
-            const rows = await Promise.all(
-              snapshot.docs.map(async (membershipDoc) => {
-                const membership = membershipDoc.data();
-                try {
-                  const marketplaceSnap = await getDoc(doc(db, 'marketplaces', membership.marketplaceId));
-                  if (!marketplaceSnap.exists()) return null;
-                  return {
-                    ...membership,
-                    marketplace: { id: marketplaceSnap.id, ...marketplaceSnap.data() }
-                  };
-                } catch (error) {
-                  console.error('Error loading marketplace link:', error);
-                  return null;
-                }
-              })
-            );
-            setJoinedMarketplaces(rows.filter(Boolean));
-          },
-          (error) => console.error('Error listening to marketplace memberships:', error)
-        );
       } else {
         setUnreadCount(0);
         setBalance(0);
-        setJoinedMarketplaces([]);
-        setActiveMarketplace(null);
-        setActiveMarketplaceBalance(null);
       }
     });
 
     return () => {
       if (unsubscribeUnread) unsubscribeUnread();
       if (unsubscribeBalance) unsubscribeBalance();
-      if (unsubscribeMemberships) unsubscribeMemberships();
       unsubscribeAuth();
     };
   }, []);
-
-  useEffect(() => {
-    let unsubscribeActiveMember = null;
-    let cancelled = false;
-
-    async function loadMarketplaceContext() {
-      if (!user || !activeMarketplaceId) {
-        setActiveMarketplace(null);
-        setActiveMarketplaceBalance(null);
-        return;
-      }
-
-      unsubscribeActiveMember = onSnapshot(
-        doc(db, 'marketplaceMembers', toMarketplaceMemberId(activeMarketplaceId, user.uid)),
-        (memberSnap) => setActiveMarketplaceBalance(memberSnap.exists() ? Number(memberSnap.data().balance || 0) : null),
-        (error) => console.error('Error listening to marketplace balance:', error)
-      );
-
-      try {
-        const marketplaceSnap = await getDoc(doc(db, 'marketplaces', activeMarketplaceId));
-        if (!cancelled) {
-          setActiveMarketplace(marketplaceSnap.exists() ? { id: marketplaceSnap.id, ...marketplaceSnap.data() } : null);
-        }
-      } catch (error) {
-        console.error('Error loading active marketplace:', error);
-      }
-    }
-
-    loadMarketplaceContext();
-    return () => {
-      cancelled = true;
-      if (unsubscribeActiveMember) unsubscribeActiveMember();
-    };
-  }, [activeMarketplaceId, user]);
 
   async function handleLogout() {
     try {
@@ -325,27 +207,36 @@ export default function Navigation() {
     }
   }
 
+  const bottomTabs = useMemo(() => {
+    const tabs = [
+      { href: '/feed', icon: 'home', label: 'Feed', badge: 0 },
+      { href: '/markets', icon: 'markets', label: 'Markets', badge: 0 },
+      { href: '/leaderboard', icon: 'leaderboard', label: 'Board', badge: 0 },
+      { href: '/call-for-markets', icon: 'call', label: 'Call', badge: 0, accent: true },
+      { href: '/how-it-works', icon: 'about', label: 'About', badge: 0 }
+    ];
+
+    if (user) {
+      tabs.push(
+        { href: '/notifications', icon: 'notifications', label: 'Notifs', badge: unreadCount },
+        { href: '/profile', icon: 'profile', label: 'Profile', badge: 0 }
+      );
+    } else {
+      tabs.push({ href: '/login', icon: 'login', label: 'Login', badge: 0, accent: true });
+    }
+
+    return tabs;
+  }, [unreadCount, user]);
+
   if (pathname === '/onboarding') return null;
 
   const isActive = (href) => {
     if (!pathname) return false;
     if (href === '/markets') {
-      return pathname === '/markets'
-        || pathname.startsWith('/marketplace')
-        || pathname.startsWith('/market/');
+      return pathname === '/markets' || pathname.startsWith('/market/');
     }
     return pathname === href || pathname.startsWith(`${href}/`);
   };
-
-  const bottomTabs = [
-    { href: '/feed', icon: 'feed', label: 'Feed', badge: 0 },
-    { href: '/markets', icon: 'markets', label: 'Markets', badge: 0 },
-    { href: '/leaderboard', icon: 'leaderboard', label: 'Board', badge: 0 },
-    { href: '/call-for-markets', icon: 'call', label: 'Call', badge: 0, accent: true },
-    { href: '/how-it-works', icon: 'about', label: 'About', badge: 0 },
-    { href: '/notifications', icon: 'notifications', label: 'Notifs', badge: unreadCount },
-    { href: '/profile', icon: 'profile', label: 'Profile', badge: 0 },
-  ];
 
   return (
     <>
@@ -353,18 +244,13 @@ export default function Navigation() {
         <Link
           href="/"
           title="Home"
-          className="mb-4 flex h-10 w-10 items-center justify-center rounded-[6px] border border-[var(--border2)] bg-[var(--surface)]"
+          className="mb-4 flex h-10 w-10 items-center justify-center rounded-[6px] overflow-hidden"
         >
-          <NavIcon icon="home" />
+          <Image src="/predict-cornell-icon.png" alt="Home" width={40} height={40} className="h-10 w-10 object-cover rounded-[6px]" />
         </Link>
 
-        <SidebarItem href="/feed" icon="feed" label="Feed" active={isActive('/feed')} />
-        <SidebarItem
-          href="/markets"
-          icon="markets"
-          label={joinedMarketplaceCount > 0 ? `Markets (${joinedMarketplaceCount} joined)` : 'Markets'}
-          active={isActive('/markets')}
-        />
+        <SidebarItem href="/feed" icon="home" label="Feed" active={isActive('/feed')} />
+        <SidebarItem href="/markets" icon="markets" label="Markets" active={isActive('/markets')} />
         <SidebarItem href="/leaderboard" icon="leaderboard" label="Leaderboard" active={isActive('/leaderboard')} />
         <Link
           href="/call-for-markets"
@@ -388,20 +274,61 @@ export default function Navigation() {
         </div>
         <div className="w-full border-t border-[var(--border)]" />
 
-        <SidebarItem href="/profile" icon="profile" label="Profile" active={isActive('/profile')} />
-        <SidebarItem href="/notifications" icon="notifications" label="Notifications" active={isActive('/notifications')} badge={unreadCount} />
-        {isAdmin && <SidebarItem href="/admin" icon="admin" label="Admin" active={isActive('/admin')} />}
+        {user ? (
+          <>
+            <SidebarItem href="/profile" icon="profile" label="Profile" active={isActive('/profile')} />
+            <SidebarItem href="/notifications" icon="notifications" label="Notifications" active={isActive('/notifications')} badge={unreadCount} />
+            {isAdmin && <SidebarItem href="/admin" icon="admin" label="Admin" active={isActive('/admin')} />}
+          </>
+        ) : (
+          <SidebarItem href="/login" icon="login" label="Login" active={isActive('/login')} />
+        )}
 
-        {user && (
+        <div className="mt-auto w-full px-2 pt-2">
+          {user ? (
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[6px] border border-[rgba(220,38,38,0.35)] bg-[var(--red-glow)] text-[var(--red)] transition-colors hover:bg-[rgba(220,38,38,0.18)]"
+            >
+              <NavIcon icon="logout" className="h-[14px] w-[14px]" />
+              <span className="font-mono text-[0.5rem] uppercase tracking-[0.08em]">Log Out</span>
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              title="Log in"
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[6px] border border-[rgba(220,38,38,0.35)] bg-[var(--red)] text-white transition-colors hover:bg-[var(--red-dim)]"
+            >
+              <NavIcon icon="login" className="h-[14px] w-[14px]" />
+              <span className="font-mono text-[0.5rem] uppercase tracking-[0.08em]">Log In</span>
+            </Link>
+          )}
+        </div>
+      </nav>
+
+      <div
+        className="md:hidden fixed right-3 z-50"
+        style={{ bottom: 'calc(64px + var(--safe-bottom, 0px))' }}
+      >
+        {user ? (
           <button
             onClick={handleLogout}
-            title="Logout"
-            className="mt-auto flex h-10 w-10 items-center justify-center rounded-[6px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface2)] hover:text-[var(--text-dim)]"
+            className="flex items-center gap-1.5 rounded-full border border-[rgba(220,38,38,0.35)] bg-[var(--red-glow)] px-3 py-1.5 text-[var(--red)] shadow-lg"
           >
-            <span className="font-mono text-[0.5rem] uppercase tracking-[0.06em]">exit</span>
+            <NavIcon icon="logout" className="h-[14px] w-[14px]" />
+            <span className="font-mono text-[0.52rem] uppercase tracking-[0.08em]">Log Out</span>
           </button>
+        ) : (
+          <Link
+            href="/login"
+            className="flex items-center gap-1.5 rounded-full border border-[rgba(220,38,38,0.35)] bg-[var(--red)] px-3 py-1.5 text-white shadow-lg"
+          >
+            <NavIcon icon="login" className="h-[14px] w-[14px]" />
+            <span className="font-mono text-[0.52rem] uppercase tracking-[0.08em]">Log In</span>
+          </Link>
         )}
-      </nav>
+      </div>
 
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-[var(--border)] bg-[rgba(8,8,8,0.96)] backdrop-blur-[12px]"

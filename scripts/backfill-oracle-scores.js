@@ -94,8 +94,14 @@ function calculateMarketContribution({ userBets, resolution }) {
   }
   if (Math.max(0, netYesShares) <= 0.001 && Math.max(0, netNoShares) <= 0.001) return null;
 
-  const impliedProbability = clamp01(lastAction.marketProbabilityAtBet ?? lastAction.probability);
-  if (impliedProbability == null) return null;
+  const rawMarketProb = clamp01(lastAction.marketProbabilityAtBet ?? lastAction.probability);
+  if (rawMarketProb == null) return null;
+
+  // Use bet direction to derive implied probability so correct contrarian bets are rewarded.
+  const side = normalizeSide(lastAction.side);
+  const impliedProbability = side === 'YES'
+    ? Math.max(rawMarketProb, 1 - rawMarketProb)
+    : Math.min(rawMarketProb, 1 - rawMarketProb);
 
   const error = outcome - impliedProbability;
   const brierScore = 1 - (error * error);

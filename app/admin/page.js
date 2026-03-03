@@ -20,6 +20,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { calculateMarketContribution } from '@/utils/oracleScore';
+import { getISOWeek, getSaturdayOfISOWeek, formatISOWeekLabel } from '@/utils/isoWeek';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MARKET_STATUS, getMarketStatus } from '@/utils/marketStatus';
@@ -33,7 +34,7 @@ import { ADMIN_EMAILS } from '@/utils/adminEmails';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 
-const SECTIONS = ['Overview', 'Markets', 'Requests', 'Users', 'Moderation'];
+const SECTIONS = ['Overview', 'Markets', 'Requests', 'Users', 'Five Futures', 'Moderation'];
 
 const ACTION_BUTTON_BASE =
   'font-mono text-[0.68rem] uppercase tracking-[0.06em] rounded-[4px] px-4 py-2 border transition-colors disabled:opacity-60 disabled:cursor-not-allowed';
@@ -269,9 +270,21 @@ export default function AdminPage() {
   const [resolutionNotesByMarket, setResolutionNotesByMarket] = useState({});
   const [resolutionSourcesByMarket, setResolutionSourcesByMarket] = useState({});
 
+  const [ffQuestions, setFfQuestions] = useState(['', '', '', '', '']);
+  const [ffCategories, setFfCategories] = useState(['auto', 'auto', 'auto', 'auto', 'auto']);
+  const [ffRules, setFfRules] = useState(['', '', '', '', '']);
+  const [ffPublishing, setFfPublishing] = useState(false);
+  const [ffLiquidityB, setFfLiquidityB] = useState([100, 100, 100, 100, 100]);
+  const [ffProbability, setFfProbability] = useState([50, 50, 50, 50, 50]);
+  const [ffResolutionDate, setFfResolutionDate] = useState(['', '', '', '', '']);
+  const [ffDistributeStipend, setFfDistributeStipend] = useState(true);
+  const [ffCurrentWeekMarkets, setFfCurrentWeekMarkets] = useState([]);
+  const [ffLoadingWeek, setFfLoadingWeek] = useState(false);
+  const [ffPredictors, setFfPredictors] = useState([]);
+
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase();
-    const rows = [...usersData].sort((a, b) => Number(b.weeklyRep || 0) - Number(a.weeklyRep || 0));
+    const rows = [...usersData].sort((a, b) => Number(b.balance || 0) - Number(a.balance || 0));
     if (!term) return rows;
     return rows.filter((entry) => {
       const email = String(privateEmailMap[entry.id] || entry.email || '').toLowerCase();
@@ -324,6 +337,12 @@ export default function AdminPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection, moderationTab]);
+
+  useEffect(() => {
+    if (activeSection !== 'Five Futures') return;
+    fetchFiveFuturesWeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]);
 
   async function fetchOverviewStats() {
     try {
@@ -915,13 +934,13 @@ export default function AdminPage() {
         if (!userSnap.exists()) continue;
 
         const userData = userSnap.data();
-        const newWeeklyRep = round2(Number(userData.weeklyRep || 0) + adj.payout);
+        const newBalance = round2(Number(userData.balance || 0) + adj.payout);
         const currentLifetime = Number(userData.lifetimeRep) || 0;
         const newLifetimeRep = round2(currentLifetime + adj.payout - adj.lostInvestment);
 
         operationFns.push((batch) => {
           batch.update(userRef, {
-            weeklyRep: newWeeklyRep,
+            balance: newBalance,
             lifetimeRep: newLifetimeRep
           });
         });
@@ -1044,7 +1063,7 @@ export default function AdminPage() {
         const userData = userSnap.data();
         operationFns.push((batch) => {
           batch.update(userRef, {
-            weeklyRep: round2((userData.weeklyRep || 0) + refundAmount),
+            balance: round2((userData.balance || 0) + refundAmount),
             lifetimeRep: Number(userData.lifetimeRep) || 0
           });
         });
@@ -1282,7 +1301,7 @@ export default function AdminPage() {
 
         operationFns.push((batch) => {
           batch.update(userRef, {
-            weeklyRep: round2(Number(userData.weeklyRep || 0) + refundAmount)
+            balance: round2(Number(userData.balance || 0) + refundAmount)
           });
         });
 
@@ -1421,9 +1440,9 @@ export default function AdminPage() {
 
       const userData = userSnap.data();
       const refundAmount = Number(bet.amount || 0);
-      const nextWeekly = round2(Number(userData.weeklyRep || 0) + refundAmount);
+      const nextBalance = round2(Number(userData.balance || 0) + refundAmount);
 
-      await updateDoc(userRef, { weeklyRep: nextWeekly });
+      await updateDoc(userRef, { balance: nextBalance });
       await updateDoc(doc(db, 'bets', bet.id), {
         refunded: true,
         refundedAt: new Date(),
@@ -1482,7 +1501,7 @@ export default function AdminPage() {
     setUserEdits((prev) => ({
       ...prev,
       [entry.id]: {
-        weeklyRep: Number(entry.weeklyRep || 0),
+        balance: Number(entry.balance || 0),
         lifetimeRep: Number(entry.lifetimeRep || 0),
         reason: ''
       }
@@ -1493,12 +1512,12 @@ export default function AdminPage() {
     const draft = userEdits[entry.id];
     if (!draft) return;
 
-    const weeklyRep = Number(draft.weeklyRep);
+    const balance = Number(draft.balance);
     const lifetimeRep = Number(draft.lifetimeRep);
     const reason = (draft.reason || '').trim();
 
-    if (!Number.isFinite(weeklyRep) || !Number.isFinite(lifetimeRep)) {
-      notifyError('Weekly and lifetime values must be valid numbers.');
+    if (!Number.isFinite(balance) || !Number.isFinite(lifetimeRep)) {
+      notifyError('Balance and lifetime values must be valid numbers.');
       return;
     }
 
@@ -1510,7 +1529,7 @@ export default function AdminPage() {
     setSavingUserId(entry.id);
     try {
       await updateDoc(doc(db, 'users', entry.id), {
-        weeklyRep,
+        balance,
         lifetimeRep
       });
 
@@ -1518,7 +1537,7 @@ export default function AdminPage() {
         userId: entry.id,
         type: 'admin_adjustment',
         category: categoryForNotificationType('admin_adjustment'),
-        amount: round2(weeklyRep - Number(entry.weeklyRep || 0)),
+        amount: round2(balance - Number(entry.balance || 0)),
         message: reason,
         read: false,
         createdAt: new Date()
@@ -1526,11 +1545,11 @@ export default function AdminPage() {
 
       await logAdminAction(
         'EDIT',
-        `User ${entry.email || entry.id} balance set to $${weeklyRep} weekly, $${lifetimeRep} lifetime. Reason: ${reason}`
+        `User ${entry.email || entry.id} balance set to $${balance}, $${lifetimeRep} lifetime. Reason: ${reason}`
       );
 
       setUsersData((prev) =>
-        prev.map((row) => (row.id === entry.id ? { ...row, weeklyRep, lifetimeRep } : row))
+        prev.map((row) => (row.id === entry.id ? { ...row, balance, lifetimeRep } : row))
       );
       setEditingUserId(null);
       notifySuccess('User balances updated.');
@@ -1586,7 +1605,7 @@ export default function AdminPage() {
         .map((row) => ({
           ...row,
           portfolioValue: round2(row.portfolioValue),
-          weeklyNet: round2(row.weeklyNet)
+          netPnl: round2(row.netPnl)
         }))
         .sort((a, b) => Number(b.portfolioValue || 0) - Number(a.portfolioValue || 0));
 
@@ -1594,7 +1613,7 @@ export default function AdminPage() {
         userId: row.id,
         displayName: getPublicDisplayName(row),
         portfolioValue: round2(row.portfolioValue),
-        netProfit: round2(row.weeklyNet),
+        netProfit: round2(row.netPnl),
         rank: index + 1
       }));
       const tradedUserIds = new Set(openBets.map((bet) => bet.userId).filter(Boolean));
@@ -1660,15 +1679,15 @@ export default function AdminPage() {
 
   async function handleManualStipendInject() {
     const confirmed = await confirmToast(
-      'Inject $50 stipend to all users? This adds $50 to every user\'s balance and snapshots weeklyStartingBalance. Cannot be undone.'
+      'Distribute $50 stipend to all eligible users? This adds $50 to every eligible user\'s balance. Cannot be undone.'
     );
     if (!confirmed) return;
 
     setInjectingStipend(true);
     try {
-      const injectFn = httpsCallable(functions, 'manualStipendInject');
-      const result = await injectFn({ dryRun: false });
-      notifySuccess(`Stipend injected to ${result.data.injectedCount} users.`);
+      const distributeFn = httpsCallable(functions, 'distributeStipend');
+      const result = await distributeFn({});
+      notifySuccess(`Stipend distributed to ${result.data.distributed} users.`);
       await Promise.all([fetchUsers(), fetchOverviewStats()]);
     } catch (error) {
       console.error('Error injecting stipend:', error);
@@ -1835,42 +1854,511 @@ export default function AdminPage() {
     }
   }
 
+  async function fetchFiveFuturesWeek() {
+    setFfLoadingWeek(true);
+    try {
+      const currentWeek = getISOWeek();
+      const q = query(
+        collection(db, 'markets'),
+        where('isFiveFutures', '==', true),
+        where('fiveFuturesWeek', '==', currentWeek)
+      );
+      const snapshot = await getDocs(q);
+      const weekMarkets = snapshot.docs
+        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .sort((a, b) => (a.fiveFuturesIndex || 0) - (b.fiveFuturesIndex || 0));
+      setFfCurrentWeekMarkets(weekMarkets);
+
+      const resolved = weekMarkets.filter((m) => m.resolution === 'YES' || m.resolution === 'NO');
+      if (resolved.length > 0) {
+        await computeFfPredictors(weekMarkets);
+      } else {
+        setFfPredictors([]);
+      }
+    } catch (error) {
+      console.error('Error fetching Five Futures week:', error);
+    } finally {
+      setFfLoadingWeek(false);
+    }
+  }
+
+  async function computeFfPredictors(weekMarkets) {
+    const resolved = weekMarkets.filter((m) => m.resolution === 'YES' || m.resolution === 'NO');
+    if (resolved.length === 0) {
+      setFfPredictors([]);
+      return;
+    }
+
+    const marketIds = resolved.map((m) => m.id);
+    const marketsById = {};
+    for (const m of resolved) marketsById[m.id] = m;
+
+    // Fetch bets for resolved FF markets (in chunks of 10 for Firestore 'in' limit)
+    const allBets = [];
+    for (let i = 0; i < marketIds.length; i += 10) {
+      const chunk = marketIds.slice(i, i + 10);
+      const betsQ = query(
+        collection(db, 'bets'),
+        where('marketId', 'in', chunk),
+        where('marketplaceId', '==', null)
+      );
+      const betsSnap = await getDocs(betsQ);
+      allBets.push(...betsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }
+
+    // Group by userId
+    const betsByUser = {};
+    for (const bet of allBets) {
+      if (!bet.userId) continue;
+      if (!betsByUser[bet.userId]) betsByUser[bet.userId] = [];
+      betsByUser[bet.userId].push(bet);
+    }
+
+    // Score each user
+    const userScores = [];
+    for (const [userId, userBets] of Object.entries(betsByUser)) {
+      // Group by market
+      const byMarket = {};
+      for (const bet of userBets) {
+        if (!byMarket[bet.marketId]) byMarket[bet.marketId] = [];
+        byMarket[bet.marketId].push(bet);
+      }
+
+      let brierSum = 0;
+      let marketsScored = 0;
+      for (const [marketId, mBets] of Object.entries(byMarket)) {
+        const market = marketsById[marketId];
+        if (!market) continue;
+        const contribution = calculateMarketContribution({ userBets: mBets, resolution: market.resolution });
+        if (!contribution) continue;
+        brierSum += contribution.brierScore;
+        marketsScored += 1;
+      }
+
+      if (marketsScored === 0) continue;
+
+      const rawBrierAvg = brierSum / marketsScored;
+      const displayScore = Math.max(0, Math.min(100, ((rawBrierAvg - 0.75) / 0.25) * 100));
+
+      userScores.push({
+        userId,
+        marketsScored,
+        totalResolved: resolved.length,
+        displayScore: Math.round(displayScore * 10) / 10
+      });
+    }
+
+    userScores.sort((a, b) => b.displayScore - a.displayScore);
+
+    // Load display names
+    const nameMap = await ensureUserNames(userScores.map((s) => s.userId));
+    setFfPredictors(userScores.map((s) => ({ ...s, displayName: nameMap[s.userId] || 'Unknown' })));
+  }
+
+  async function handlePublishFiveFutures() {
+    const emptyIndex = ffQuestions.findIndex((q) => !q.trim());
+    if (emptyIndex >= 0) {
+      notifyError(`Question ${emptyIndex + 1} is empty.`);
+      return;
+    }
+
+    for (let i = 0; i < 5; i++) {
+      if (ffProbability[i] < 1 || ffProbability[i] > 99) {
+        notifyError(`Question ${i + 1}: probability must be between 1% and 99%.`);
+        return;
+      }
+      if (ffLiquidityB[i] < 1) {
+        notifyError(`Question ${i + 1}: liquidity b must be at least 1.`);
+        return;
+      }
+      if (ffResolutionDate[i] && isPastDateString(ffResolutionDate[i])) {
+        notifyError(`Question ${i + 1}: resolution date cannot be in the past.`);
+        return;
+      }
+    }
+
+    const currentWeek = getISOWeek();
+    const weekLabel = formatISOWeekLabel(currentWeek);
+
+    if (!(await confirmToast(`Publish 5 Five Futures markets for ${weekLabel}?`))) return;
+
+    setFfPublishing(true);
+    try {
+      const saturdayFallback = getSaturdayOfISOWeek();
+      const batch = writeBatch(db);
+
+      for (let i = 0; i < 5; i++) {
+        const b = ffLiquidityB[i];
+        const probDecimal = ffProbability[i] / 100;
+        const qYes = b * Math.log(probDecimal / (1 - probDecimal));
+        const resDate = ffResolutionDate[i]
+          ? new Date(`${ffResolutionDate[i]}T00:00:00`)
+          : saturdayFallback;
+        const marketRef = doc(collection(db, 'markets'));
+        const normalizedCategory = normalizeCategory(ffCategories[i], ffQuestions[i].trim());
+        batch.set(marketRef, {
+          question: ffQuestions[i].trim(),
+          resolutionRules: ffRules[i].trim() || null,
+          resolutionDate: resDate,
+          probability: round2(probDecimal),
+          initialProbability: round2(probDecimal),
+          outstandingShares: { yes: qYes, no: 0 },
+          b,
+          status: MARKET_STATUS.OPEN,
+          resolution: null,
+          createdAt: new Date(),
+          category: normalizedCategory,
+          marketplaceId: null,
+          isFiveFutures: true,
+          fiveFuturesWeek: currentWeek,
+          fiveFuturesIndex: i
+        });
+      }
+
+      await batch.commit();
+
+      if (ffDistributeStipend) {
+        try {
+          const distributeFn = httpsCallable(functions, 'distributeStipend');
+          const result = await distributeFn({});
+          notifySuccess(`5 markets published. Stipend distributed to ${result.data.distributed} users.`);
+        } catch (stipendError) {
+          console.error('Stipend distribution error:', stipendError);
+          notifyError('Markets published but stipend failed. Try manually from Users section.');
+        }
+      } else {
+        notifySuccess('5 Five Futures markets published.');
+      }
+
+      await logAdminAction('CREATE', `Five Futures published for ${weekLabel}: ${ffQuestions.map((q) => q.trim().slice(0, 60)).join(' | ')}`);
+      setFfQuestions(['', '', '', '', '']);
+      setFfCategories(['auto', 'auto', 'auto', 'auto', 'auto']);
+      setFfRules(['', '', '', '', '']);
+      setFfLiquidityB([100, 100, 100, 100, 100]);
+      setFfProbability([50, 50, 50, 50, 50]);
+      setFfResolutionDate(['', '', '', '', '']);
+      await Promise.all([fetchFiveFuturesWeek(), fetchUnresolvedMarkets(), fetchOverviewStats()]);
+    } catch (error) {
+      console.error('Error publishing Five Futures:', error);
+      notifyError('Error publishing Five Futures. Check console.');
+    } finally {
+      setFfPublishing(false);
+    }
+  }
+
+  function renderFiveFuturesSection() {
+    const currentWeek = getISOWeek();
+    const weekLabel = formatISOWeekLabel(currentWeek);
+    const isPublished = ffCurrentWeekMarkets.length > 0;
+    const resolvedCount = ffCurrentWeekMarkets.filter((m) => m.resolution === 'YES' || m.resolution === 'NO').length;
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-mono text-[0.85rem] font-medium text-[var(--text)]">
+              Five Futures — {weekLabel}
+            </h2>
+            <p className="mt-1 font-mono text-[0.6rem] text-[var(--text-muted)]">
+              {isPublished
+                ? `${ffCurrentWeekMarkets.length} market${ffCurrentWeekMarkets.length !== 1 ? 's' : ''} published · ${resolvedCount} resolved`
+                : 'Not yet published this week'}
+            </p>
+          </div>
+          {ffLoadingWeek && (
+            <span className="font-mono text-[0.55rem] text-[var(--text-muted)]">Loading...</span>
+          )}
+        </div>
+
+        {/* Published markets */}
+        {isPublished && (
+          <div className="space-y-2">
+            <h3 className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              This Week&apos;s Markets
+            </h3>
+            <div className="space-y-1.5">
+              {ffCurrentWeekMarkets.map((market, idx) => {
+                const status = getMarketStatus(market);
+                const prob = Math.round((market.probability || 0.5) * 100);
+                return (
+                  <div
+                    key={market.id}
+                    className="flex items-center gap-3 rounded-[5px] border border-[var(--border2)] bg-[var(--surface)] px-3 py-2"
+                  >
+                    <span className="font-mono text-[0.55rem] text-[var(--text-muted)] w-4 text-right flex-shrink-0">
+                      {idx + 1}
+                    </span>
+                    <Link
+                      href={`/market/${market.id}`}
+                      className="flex-1 font-mono text-[0.7rem] text-[var(--text)] hover:text-[var(--red)] transition-colors truncate"
+                    >
+                      {market.question}
+                    </Link>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="w-16 h-1.5 rounded-full bg-[var(--surface3)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[var(--green-bright)]"
+                          style={{ width: `${prob}%` }}
+                        />
+                      </div>
+                      <span className="font-mono text-[0.6rem] text-[var(--text-dim)] w-8 text-right">
+                        {prob}%
+                      </span>
+                      <span
+                        className="rounded-[3px] px-2 py-0.5 font-mono text-[0.5rem] uppercase tracking-[0.06em]"
+                        style={getStatusBadgeStyle(status)}
+                      >
+                        {market.resolution || status}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Creation form (only when not yet published) */}
+        {!isPublished && !ffLoadingWeek && (
+          <div className="rounded-[6px] border border-[var(--border2)] bg-[var(--surface)] p-4 space-y-4">
+            <h3 className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              Batch Create
+            </h3>
+            <div className="space-y-3">
+              {ffQuestions.map((q, i) => (
+                <div key={i} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[0.55rem] text-[var(--text-muted)] w-4 text-right flex-shrink-0">
+                      {i + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) => {
+                        const next = [...ffQuestions];
+                        next[i] = e.target.value;
+                        setFfQuestions(next);
+                      }}
+                      placeholder={`Question ${i + 1}`}
+                      className={INPUT_CLASS + ' flex-1'}
+                    />
+                    <select
+                      value={ffCategories[i]}
+                      onChange={(e) => {
+                        const next = [...ffCategories];
+                        next[i] = e.target.value;
+                        setFfCategories(next);
+                      }}
+                      className="rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-2 py-2 font-mono text-[0.68rem] text-[var(--text-dim)] focus:outline-none focus:border-[var(--red)]"
+                    >
+                      <option value="auto">Auto</option>
+                      {MARKET_CATEGORY_OPTIONS.map((cat) => (
+                        <option key={cat.id} value={cat.id}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="ml-6 flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={ffRules[i]}
+                      onChange={(e) => {
+                        const next = [...ffRules];
+                        next[i] = e.target.value;
+                        setFfRules(next);
+                      }}
+                      placeholder="Resolution rules (optional)"
+                      className={INPUT_CLASS + ' flex-1 min-w-[140px] text-[0.68rem]'}
+                    />
+                    <label className="flex items-center gap-1 flex-shrink-0">
+                      <span className="font-mono text-[0.5rem] text-[var(--text-muted)]">b</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={ffLiquidityB[i]}
+                        onChange={(e) => {
+                          const next = [...ffLiquidityB];
+                          next[i] = Number(e.target.value) || 100;
+                          setFfLiquidityB(next);
+                        }}
+                        className="w-14 rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-1.5 py-1 font-mono text-[0.62rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1 flex-shrink-0">
+                      <input
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={ffProbability[i]}
+                        onChange={(e) => {
+                          const next = [...ffProbability];
+                          next[i] = Math.max(1, Math.min(99, Number(e.target.value) || 50));
+                          setFfProbability(next);
+                        }}
+                        className="w-12 rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-1.5 py-1 font-mono text-[0.62rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]"
+                      />
+                      <span className="font-mono text-[0.5rem] text-[var(--text-muted)]">%</span>
+                    </label>
+                    <label className="flex items-center gap-1 flex-shrink-0">
+                      <input
+                        type="date"
+                        value={ffResolutionDate[i]}
+                        onChange={(e) => {
+                          const next = [...ffResolutionDate];
+                          next[i] = e.target.value;
+                          setFfResolutionDate(next);
+                        }}
+                        placeholder="Sat"
+                        className="rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-1.5 py-1 font-mono text-[0.62rem] text-[var(--text)] focus:outline-none focus:border-[var(--red)]"
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2 border-t border-[var(--border)]">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ffDistributeStipend}
+                  onChange={(e) => setFfDistributeStipend(e.target.checked)}
+                  className="accent-[var(--red)]"
+                />
+                <span className="font-mono text-[0.65rem] text-[var(--text-dim)]">
+                  Distribute $50 stipend
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-[0.55rem] text-[var(--text-muted)]">
+                Defaults: b=100 · 50% · resolves Saturday (override per row)
+              </span>
+              <button
+                onClick={handlePublishFiveFutures}
+                disabled={ffPublishing || ffQuestions.some((q) => !q.trim())}
+                className={BTN_GREEN + ' ml-auto'}
+              >
+                {ffPublishing ? 'Publishing...' : 'Publish Five Futures'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Predictors leaderboard */}
+        {resolvedCount > 0 && ffPredictors.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              Weekly Predictors ({resolvedCount}/{ffCurrentWeekMarkets.length} resolved)
+            </h3>
+            <div className="rounded-[6px] border border-[var(--border2)] bg-[var(--surface)] overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="px-3 py-2 text-left font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)] w-8">#</th>
+                    <th className="px-3 py-2 text-left font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">User</th>
+                    <th className="px-3 py-2 text-center font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Markets</th>
+                    <th className="px-3 py-2 text-right font-mono text-[0.5rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ffPredictors.map((predictor, idx) => (
+                    <tr key={predictor.userId} className="border-b border-[var(--border)] last:border-0">
+                      <td className="px-3 py-2 font-mono text-[0.6rem] text-[var(--text-muted)]">{idx + 1}</td>
+                      <td className="px-3 py-2">
+                        <Link
+                          href={`/user/${predictor.userId}`}
+                          className="font-mono text-[0.68rem] text-[var(--text)] hover:text-[var(--red)] transition-colors"
+                        >
+                          {predictor.displayName}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-[0.6rem] text-[var(--text-dim)]">
+                        {predictor.marketsScored}/{predictor.totalResolved}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 rounded-full bg-[var(--surface3)] overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-[var(--red)]"
+                              style={{ width: `${Math.min(100, predictor.displayScore)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[0.65rem] text-[var(--text)] w-10 text-right">
+                            {predictor.displayScore.toFixed(1)}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {resolvedCount > 0 && ffPredictors.length === 0 && !ffLoadingWeek && (
+          <p className="font-mono text-[0.6rem] text-[var(--text-muted)]">
+            No predictions on resolved markets yet.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   function renderSectionNavButton(section) {
     const isActive = activeSection === section;
+    const badge = section === 'Requests' && requests.length > 0 ? requests.length : null;
     return (
       <button
         key={section}
         onClick={() => setActiveSection(section)}
-        className={`rounded-[4px] border px-3 py-2 text-left font-mono text-[0.65rem] uppercase tracking-[0.06em] transition-colors ${
+        className={`mr-5 flex items-center gap-[6px] border-b-2 pb-3 font-mono text-[0.6rem] uppercase tracking-[0.1em] transition-colors whitespace-nowrap ${
           isActive
-            ? 'border-[rgba(220,38,38,0.35)] bg-[var(--red-glow)] text-[var(--text)]'
-            : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+            ? 'border-[var(--red)] text-[var(--text)]'
+            : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-dim)]'
         }`}
       >
+        <span
+          className="inline-block h-[5px] w-[5px] flex-shrink-0 rounded-full"
+          style={{ background: isActive ? 'var(--red)' : 'var(--text-muted)' }}
+        />
         {section}
+        {badge && (
+          <span className="ml-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--red)] px-[3px] font-mono text-[8px] font-bold text-white">
+            {badge}
+          </span>
+        )}
       </button>
     );
   }
 
   function renderOverviewSection() {
+    const lockedCount = markets.filter((m) => m.status === MARKET_STATUS.LOCKED).length;
+    const resolvedCount = resolvedMarkets.length;
     return (
       <div className="space-y-8">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
             <p className="font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Total Markets</p>
             <p className="mt-2 font-mono text-3xl font-bold text-[var(--red)]">{overviewStats.totalMarkets}</p>
+            <p className="mt-2 font-mono text-[0.55rem] text-[var(--text-muted)]">{resolvedCount} resolved</p>
           </div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
-            <p className="font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Open Markets</p>
+            <p className="font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Active Markets</p>
             <p className="mt-2 font-mono text-3xl font-bold text-[var(--text)]">{overviewStats.openMarkets}</p>
+            <p className="mt-2 font-mono text-[0.55rem] text-[var(--text-muted)]">{lockedCount > 0 ? `${lockedCount} locked` : 'none locked'}</p>
           </div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
             <p className="font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Total Users</p>
             <p className="mt-2 font-mono text-3xl font-bold text-[var(--amber-bright)]">{overviewStats.totalUsers}</p>
+            <p className="mt-2 font-mono text-[0.55rem] text-[var(--text-muted)]">{requests.length > 0 ? `${requests.length} pending requests` : 'no pending requests'}</p>
           </div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
             <p className="font-mono text-[0.58rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">Total Volume</p>
             <p className="mt-2 font-mono text-3xl font-bold text-[var(--green-bright)]">{formatMoney(overviewStats.totalVolume)}</p>
+            <p className="mt-2 font-mono text-[0.55rem] text-[var(--text-muted)]">all-time</p>
           </div>
         </div>
 
@@ -2495,18 +2983,26 @@ export default function AdminPage() {
   function renderMarketsSection() {
     return (
       <div className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {['Active', 'Resolved', 'Create New'].map((tab) => (
+        <div className="flex border-b border-[var(--border)]">
+          {[
+            { key: 'Active', label: `Active${markets.length > 0 ? ` (${markets.length})` : ''}` },
+            { key: 'Resolved', label: `Resolved${resolvedMarkets.length > 0 ? ` (${resolvedMarkets.length})` : ''}` },
+            { key: 'Create New', label: 'Create New' }
+          ].map(({ key, label }) => (
             <button
-              key={tab}
-              onClick={() => setMarketTab(tab)}
-              className={`${ACTION_BUTTON_BASE} ${
-                marketTab === tab
-                  ? 'bg-[var(--red-glow)] text-[var(--red)] border-[rgba(220,38,38,0.3)]'
-                  : 'bg-[var(--surface2)] text-[var(--text-dim)] border-[var(--border2)] hover:bg-[var(--surface3)]'
+              key={key}
+              onClick={() => setMarketTab(key)}
+              className={`mr-6 flex items-center gap-[6px] border-b-2 -mb-px pb-3 font-mono text-[0.6rem] uppercase tracking-[0.1em] transition-colors whitespace-nowrap ${
+                marketTab === key
+                  ? 'border-[var(--red)] text-[var(--text)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-dim)]'
               }`}
             >
-              {tab}
+              <span
+                className="inline-block h-[5px] w-[5px] flex-shrink-0 rounded-full"
+                style={{ background: marketTab === key ? 'var(--red)' : 'var(--text-muted)' }}
+              />
+              {label}
             </button>
           ))}
         </div>
@@ -2742,65 +3238,37 @@ export default function AdminPage() {
   function renderUsersSection() {
     return (
       <div className="space-y-4">
-        <div style={{
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '1rem 1.25rem',
-          marginBottom: '1.5rem',
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          <div style={{ borderLeft: '3px solid var(--amber-bright)',
-            position: 'absolute', left: 0, top: 0, bottom: 0 }} />
-          <div style={{ paddingLeft: '1rem' }}>
-            <p style={{ fontFamily: 'var(--mono)', fontSize: '0.58rem',
-              textTransform: 'uppercase', letterSpacing: '0.1em',
-              color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-              Weekly Reset
-            </p>
-            <p style={{ fontFamily: 'var(--sans)', fontSize: '0.9rem',
-              fontWeight: 700, color: 'var(--text)' }}>
-              Snapshots standings only. Balances carry over with stipend model.
-            </p>
-            <p style={{ fontFamily: 'var(--mono)', fontSize: '0.62rem',
-              color: 'var(--text-dim)', marginTop: '0.15rem' }}>
-              Use weekly snapshot after markets close for the week
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleWeeklyReset}
-              disabled={resetting || launchResetting || injectingStipend}
-              style={{
-                fontFamily: 'var(--mono)', fontSize: '0.68rem',
-                letterSpacing: '0.06em', textTransform: 'uppercase',
-                background: 'rgba(217,119,6,0.15)',
-                color: 'var(--amber-bright)',
-                border: '1px solid rgba(217,119,6,0.3)',
-                borderRadius: '4px', padding: '0.5rem 1.25rem',
-                cursor: resetting ? 'not-allowed' : 'pointer',
-                opacity: resetting ? 0.6 : 1
-              }}
-            >
-              {resetting ? 'Saving...' : 'Run Weekly Snapshot'}
-            </button>
-            <button
-              onClick={handleManualStipendInject}
-              disabled={injectingStipend || resetting || launchResetting}
-              className={BTN_NEUTRAL}
-            >
-              {injectingStipend ? 'Injecting...' : 'Inject $50 Stipend (All Users)'}
-            </button>
-            <button
-              onClick={handleHardLaunchReset}
-              disabled={launchResetting || resetting || injectingStipend}
-              className={BTN_RED}
-            >
-              {launchResetting ? 'Resetting...' : 'Hard Launch Reset'}
-            </button>
+        <div className="relative overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] px-5 py-4">
+          <div className="absolute bottom-0 left-0 top-0 w-[3px] bg-[var(--amber-bright)]" />
+          <div className="flex flex-col gap-3 pl-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="mb-0.5 font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Operations</p>
+              <p className="font-sans text-[0.9rem] font-bold text-[var(--text)]">Weekly snapshot &amp; user management</p>
+              <p className="mt-0.5 font-mono text-[0.62rem] text-[var(--text-dim)]">Snapshot records standings. Hard reset is destructive.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleWeeklyReset}
+                disabled={resetting || launchResetting || injectingStipend}
+                className={BTN_AMBER}
+              >
+                {resetting ? 'Saving...' : 'Run Weekly Snapshot'}
+              </button>
+              <button
+                onClick={handleManualStipendInject}
+                disabled={injectingStipend || resetting || launchResetting}
+                className={BTN_NEUTRAL}
+              >
+                {injectingStipend ? 'Injecting...' : 'Inject $50 Stipend'}
+              </button>
+              <button
+                onClick={handleHardLaunchReset}
+                disabled={launchResetting || resetting || injectingStipend}
+                className={BTN_RED}
+              >
+                {launchResetting ? 'Resetting...' : 'Hard Launch Reset'}
+              </button>
+            </div>
           </div>
         </div>
         {(weeklyResetSummary || launchResetSummary) && (
@@ -2831,16 +3299,16 @@ export default function AdminPage() {
             )}
           </div>
         )}
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-          <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-            Search by email prefix
-          </label>
+        <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
           <input
             value={userSearch}
             onChange={(e) => setUserSearch(e.target.value)}
-            placeholder="e.g. ic367"
-            className={INPUT_CLASS}
+            placeholder="Search by email prefix…"
+            className={`${INPUT_CLASS} max-w-xs`}
           />
+          <span className="font-mono text-[0.58rem] text-[var(--text-muted)]">
+            {filteredUsers.length} of {usersData.length} users
+          </span>
         </div>
 
         <div className="overflow-auto rounded-lg border border-[var(--border)] bg-[var(--surface)]">
@@ -2859,7 +3327,7 @@ export default function AdminPage() {
                 const isEditing = editingUserId === entry.id;
                 const isExpanded = expandedUsers[entry.id];
                 const draft = userEdits[entry.id] || {
-                  weeklyRep: Number(entry.weeklyRep || 0),
+                  balance: Number(entry.balance || 0),
                   lifetimeRep: Number(entry.lifetimeRep || 0),
                   reason: ''
                 };
@@ -2869,7 +3337,7 @@ export default function AdminPage() {
                     <tr key={entry.id} className="border-b border-[var(--border)]">
                       <td className="px-4 py-3 font-mono text-[0.72rem] text-[var(--text)]">{getPublicDisplayName(entry)}</td>
                       <td className="px-4 py-3 font-mono text-[0.72rem] text-[var(--text-dim)]">{entry.email || '—'}</td>
-                      <td className="px-4 py-3 font-mono text-[0.72rem] text-[var(--amber-bright)]">{formatMoney(entry.weeklyRep)}</td>
+                      <td className="px-4 py-3 font-mono text-[0.72rem] text-[var(--amber-bright)]">{formatMoney(entry.balance)}</td>
                       <td className="px-4 py-3 font-mono text-[0.72rem] text-[var(--green-bright)]">{formatMoney(entry.lifetimeRep)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
@@ -2905,17 +3373,17 @@ export default function AdminPage() {
                             <div className="grid gap-2 md:grid-cols-3">
                               <input
                                 type="number"
-                                value={draft.weeklyRep}
+                                value={draft.balance}
                                 onChange={(e) =>
                                   setUserEdits((prev) => ({
                                     ...prev,
                                     [entry.id]: {
                                       ...draft,
-                                      weeklyRep: Number(e.target.value)
+                                      balance: Number(e.target.value)
                                     }
                                   }))
                                 }
-                                placeholder="Weekly balance"
+                                placeholder="Balance"
                                 className={INPUT_CLASS}
                               />
                               <input
@@ -2980,17 +3448,21 @@ export default function AdminPage() {
 
     return (
       <div className="space-y-4">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex border-b border-[var(--border)]">
           {['Comments', 'News Items'].map((tab) => (
             <button
               key={tab}
               onClick={() => setModerationTab(tab)}
-              className={`${ACTION_BUTTON_BASE} ${
+              className={`mr-6 flex items-center gap-[6px] border-b-2 -mb-px pb-3 font-mono text-[0.6rem] uppercase tracking-[0.1em] transition-colors whitespace-nowrap ${
                 moderationTab === tab
-                  ? 'bg-[var(--red-glow)] text-[var(--red)] border-[rgba(220,38,38,0.3)]'
-                  : 'bg-[var(--surface2)] text-[var(--text-dim)] border-[var(--border2)] hover:bg-[var(--surface3)]'
+                  ? 'border-[var(--red)] text-[var(--text)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-dim)]'
               }`}
             >
+              <span
+                className="inline-block h-[5px] w-[5px] flex-shrink-0 rounded-full"
+                style={{ background: moderationTab === tab ? 'var(--red)' : 'var(--text-muted)' }}
+              />
               {tab}
             </button>
           ))}
@@ -3057,6 +3529,7 @@ export default function AdminPage() {
     if (activeSection === 'Markets') return renderMarketsSection();
     if (activeSection === 'Requests') return renderRequestsSection();
     if (activeSection === 'Users') return renderUsersSection();
+    if (activeSection === 'Five Futures') return renderFiveFuturesSection();
     return renderModerationSection();
   }
 
@@ -3078,33 +3551,26 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <aside className="sticky top-0 z-30 w-full border-b border-[var(--border)] bg-[rgba(8,8,8,0.94)] px-4 py-4 backdrop-blur-[10px] md:px-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="mb-1 flex items-center gap-2 font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-              <span className="inline-block h-px w-3 bg-[var(--red)]" />
-              Admin
-            </p>
-            <p className="text-xl italic text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
+      <aside className="sticky top-0 z-30 w-full bg-[rgba(8,8,8,0.94)] px-4 pt-4 backdrop-blur-[10px] md:px-8">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="inline-block h-px w-3 bg-[var(--red)]" />
+            <p className="text-lg italic text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
               Predict <span className="text-[var(--red)]">Cornell</span>
             </p>
+            <span className="font-mono text-[0.5rem] uppercase tracking-[0.1em] text-[var(--text-muted)]">Admin</span>
           </div>
-
-          <nav className="flex flex-wrap gap-1">{SECTIONS.map(renderSectionNavButton)}</nav>
+          <p className="hidden font-mono text-[0.55rem] text-[var(--text-muted)] md:block">
+            {user.email}
+          </p>
         </div>
 
-        <p className="mt-3 font-mono text-[0.58rem] text-[var(--text-muted)] break-all">
-          {user.email}
-        </p>
+        <nav className="flex overflow-x-auto border-b border-[var(--border)]">
+          {SECTIONS.map(renderSectionNavButton)}
+        </nav>
       </aside>
 
       <main className="px-4 py-6 md:px-8 md:py-8">
-        <h1 className="mb-1 text-2xl text-[var(--text)]" style={{ fontFamily: 'var(--display)' }}>
-          Admin Dashboard
-        </h1>
-        <p className="mb-6 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-          {activeSection}
-        </p>
         {loadError && (
           <div className="mb-5 rounded border border-[rgba(217,119,6,0.25)] bg-[rgba(217,119,6,0.08)] px-4 py-2 font-mono text-[0.65rem] text-[#f59e0b]">
             {loadError}

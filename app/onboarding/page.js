@@ -20,13 +20,13 @@ import { isValidDisplayName, normalizeDisplayName } from '@/utils/displayName';
 import { isTradeableMarket } from '@/utils/marketStatus';
 import { CATEGORIES } from '@/utils/categorize';
 import { round2 } from '@/utils/round';
+import { getISOWeek } from '@/utils/isoWeek';
 import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 import { buildLoginPath, sanitizeInternalRedirectPath } from '@/utils/redirect';
 
-const BET_AMOUNT = 25;
-const CARD_LIMIT = 5;
+const FF_CARD_LIMIT = 5;
 const DISPLAY_NAME_TAKEN_ERROR = 'This display name is already taken.';
 
 function getCallableErrorMessage(error, fallbackMessage) {
@@ -54,8 +54,10 @@ function defaultProfileForUser(user) {
   const netId = (user?.email || '').split('@')[0] || 'trader';
   const normalized = normalizeDisplayName(netId);
   return {
-    weeklyRep: 1000,
-    weeklyStartingBalance: 1000,
+    balance: 1000,
+    totalDeposits: 1000,
+    accountCreatedAt: new Date(),
+    lastStipendWeek: null,
     lifetimeRep: 0,
     oracleScore: 0,
     oracleMarketsScored: 0,
@@ -87,6 +89,7 @@ export default function OnboardingPage() {
   const [authReady, setAuthReady] = useState(false);
 
   const [step, setStep] = useState(1);
+  const [betAmount, setBetAmount] = useState(100);
 
   const [netId, setNetId] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -139,7 +142,7 @@ export default function OnboardingPage() {
         setAuthUser(user);
         setNetId(nextNetId);
         setDisplayName(userData.displayName || nextNetId);
-        setRemainingBalance(Number(userData.weeklyRep || 1000));
+        setRemainingBalance(Number(userData.balance || 1000));
       } catch (error) {
         console.error('Error loading onboarding user:', error);
         notifyError('Unable to load onboarding right now.');
@@ -174,7 +177,6 @@ export default function OnboardingPage() {
   }, [step, animatingOut, placingBet, currentCardIndex, hotMarkets]);
 
   const topCard = hotMarkets[currentCardIndex];
-  const recapBets = useMemo(() => placedBets.filter((bet) => bet.side === 'YES' || bet.side === 'NO'), [placedBets]);
 
   async function markOnboardingComplete() {
     if (!authUser) return;
@@ -196,68 +198,54 @@ export default function OnboardingPage() {
     }
   }
 
-  async function loadHotMarkets() {
+  async function loadFiveFutures() {
     setTutorialLoading(true);
-    trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
-      step: 2,
-      path: 'guided'
-    });
     try {
-      const marketSnapshot = await getDocs(
+      const currentWeek = getISOWeek();
+      const ffSnapshot = await getDocs(
         query(
           collection(db, 'markets'),
-          where('marketplaceId', '==', null),
-          where('resolution', '==', null),
-          limit(50)
+          where('isFiveFutures', '==', true),
+          where('fiveFuturesWeek', '==', currentWeek)
         )
       );
 
-      const candidates = marketSnapshot.docs
+      let candidates = ffSnapshot.docs
         .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-        .filter((market) => isTradeableMarket(market) && !market.marketplaceId);
+        .filter((market) => isTradeableMarket(market))
+        .sort((a, b) => (a.fiveFuturesIndex || 0) - (b.fiveFuturesIndex || 0))
+        .slice(0, FF_CARD_LIMIT);
+
+      if (candidates.length === 0) {
+        const fallbackSnapshot = await getDocs(
+          query(
+            collection(db, 'markets'),
+            where('marketplaceId', '==', null),
+            where('resolution', '==', null),
+            limit(30)
+          )
+        );
+        candidates = fallbackSnapshot.docs
+          .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+          .filter((market) => isTradeableMarket(market) && !market.marketplaceId)
+          .slice(0, FF_CARD_LIMIT);
+      }
 
       if (candidates.length === 0) {
         await markOnboardingComplete();
         return;
       }
 
-      const withVolume = await Promise.all(
-        candidates.map(async (market) => {
-          if (Number.isFinite(Number(market.totalVolume))) {
-            return { ...market, totalVolume: Number(market.totalVolume) };
-          }
+      const perBet = Math.max(10, Math.floor(remainingBalance / candidates.length));
+      setBetAmount(perBet);
 
-          const betSnapshot = await getDocs(
-            query(
-              collection(db, 'bets'),
-              where('marketplaceId', '==', null),
-              where('marketId', '==', market.id)
-            )
-          );
-          const totalVolume = betSnapshot.docs.reduce((sum, snapshotDoc) => {
-            const bet = snapshotDoc.data();
-            if ((bet.type || 'BUY') !== 'BUY') return sum;
-            return sum + Math.abs(Number(bet.amount || 0));
-          }, 0);
-          return { ...market, totalVolume };
-        })
-      );
-
-      const selected = withVolume
-        .sort((a, b) => Number(b.totalVolume || 0) - Number(a.totalVolume || 0))
-        .slice(0, CARD_LIMIT)
-        .map((market) => ({
-          id: market.id,
-          question: market.question,
-          probability: Number(market.probability || 0.5),
-          category: market.category || 'wildcard',
-          totalVolume: Number(market.totalVolume || 0)
-        }));
-
-      if (selected.length === 0) {
-        await markOnboardingComplete();
-        return;
-      }
+      const selected = candidates.map((market) => ({
+        id: market.id,
+        question: market.question,
+        probability: Number(market.probability || 0.5),
+        category: market.category || 'wildcard',
+        totalVolume: Number(market.totalVolume || 0)
+      }));
 
       setHotMarkets(selected);
       setChoices(Array(selected.length).fill(null));
@@ -265,8 +253,8 @@ export default function OnboardingPage() {
       stepThreeTrackedRef.current = false;
       setStep(3);
     } catch (error) {
-      console.error('Error loading onboarding markets:', error);
-      notifyError('Could not load tutorial markets. Sending you to the app.');
+      console.error('Error loading Five Futures:', error);
+      notifyError('Could not load markets. Sending you to the app.');
       await markOnboardingComplete();
     } finally {
       setTutorialLoading(false);
@@ -328,9 +316,9 @@ export default function OnboardingPage() {
       });
 
       trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
-        step: 1
+        step: 2
       });
-      setStep(2);
+      loadFiveFutures();
     } catch (error) {
       setNameError(error?.message || 'Could not lock display name right now.');
     } finally {
@@ -345,7 +333,7 @@ export default function OnboardingPage() {
       await placeBetCallable({
         marketId: market.id,
         side,
-        amount: BET_AMOUNT,
+        amount: betAmount,
         marketplaceId: null
       });
     } catch (error) {
@@ -364,19 +352,19 @@ export default function OnboardingPage() {
 
     const startingBalance = remainingBalance;
 
-    if ((choice === 'YES' || choice === 'NO') && startingBalance >= BET_AMOUNT) {
+    if ((choice === 'YES' || choice === 'NO') && startingBalance >= betAmount) {
       setPlacingBet(true);
       try {
         await placeOnboardingBet(topCard, choice);
-        setRemainingBalance(round2(startingBalance - BET_AMOUNT));
-        setPlacedBets((prev) => [...prev, { marketId: topCard.id, question: topCard.question, side: choice, amount: BET_AMOUNT }]);
+        setRemainingBalance(round2(startingBalance - betAmount));
+        setPlacedBets((prev) => [...prev, { marketId: topCard.id, question: topCard.question, side: choice, amount: betAmount }]);
       } catch (error) {
         notifyError(error?.message || 'Bet failed. Skipping this card.');
         resolvedChoice = 'SKIP';
       } finally {
         setPlacingBet(false);
       }
-    } else if (choice !== 'SKIP' && startingBalance < BET_AMOUNT) {
+    } else if (choice !== 'SKIP' && startingBalance < betAmount) {
       resolvedChoice = 'SKIP';
     }
 
@@ -394,10 +382,10 @@ export default function OnboardingPage() {
       setAnimatingOut(false);
 
       const nextBalance = (choice === 'YES' || choice === 'NO') && resolvedChoice !== 'SKIP'
-        ? round2(startingBalance - BET_AMOUNT)
+        ? round2(startingBalance - betAmount)
         : startingBalance;
 
-      if (nextIndex < hotMarkets.length && nextBalance < BET_AMOUNT) {
+      if (nextIndex < hotMarkets.length && nextBalance < betAmount) {
         setChoices((prev) => {
           const nextChoices = [...prev];
           for (let idx = nextIndex; idx < hotMarkets.length; idx += 1) {
@@ -414,7 +402,7 @@ export default function OnboardingPage() {
             betsPlaced: placedBets.length + (resolvedChoice === 'YES' || resolvedChoice === 'NO' ? 1 : 0)
           });
         }
-        setTimeout(() => setStep(4), 500);
+        setTimeout(() => markOnboardingComplete(), 500);
         return;
       }
 
@@ -427,7 +415,7 @@ export default function OnboardingPage() {
             betsPlaced: placedBets.length + (resolvedChoice === 'YES' || resolvedChoice === 'NO' ? 1 : 0)
           });
         }
-        setTimeout(() => setStep(4), 500);
+        setTimeout(() => markOnboardingComplete(), 500);
       }
     }, 450);
   }
@@ -493,6 +481,28 @@ export default function OnboardingPage() {
 
       <main className="absolute inset-0 flex items-center justify-center p-6">
         <section className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-300 ${step === 1 ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-3 pointer-events-none'}`}>
+          <div className="w-full max-w-[480px] text-center">
+            <div className="mb-4 text-5xl animate-[popIn_0.5s_cubic-bezier(0.34,1.56,0.64,1)]">🔮</div>
+            <h1 className="mb-3 font-display text-[2rem] leading-[1.1] sm:text-[2.6rem]">Welcome to Predict Cornell</h1>
+            <p className="mb-6 text-[0.92rem] leading-[1.55] text-[var(--text-dim)]">
+              Campus prediction markets. Bet on what happens next at Cornell — courses, sports, construction, and more.
+            </p>
+            <p className="mb-10 text-[0.82rem] leading-[1.5] text-[var(--text-muted)]">
+              You start with <strong className="text-[var(--amber-bright)]">$1,000</strong>. We&apos;ll walk you through your first predictions in under a minute.
+            </p>
+            <button
+              onClick={() => {
+                trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, { step: 1 });
+                setStep(2);
+              }}
+              className="inline-flex items-center gap-2 rounded-[8px] bg-[var(--red)] px-10 py-3 font-mono text-[0.72rem] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-[var(--red-dim)]"
+            >
+              Let&apos;s go →
+            </button>
+          </div>
+        </section>
+
+        <section className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-300 ${step === 2 ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-3 pointer-events-none'}`}>
           <div className="w-full max-w-[440px] text-center">
             <div className="mb-6 flex items-center justify-center gap-2 font-mono text-[0.5rem] uppercase tracking-[0.15em] text-[var(--red)]">
               <span className="h-px w-6 bg-[var(--red)]" />
@@ -522,66 +532,19 @@ export default function OnboardingPage() {
             {nameError ? <p className="mb-4 text-[0.75rem] text-[var(--red)]">{nameError}</p> : null}
             <button
               onClick={handleNameSubmit}
-              disabled={savingName}
+              disabled={savingName || tutorialLoading}
               className="inline-flex items-center gap-2 rounded-[8px] bg-[var(--red)] px-10 py-3 font-mono text-[0.72rem] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-[var(--red-dim)] disabled:opacity-60"
             >
-              {savingName ? 'Saving...' : 'Lock it in →'}
+              {savingName || tutorialLoading ? 'Setting up...' : 'Lock it in →'}
             </button>
-          </div>
-        </section>
-
-        <section className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-300 ${step === 2 ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-3 pointer-events-none'}`}>
-          <div className="w-full max-w-[520px] text-center">
-            <div className="mb-6 flex items-center justify-center gap-2 font-mono text-[0.5rem] uppercase tracking-[0.15em] text-[var(--red)]">
-              <span className="h-px w-6 bg-[var(--red)]" />
-              Step 02
-              <span className="h-px w-6 bg-[var(--red)]" />
-            </div>
-            <h1 className="mb-2 font-display text-[1.8rem] leading-[1.15] sm:text-[2.2rem]">Ever traded on a prediction market?</h1>
-            <p className="mb-10 text-[0.88rem] leading-[1.55] text-[var(--text-dim)]">
-              No judgment either way — we just want to make sure you&apos;re set up for success.
-            </p>
-
-            <div className="space-y-[10px] text-left">
-              <button
-                onClick={loadHotMarkets}
-                disabled={tutorialLoading}
-                className="grid w-full grid-cols-[48px_1fr_auto] items-center gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-5 text-left transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
-              >
-                <span className="flex h-12 w-12 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--surface3)] text-2xl">🌱</span>
-                <span>
-                  <span className="block text-[0.92rem] font-bold text-[var(--text)]">Nope, first time</span>
-                  <span className="block text-[0.75rem] leading-[1.45] text-[var(--text-dim)]">Walk me through it. I want to place a few practice bets before I dive in.</span>
-                </span>
-                <span className="font-mono text-xl text-[var(--text-muted)]">→</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  trackEvent(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
-                    step: 2,
-                    path: 'skip_tutorial'
-                  });
-                  markOnboardingComplete();
-                }}
-                className="grid w-full grid-cols-[48px_1fr_auto] items-center gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-6 py-5 text-left transition-colors hover:border-[var(--border2)] hover:bg-[var(--surface2)]"
-              >
-                <span className="flex h-12 w-12 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--surface3)] text-2xl">🎯</span>
-                <span>
-                  <span className="block text-[0.92rem] font-bold text-[var(--text)]">I know the drill</span>
-                  <span className="block text-[0.75rem] leading-[1.45] text-[var(--text-dim)]">Polymarket, Kalshi, Metaculus — I&apos;ve seen the rodeo. Just give me my $1,000 and let me trade.</span>
-                </span>
-                <span className="font-mono text-xl text-[var(--text-muted)]">→</span>
-              </button>
-            </div>
           </div>
         </section>
 
         <section className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-300 ${step === 3 ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-3 pointer-events-none'}`}>
           <div className="w-full max-w-[400px]">
             <div className="mb-6 text-center">
-              <h2 className="mb-1 font-display text-[1.6rem]">Quick-fire round</h2>
-              <p className="font-mono text-[0.55rem] tracking-[0.06em] text-[var(--text-muted)]">5 hot markets. swipe right for yes, left for no, up to skip, or tap the buttons below.</p>
+              <h2 className="mb-1 font-display text-[1.6rem]">Five Futures</h2>
+              <p className="font-mono text-[0.55rem] tracking-[0.06em] text-[var(--text-muted)]">Five featured questions. Swipe right for yes, left for no, up to skip.</p>
             </div>
 
             <div className="mb-5 flex justify-center gap-[6px]">
@@ -607,7 +570,7 @@ export default function OnboardingPage() {
             </div>
 
             <p className="mb-5 text-center font-mono text-[0.55rem] tracking-[0.04em] text-[var(--text-muted)]">
-              each bet: <strong className="text-[var(--amber-bright)]">${BET_AMOUNT}</strong> from your ${Math.round(remainingBalance).toLocaleString()} weekly balance
+              each bet: <strong className="text-[var(--amber-bright)]">${betAmount}</strong> from your ${Math.round(remainingBalance).toLocaleString()} wallet
             </p>
 
             <div className="relative mb-4 h-[340px] sm:h-[380px]">
@@ -728,40 +691,6 @@ export default function OnboardingPage() {
           </div>
         </section>
 
-        <section className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-300 ${step === 4 ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-3 pointer-events-none'}`}>
-          <div className="w-full max-w-[480px] text-center">
-            <div className="mb-4 text-5xl animate-[popIn_0.5s_cubic-bezier(0.34,1.56,0.64,1)]">🔮</div>
-            <h1 className="mb-2 font-display text-[1.8rem] sm:text-[2.4rem]">You&apos;re in the game</h1>
-            <p className="mb-5 text-[0.88rem] leading-[1.55] text-[var(--text-dim)]">
-              Your bets are placed and your $1,000 is ready. Markets move fast around here — check back when the crowd gets loud.
-            </p>
-
-            {recapBets.length === 0 ? (
-              <p className="mb-8 font-mono text-[0.72rem] text-[var(--text-muted)]">No bets placed — you can always bet from the market pages.</p>
-            ) : (
-              <div className="mb-8 flex flex-col gap-[6px]">
-                {recapBets.map((bet, idx) => (
-                  <div key={`${bet.marketId}-${idx}`} className="flex items-center justify-between rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left">
-                    <p className="mr-4 flex-1 text-[0.78rem] font-semibold leading-[1.3] text-[var(--text)]">{bet.question}</p>
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded-[3px] border px-2 py-[0.15rem] font-mono text-[0.6rem] font-bold uppercase tracking-[0.06em] ${bet.side === 'YES' ? 'border-[rgba(34,197,94,0.15)] bg-[rgba(34,197,94,0.08)] text-[var(--green-bright)]' : 'border-[rgba(220,38,38,0.15)] bg-[rgba(220,38,38,0.08)] text-[var(--red)]'}`}>
-                        {bet.side}
-                      </span>
-                      <span className="font-mono text-[0.62rem] text-[var(--amber-bright)]">${BET_AMOUNT}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <button
-              onClick={markOnboardingComplete}
-              className="inline-flex items-center gap-2 rounded-[8px] bg-[var(--red)] px-10 py-3 font-mono text-[0.72rem] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-[var(--red-dim)]"
-            >
-              Start trading →
-            </button>
-          </div>
-        </section>
       </main>
     </div>
   );

@@ -37,7 +37,10 @@ async function run() {
 
   await db.doc(`users/${UID}`).set(
     {
-      weeklyRep: 1000,
+      balance: 1000,
+      totalDeposits: 1000,
+      accountCreatedAt: now,
+      lastStipendWeek: null,
       lifetimeRep: 0,
       oracleScore: 0,
       onboardingComplete: true,

@@ -1,14 +1,30 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db, functions } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  onSnapshot,
+  orderBy,
+  limit,
+  addDoc,
+  deleteDoc,
+  updateDoc,
+  arrayUnion,
+  arrayRemove
+} from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { MARKET_STATUS } from '@/utils/marketStatus';
+import { getISOWeek } from '@/utils/isoWeek';
+import { getPublicDisplayName } from '@/utils/displayName';
 
-const DEFAULT_BET_AMOUNT = 25; // $25 per quick-take bet
+const DEFAULT_BET_AMOUNT = 100; // $100 per quick-take bet
 const MAX_MARKETS = 30;
 const CARD_EXIT_MS = 450;
 
@@ -125,55 +141,31 @@ function Sparkline({ probabilities, strokeColor, gradientId }) {
   );
 }
 
-function ActivityRow({ item }) {
-  if (item.type === 'comment') {
-    return (
-      <div className="flex gap-2 border-b border-[var(--border)] px-4 py-2">
-        <span className="mt-0.5 shrink-0 font-mono text-[0.6rem] text-[var(--text-muted)]">💬</span>
-        <div className="min-w-0">
-          <p className="mb-0.5 font-mono text-[0.5rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
-            {item.author}
-          </p>
-          <p className="truncate font-sans text-[0.72rem] leading-snug text-[var(--text)]">
-            {item.text}
-          </p>
-        </div>
-      </div>
-    );
-  }
+function formatCommentTime(value) {
+  const ms = toMillis(value);
+  if (!ms) return 'just now';
+  return new Date(ms).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
 
-  if (item.type === 'news') {
-    return (
-      <div className="flex gap-2 border-b border-[var(--border)] bg-[rgba(220,38,38,0.04)] px-4 py-2">
-        <span className="mt-0.5 shrink-0 font-mono text-[0.6rem] text-[var(--red)]">◈</span>
-        <p className="min-w-0 font-sans text-[0.72rem] leading-snug text-[var(--text)]">
-          {item.text}
-        </p>
-      </div>
-    );
-  }
+function getInitials(name) {
+  if (!name) return 'PC';
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'PC';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
 
-  if (item.type === 'trade') {
-    const isYes = item.side === 'YES';
-    const color = isYes ? 'var(--green-bright)' : 'var(--red)';
-    const fromPct = Math.round((item.from || 0) * 100);
-    const toPct = Math.round((item.to || 0) * 100);
-    const arrow = toPct > fromPct ? '↑' : '↓';
-    return (
-      <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-2">
-        <span className="shrink-0 font-mono text-[0.6rem]" style={{ color }}>{arrow}</span>
-        <p className="font-mono text-[0.6rem] text-[var(--text-dim)]">
-          <span style={{ color }}>{item.side}</span>
-          {' '}{fromPct}% → {toPct}%
-          {item.amount ? (
-            <span className="text-[var(--text-muted)]"> · ${Math.round(item.amount)}</span>
-          ) : null}
-        </p>
-      </div>
-    );
-  }
-
-  return null;
+function getCommentDisplayName(comment) {
+  if (comment?.username && String(comment.username).trim()) return String(comment.username).trim();
+  if (comment?.userName && String(comment.userName).trim()) return String(comment.userName).trim();
+  if (comment?.displayName && String(comment.displayName).trim()) return String(comment.displayName).trim();
+  if (comment?.userId) return `user-${String(comment.userId).slice(0, 6)}`;
+  return 'trader';
 }
 
 export default function FeedPage() {
@@ -189,12 +181,18 @@ export default function FeedPage() {
   const [dragState, setDragState] = useState({ active: false, startX: 0, startY: 0, dx: 0, dy: 0 });
   const [exitDirection, setExitDirection] = useState(null);
   const [animatingOut, setAnimatingOut] = useState(false);
-  const [activityItems, setActivityItems] = useState([]);
-  const [activityLoading, setActivityLoading] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [currentDisplayName, setCurrentDisplayName] = useState('user');
   const [sellingMarketId, setSellingMarketId] = useState(null);
+  const [showFfInterstitial, setShowFfInterstitial] = useState(false);
 
   const topCard = cards[currentIndex] || null;
-  const hasCardsRemaining = currentIndex < cards.length;
+  const topCardId = topCard?.id || null;
   const disableInteractions = submitting || animatingOut || !!sellingMarketId;
   const exitTimeoutRef = useRef(null);
   const dragRef = useRef(dragState);
@@ -211,104 +209,111 @@ export default function FeedPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!topCard) {
-      setActivityItems([]);
-      setActivityLoading(false);
+  const fetchCommentsForMarket = useCallback(async (marketId) => {
+    if (!marketId) {
+      setComments([]);
+      setCommentsLoading(false);
       return;
     }
 
-    let cancelled = false;
-    setActivityLoading(true);
-    setActivityItems([]);
+    setCommentsLoading(true);
+    try {
+      const commentsQuery = query(
+        collection(db, 'comments'),
+        where('marketId', '==', marketId),
+        where('marketplaceId', '==', null),
+        limit(200)
+      );
+      const snapshot = await getDocs(commentsQuery);
+      const items = snapshot.docs
+        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+        .sort((a, b) => toMillis(b.timestamp || b.createdAt) - toMillis(a.timestamp || a.createdAt));
+      setComments(items);
+    } catch (error) {
+      console.error('Error loading feed comments:', error);
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, []);
 
-    (async () => {
-      try {
-        const [commentsResult, newsResult, betsResult] = await Promise.allSettled([
-          getDocs(
-            query(
-              collection(db, 'comments'),
-              where('marketId', '==', topCard.id),
-              where('marketplaceId', '==', null),
-              orderBy('createdAt', 'desc'),
-              limit(10)
-            )
-          ),
-          getDocs(
-            query(
-              collection(db, 'newsItems'),
-              where('marketId', '==', topCard.id),
-              where('marketplaceId', '==', null),
-              orderBy('timestamp', 'desc'),
-              limit(10)
-            )
-          ),
-          getDocs(
-            query(
-              collection(db, 'bets'),
-              where('marketId', '==', topCard.id),
-              where('marketplaceId', '==', null),
-              orderBy('timestamp', 'desc'),
-              limit(30)
-            )
-          )
-        ]);
+  useEffect(() => {
+    setCommentDraft('');
+    setReplyDraft('');
+    setReplyingTo(null);
+    if (!topCardId) {
+      setComments([]);
+      setCommentsLoading(false);
+      return;
+    }
+    fetchCommentsForMarket(topCardId);
+  }, [fetchCommentsForMarket, topCardId]);
 
-        if (cancelled) return;
-
-        const comments = commentsResult.status === 'fulfilled'
-          ? commentsResult.value.docs.map((d) => {
-            const data = d.data();
-            return { type: 'comment', text: data.text, author: data.displayName || 'anon', ts: data.createdAt?.toMillis?.() || 0 };
-          })
-          : [];
-
-        const news = newsResult.status === 'fulfilled'
-          ? newsResult.value.docs.map((d) => {
-            const data = d.data();
-            return { type: 'news', text: data.headline || data.title || data.text, ts: data.timestamp?.toMillis?.() || 0 };
-          })
-          : [];
-
-        const trades = betsResult.status === 'fulfilled'
-          ? betsResult.value.docs
-            .map((d) => {
-              const data = d.data();
-              return { type: 'trade', side: data.side, from: data.previousProbability, to: data.newProbability, amount: data.amount, ts: data.timestamp?.toMillis?.() || 0 };
-            })
-            .filter((t) => Math.abs((t.to || 0) - (t.from || 0)) >= 0.03)
-          : [];
-
-        const merged = [...comments, ...news, ...trades]
-          .sort((a, b) => b.ts - a.ts)
-          .slice(0, 15);
-
-        if (!cancelled) setActivityItems(merged);
-      } catch {
-        if (!cancelled) setActivityItems([]);
-      } finally {
-        if (!cancelled) setActivityLoading(false);
+  const normalizedComments = useMemo(() => {
+    const byId = new Map(comments.map((comment) => [comment.id, comment]));
+    return comments.map((comment) => {
+      let replyTo = comment.replyTo || null;
+      let orphanedReply = false;
+      if (replyTo) {
+        const parent = byId.get(replyTo);
+        if (parent?.replyTo) {
+          replyTo = parent.replyTo;
+        }
+        if (!byId.has(replyTo)) {
+          orphanedReply = true;
+        }
       }
-    })();
+      return { ...comment, _replyToRoot: replyTo, _orphanedReply: orphanedReply };
+    });
+  }, [comments]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [topCard?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rootComments = useMemo(
+    () => normalizedComments
+      .filter((comment) => !comment._replyToRoot && !comment._orphanedReply)
+      .sort((a, b) => toMillis(b.timestamp || b.createdAt) - toMillis(a.timestamp || a.createdAt)),
+    [normalizedComments]
+  );
+
+  const repliesByParent = useMemo(() => normalizedComments.reduce((acc, comment) => {
+    if (!comment._replyToRoot || comment._orphanedReply) return acc;
+    if (!acc[comment._replyToRoot]) acc[comment._replyToRoot] = [];
+    acc[comment._replyToRoot].push(comment);
+    return acc;
+  }, {}), [normalizedComments]);
 
   const loadFeedCards = useCallback(async (currentUser) => {
-    const marketsSnap = await getDocs(
-      query(
-        collection(db, 'markets'),
-        where('resolution', '==', null),
-        where('marketplaceId', '==', null),
-        limit(MAX_MARKETS)
+    const currentWeek = getISOWeek();
+
+    const [marketsSnap, ffSnap] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, 'markets'),
+          where('resolution', '==', null),
+          where('marketplaceId', '==', null),
+          limit(MAX_MARKETS)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, 'markets'),
+          where('isFiveFutures', '==', true),
+          where('fiveFuturesWeek', '==', currentWeek)
+        )
       )
-    );
+    ]);
+
+    const ffIds = new Set(ffSnap.docs.map((d) => d.id));
 
     const markets = marketsSnap.docs
       .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
       .filter((market) => market.status === MARKET_STATUS.OPEN);
+
+    ffSnap.docs.forEach((d) => {
+      if (!markets.find((m) => m.id === d.id)) {
+        const data = { id: d.id, ...d.data() };
+        if (data.status === MARKET_STATUS.OPEN) markets.push(data);
+      }
+    });
 
     if (markets.length === 0) return [];
 
@@ -364,6 +369,7 @@ export default function FeedPage() {
     const baseCards = markets.map((market) => {
       const probability = clampProbability(market.probability);
       const userMarketBets = userBetsByMarket.get(market.id) || [];
+      const isFiveFutures = ffIds.has(market.id);
 
       let yesShares = 0;
       let noShares = 0;
@@ -406,17 +412,21 @@ export default function FeedPage() {
       const unrealizedPnl = (yesShares * probability + noShares * (1 - probability)) - userCostBasis;
       const userSide = yesShares > noShares ? 'YES' : noShares > yesShares ? 'NO' : null;
 
-      const section = !hasPosition
-        ? 'New markets'
-        : priceMovedSinceEntry
-          ? 'Your positions · moved'
-          : 'Your positions · stable';
+      const section = isFiveFutures && !hasPosition
+        ? 'Five Futures'
+        : !hasPosition
+          ? 'New markets'
+          : priceMovedSinceEntry
+            ? 'Your positions · moved'
+            : 'Your positions · stable';
 
-      const sectionColor = !hasPosition
+      const sectionColor = isFiveFutures && !hasPosition
         ? 'var(--red)'
-        : priceMovedSinceEntry
-          ? 'var(--amber-bright)'
-          : 'var(--text-muted)';
+        : !hasPosition
+          ? 'var(--red)'
+          : priceMovedSinceEntry
+            ? 'var(--amber-bright)'
+            : 'var(--text-muted)';
 
       return {
         id: market.id,
@@ -435,15 +445,20 @@ export default function FeedPage() {
         priceMovedSinceEntry,
         priceMovePoints: Math.round(priceMoveDelta * 100),
         section,
-        sectionColor
+        sectionColor,
+        isFiveFutures,
+        fiveFuturesIndex: isFiveFutures ? (market.fiveFuturesIndex || 0) : Infinity
       };
     });
 
-    const newMarkets = baseCards.filter((card) => !card.userPosition);
+    const ffNew = baseCards
+      .filter((card) => card.isFiveFutures && !card.userPosition)
+      .sort((a, b) => a.fiveFuturesIndex - b.fiveFuturesIndex);
+    const newMarkets = baseCards.filter((card) => !card.userPosition && !card.isFiveFutures);
     const movedPositions = baseCards.filter((card) => card.userPosition && card.priceMovedSinceEntry);
     const stablePositions = baseCards.filter((card) => card.userPosition && !card.priceMovedSinceEntry);
 
-    return [...newMarkets, ...movedPositions, ...stablePositions];
+    return [...ffNew, ...newMarkets, ...movedPositions, ...stablePositions];
   }, []);
 
   useEffect(() => {
@@ -464,6 +479,9 @@ export default function FeedPage() {
         setCurrentIndex(0);
         setLoading(false);
         setBalance(0);
+        setCurrentDisplayName('user');
+        setComments([]);
+        setReplyingTo(null);
         router.push('/login?next=%2Ffeed');
         return;
       }
@@ -472,9 +490,12 @@ export default function FeedPage() {
         doc(db, 'users', currentUser.uid),
         (userDoc) => {
           if (userDoc.exists()) {
-            setBalance(Number(userDoc.data()?.weeklyRep || 0));
+            const userData = userDoc.data();
+            setBalance(Number(userData?.balance || 0));
+            setCurrentDisplayName(getPublicDisplayName({ id: currentUser.uid, ...userData }));
           } else {
             setBalance(0);
+            setCurrentDisplayName(currentUser.email?.split('@')[0] || 'user');
           }
         },
         (error) => {
@@ -488,6 +509,7 @@ export default function FeedPage() {
         setCards(nextCards);
         setDecisions(Array(nextCards.length).fill(null));
         setCurrentIndex(0);
+        setShowFfInterstitial(false);
       } catch (error) {
         console.error('Error loading feed cards:', error);
         setCards([]);
@@ -522,13 +544,19 @@ export default function FeedPage() {
         return next;
       });
 
-      setCurrentIndex((prev) => prev + 1);
+      const nextIdx = currentIndex + 1;
+      const nextCard = cards[nextIdx] || null;
+      if (topCard.isFiveFutures && (!nextCard || !nextCard.isFiveFutures)) {
+        setShowFfInterstitial(true);
+      }
+
+      setCurrentIndex(nextIdx);
       setDragState({ active: false, startX: 0, startY: 0, dx: 0, dy: 0 });
       setExitDirection(null);
       setAnimatingOut(false);
       setSubmitting(false);
     }, CARD_EXIT_MS);
-  }, [currentIndex, topCard]);
+  }, [cards, currentIndex, topCard]);
 
   const commitSwipe = useCallback(async (direction) => {
     if (!topCard || disableInteractions) return;
@@ -578,6 +606,120 @@ export default function FeedPage() {
     }
   }, [dismissTopCard]);
 
+  const handlePostComment = useCallback(async () => {
+    if (!user || !topCard?.id) return;
+    const text = commentDraft.trim();
+    if (!text) return;
+
+    setCommentSubmitting(true);
+    try {
+      await addDoc(collection(db, 'comments'), {
+        marketId: topCard.id,
+        marketplaceId: null,
+        userId: user.uid,
+        username: currentDisplayName || (user.email?.split('@')[0] || 'user'),
+        userName: currentDisplayName || (user.email?.split('@')[0] || 'user'),
+        text,
+        createdAt: new Date(),
+        timestamp: new Date(),
+        likedBy: [],
+        replyTo: null,
+        userSide: topCard.userSide === 'YES' || topCard.userSide === 'NO' ? topCard.userSide : null
+      });
+      setCommentDraft('');
+      await fetchCommentsForMarket(topCard.id);
+    } catch (error) {
+      console.error('Error posting feed comment:', error);
+      setErrorMessage('Unable to post comment right now.');
+    } finally {
+      setCommentSubmitting(false);
+    }
+  }, [commentDraft, currentDisplayName, fetchCommentsForMarket, topCard?.id, topCard?.userSide, user]);
+
+  const handlePostReply = useCallback(async (parentId) => {
+    if (!user || !topCard?.id) return;
+    const text = replyDraft.trim();
+    if (!text) return;
+
+    const parent = comments.find((comment) => comment.id === parentId);
+    if (!parent) return;
+    const rootParentId = parent.replyTo || parent.id;
+
+    setCommentSubmitting(true);
+    try {
+      await addDoc(collection(db, 'comments'), {
+        marketId: topCard.id,
+        marketplaceId: null,
+        userId: user.uid,
+        username: currentDisplayName || (user.email?.split('@')[0] || 'user'),
+        userName: currentDisplayName || (user.email?.split('@')[0] || 'user'),
+        text,
+        createdAt: new Date(),
+        timestamp: new Date(),
+        likedBy: [],
+        replyTo: rootParentId,
+        userSide: topCard.userSide === 'YES' || topCard.userSide === 'NO' ? topCard.userSide : null
+      });
+      setReplyDraft('');
+      setReplyingTo(null);
+      await fetchCommentsForMarket(topCard.id);
+    } catch (error) {
+      console.error('Error posting feed reply:', error);
+      setErrorMessage('Unable to post reply right now.');
+    } finally {
+      setCommentSubmitting(false);
+    }
+  }, [comments, currentDisplayName, fetchCommentsForMarket, replyDraft, topCard?.id, topCard?.userSide, user]);
+
+  const handleToggleCommentLike = useCallback(async (comment) => {
+    if (!user) {
+      setErrorMessage('Sign in to like comments.');
+      return;
+    }
+    const uid = user.uid;
+    const likedBy = Array.isArray(comment.likedBy) ? comment.likedBy : [];
+    const alreadyLiked = likedBy.includes(uid);
+
+    try {
+      await updateDoc(doc(db, 'comments', comment.id), {
+        likedBy: alreadyLiked ? arrayRemove(uid) : arrayUnion(uid)
+      });
+      setComments((prev) => prev.map((item) => {
+        if (item.id !== comment.id) return item;
+        const nextLikedBy = alreadyLiked
+          ? likedBy.filter((id) => id !== uid)
+          : [...likedBy, uid];
+        return { ...item, likedBy: nextLikedBy };
+      }));
+    } catch (error) {
+      console.error('Error toggling comment like:', error);
+      setErrorMessage('Unable to update comment like right now.');
+    }
+  }, [user]);
+
+  const handleDeleteComment = useCallback(async (comment) => {
+    if (!user) {
+      setErrorMessage('Sign in to delete comments.');
+      return;
+    }
+    if (comment.userId !== user.uid) {
+      setErrorMessage('You can only delete your own comments.');
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'comments', comment.id));
+      setComments((prev) => prev.filter((item) => item.id !== comment.id));
+      if (replyingTo === comment.id) {
+        setReplyingTo(null);
+        setReplyDraft('');
+      }
+    } catch (error) {
+      console.error('Error deleting feed comment:', error);
+      setErrorMessage('Unable to delete comment right now.');
+    }
+  }, [replyingTo, user]);
+
   const handlePointerDown = useCallback((event) => {
     if (!topCard || disableInteractions) return;
 
@@ -621,23 +763,9 @@ export default function FeedPage() {
 
   const currentCard = cards[currentIndex] || null;
 
-  function dotClass(index) {
-    if (index === currentIndex && hasCardsRemaining) {
-      return 'scale-110 border-[var(--red)] bg-[var(--red)]';
-    }
-
-    if (index < currentIndex) {
-      const decision = decisions[index];
-      if (decision === 'YES') return 'border-[var(--green-bright)] bg-[var(--green-bright)]';
-      if (decision === 'NO') return 'border-[var(--red-dim)] bg-[var(--red-dim)]';
-      return 'border-[var(--text-muted)] bg-[var(--text-muted)]';
-    }
-
-    return 'border-[var(--border2)] bg-transparent';
-  }
-
-  // Balance listener is required for this page, but balance is intentionally not displayed in this layout.
+  // State values used only by setters (tracked internally)
   void balance;
+  void decisions;
 
   if (loading) {
     return (
@@ -655,20 +783,19 @@ export default function FeedPage() {
     );
   }
 
-  const showEmptyState = cards.length === 0 || currentIndex >= cards.length;
+  const showEmptyState = !showFfInterstitial && (cards.length === 0 || currentIndex >= cards.length);
+  const hasMoreCards = currentIndex < cards.length;
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <main className="mx-auto flex h-full w-full max-w-[460px] flex-col px-4 pt-4 md:max-w-[520px] md:px-6 md:pt-6" style={{ paddingBottom: 'calc(56px + var(--safe-bottom, 0px) + 8px)' }}>
-        {!showEmptyState && (
-          <>
-            <div className="queue-label mb-4 text-center font-mono text-[0.48rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-              <span className="section-tag inline-flex items-center gap-[5px] rounded-[3px] border border-[var(--border)] bg-[var(--surface)] px-2 py-[2px]">
-                <span className="section-dot h-[5px] w-[5px] rounded-full" style={{ background: currentCard?.sectionColor || 'var(--text-muted)' }} />
-                <span>{currentCard?.section || 'New markets'}</span>
-              </span>
-            </div>
-          </>
+        {!showEmptyState && !showFfInterstitial && (
+          <div className="queue-label mb-4 text-center font-mono text-[0.48rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+            <span className="section-tag inline-flex items-center gap-[5px] rounded-[3px] border border-[var(--border)] bg-[var(--surface)] px-2 py-[2px]">
+              <span className="section-dot h-[5px] w-[5px] rounded-full" style={{ background: currentCard?.sectionColor || 'var(--text-muted)' }} />
+              <span>{currentCard?.section || 'New markets'}</span>
+            </span>
+          </div>
         )}
 
         <div className="card-container relative flex-1">
@@ -678,7 +805,33 @@ export default function FeedPage() {
             </div>
           )}
 
-          {showEmptyState ? (
+          {showFfInterstitial ? (
+            <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-8 text-center">
+              <div className="mb-3 text-4xl animate-[popIn_0.5s_cubic-bezier(0.34,1.56,0.64,1)]">🎯</div>
+              <h2 className="mb-2 font-display text-[1.5rem] italic leading-[1.15] text-[var(--text)]">
+                Five Futures complete
+              </h2>
+              <p className="mb-8 max-w-[300px] text-[0.82rem] leading-[1.5] text-[var(--text-dim)]">
+                You&apos;ve weighed in on the featured questions. Check back soon for the next five.
+              </p>
+              {hasMoreCards ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFfInterstitial(false)}
+                  className="inline-flex items-center gap-2 rounded-[8px] bg-[var(--red)] px-8 py-3 font-mono text-[0.72rem] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-[var(--red-dim)]"
+                >
+                  Continue Predicting →
+                </button>
+              ) : (
+                <Link
+                  href="/markets"
+                  className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--border2)] bg-[var(--surface2)] px-8 py-3 font-mono text-[0.72rem] font-bold uppercase tracking-[0.08em] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface3)] hover:text-[var(--text)]"
+                >
+                  Browse all markets →
+                </Link>
+              )}
+            </div>
+          ) : showEmptyState ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
               <h2 className="font-display text-[1.5rem] italic text-[var(--text)]">You&apos;ve seen all open markets</h2>
               <p className="mt-2 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
@@ -705,9 +858,9 @@ export default function FeedPage() {
               const probabilityPercent = Math.round(card.probability * 100);
               const yesRoi = (1 / Math.max(0.01, card.probability)).toFixed(2);
               const noRoi = (1 / Math.max(0.01, 1 - card.probability)).toFixed(2);
-              const yesOpacity = isTop ? Math.max(0, Math.min(1, dragState.dx / 120)) : 0;
-              const noOpacity = isTop ? Math.max(0, Math.min(1, -dragState.dx / 120)) : 0;
-              const skipOpacity = isTop ? Math.max(0, Math.min(1, -dragState.dy / 90)) : 0;
+              const yesOpacity = isTop && !animatingOut ? Math.max(0, Math.min(1, dragState.dx / 120)) : 0;
+              const noOpacity = isTop && !animatingOut ? Math.max(0, Math.min(1, -dragState.dx / 120)) : 0;
+              const skipOpacity = isTop && !animatingOut ? Math.max(0, Math.min(1, -dragState.dy / 90)) : 0;
 
               const dynamicStyle = isTop
                 ? exitDirection === 'right'
@@ -873,21 +1026,216 @@ export default function FeedPage() {
                       style={{ minHeight: 0 }}
                       onPointerDown={(e) => e.stopPropagation()}
                     >
-                      {activityLoading ? (
+                      <div className="sticky top-0 z-[2] flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2">
+                        <p className="font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                          Comments ({normalizedComments.length})
+                        </p>
+                        <Link
+                          href={`/market/${card.id}`}
+                          data-feed-action="full-discussion"
+                          className="font-mono text-[0.52rem] uppercase tracking-[0.08em] text-[var(--red)] hover:text-[var(--red-dim)]"
+                        >
+                          Full thread →
+                        </Link>
+                      </div>
+
+                      {user ? (
+                        <div className="border-b border-[var(--border)] px-4 py-3">
+                          <div className="flex items-start gap-2">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--red-dim)] bg-[var(--red-glow)] font-mono text-[0.55rem] font-bold text-[var(--red)]">
+                              {getInitials(currentDisplayName)}
+                            </div>
+                            <textarea
+                              value={commentDraft}
+                              onChange={(e) => setCommentDraft(e.target.value)}
+                              placeholder="Add your take..."
+                              autoComplete="off"
+                              maxLength={400}
+                              data-feed-action="comment-input"
+                              className="min-h-[48px] w-full resize-none rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-2 py-2 text-[0.78rem] text-[var(--text)]"
+                            />
+                          </div>
+                          <div className="mt-2 flex items-center justify-between">
+                            <span className="font-mono text-[0.48rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                              posting as {currentDisplayName}
+                            </span>
+                            <button
+                              type="button"
+                              data-feed-action="post-comment"
+                              onClick={handlePostComment}
+                              disabled={!commentDraft.trim() || commentSubmitting}
+                              className="rounded-[4px] bg-[var(--red)] px-3 py-[6px] font-mono text-[0.54rem] uppercase tracking-[0.08em] text-white transition-colors hover:bg-[var(--red-dim)] disabled:opacity-50"
+                            >
+                              {commentSubmitting ? 'Posting…' : 'Post'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border-b border-[var(--border)] px-4 py-3 text-center">
+                          <Link
+                            href={`/login?next=${encodeURIComponent('/feed')}`}
+                            data-feed-action="login-comment"
+                            className="font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--red)] hover:text-[var(--red-dim)]"
+                          >
+                            Sign in to comment
+                          </Link>
+                        </div>
+                      )}
+
+                      {commentsLoading ? (
                         <div className="flex flex-col gap-2 px-4 py-3">
                           {[1, 2, 3].map((i) => (
                             <div key={i} className="h-3 animate-pulse rounded bg-[var(--surface3)]" style={{ width: `${60 + i * 10}%` }} />
                           ))}
                         </div>
-                      ) : activityItems.length === 0 ? (
+                      ) : rootComments.length === 0 ? (
                         <p className="px-4 py-5 text-center font-mono text-[0.55rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                          No activity yet
+                          No comments yet
                         </p>
                       ) : (
-                        <div className="flex flex-col">
-                          {activityItems.map((item, i) => (
-                            <ActivityRow key={i} item={item} />
-                          ))}
+                        <div className="divide-y divide-[var(--border)]">
+                          {rootComments.map((comment) => {
+                            const replies = (repliesByParent[comment.id] || [])
+                              .sort((a, b) => toMillis(a.timestamp || a.createdAt) - toMillis(b.timestamp || b.createdAt));
+                            const likedBy = Array.isArray(comment.likedBy) ? comment.likedBy : [];
+                            const liked = !!user && likedBy.includes(user.uid);
+
+                            return (
+                              <div key={comment.id} className="px-4 py-3">
+                                <div className="flex gap-2">
+                                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border2)] bg-[var(--surface3)] font-mono text-[0.52rem] font-bold text-[var(--text-dim)]">
+                                    {getInitials(getCommentDisplayName(comment))}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="truncate text-[0.73rem] font-semibold text-[var(--text)]">{getCommentDisplayName(comment)}</span>
+                                      <span className="font-mono text-[0.48rem] uppercase tracking-[0.07em] text-[var(--text-muted)]">
+                                        {formatCommentTime(comment.timestamp || comment.createdAt)}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-[0.76rem] leading-[1.45] text-[var(--text-dim)] whitespace-pre-wrap">
+                                      {comment.text}
+                                    </p>
+                                    <div className="mt-2 flex items-center gap-3">
+                                      <button
+                                        type="button"
+                                        data-feed-action="like-comment"
+                                        onClick={() => handleToggleCommentLike(comment)}
+                                        className={`font-mono text-[0.52rem] uppercase tracking-[0.07em] transition-colors ${
+                                          liked ? 'text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+                                        }`}
+                                      >
+                                        ♥ {likedBy.length}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        data-feed-action="reply-comment"
+                                        onClick={() => {
+                                          if (!user) {
+                                            setErrorMessage('Sign in to reply.');
+                                            return;
+                                          }
+                                          setReplyingTo(comment.id);
+                                          setReplyDraft('');
+                                        }}
+                                        className="font-mono text-[0.52rem] uppercase tracking-[0.07em] text-[var(--text-muted)] transition-colors hover:text-[var(--text-dim)]"
+                                      >
+                                        Reply
+                                      </button>
+                                      {user?.uid === comment.userId && (
+                                        <button
+                                          type="button"
+                                          data-feed-action="delete-comment"
+                                          onClick={() => handleDeleteComment(comment)}
+                                          className="font-mono text-[0.52rem] uppercase tracking-[0.07em] text-[var(--red)] transition-colors hover:text-[var(--red-dim)]"
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {replyingTo === comment.id && (
+                                      <div className="mt-2 border-l border-[var(--border)] pl-3">
+                                        <textarea
+                                          value={replyDraft}
+                                          onChange={(e) => setReplyDraft(e.target.value)}
+                                          placeholder={`Reply to ${getCommentDisplayName(comment)}...`}
+                                          autoComplete="off"
+                                          maxLength={400}
+                                          data-feed-action="reply-input"
+                                          className="min-h-[44px] w-full resize-none rounded-[5px] border border-[var(--border2)] bg-[var(--surface2)] px-2 py-2 text-[0.74rem] text-[var(--text)]"
+                                        />
+                                        <div className="mt-2 flex justify-end gap-2">
+                                          <button
+                                            type="button"
+                                            data-feed-action="cancel-reply"
+                                            onClick={() => {
+                                              setReplyingTo(null);
+                                              setReplyDraft('');
+                                            }}
+                                            className="font-mono text-[0.5rem] uppercase tracking-[0.07em] text-[var(--text-muted)] hover:text-[var(--text-dim)]"
+                                          >
+                                            Cancel
+                                          </button>
+                                          <button
+                                            type="button"
+                                            data-feed-action="post-reply"
+                                            onClick={() => handlePostReply(comment.id)}
+                                            disabled={!replyDraft.trim() || commentSubmitting}
+                                            className="rounded-[4px] bg-[var(--red)] px-3 py-[5px] font-mono text-[0.5rem] uppercase tracking-[0.07em] text-white transition-colors hover:bg-[var(--red-dim)] disabled:opacity-50"
+                                          >
+                                            {commentSubmitting ? 'Posting…' : 'Reply'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {replies.length > 0 && (
+                                      <div className="mt-3 space-y-2 border-l border-[var(--border)] pl-3">
+                                        {replies.map((reply) => {
+                                          const replyLikedBy = Array.isArray(reply.likedBy) ? reply.likedBy : [];
+                                          const replyLiked = !!user && replyLikedBy.includes(user.uid);
+                                          return (
+                                            <div key={reply.id} className="rounded-[5px] border border-[var(--border)] bg-[var(--surface2)] px-2 py-2">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-[0.68rem] font-semibold text-[var(--text)]">{getCommentDisplayName(reply)}</span>
+                                                <span className="font-mono text-[0.46rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                                                  {formatCommentTime(reply.timestamp || reply.createdAt)}
+                                                </span>
+                                              </div>
+                                              <p className="mt-1 text-[0.72rem] leading-[1.4] text-[var(--text-dim)] whitespace-pre-wrap">
+                                                {reply.text}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                data-feed-action="like-reply"
+                                                onClick={() => handleToggleCommentLike(reply)}
+                                                className={`mt-1 font-mono text-[0.48rem] uppercase tracking-[0.06em] transition-colors ${
+                                                  replyLiked ? 'text-[var(--red)]' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)]'
+                                                }`}
+                                              >
+                                                ♥ {replyLikedBy.length}
+                                              </button>
+                                              {user?.uid === reply.userId && (
+                                                <button
+                                                  type="button"
+                                                  data-feed-action="delete-reply"
+                                                  onClick={() => handleDeleteComment(reply)}
+                                                  className="ml-3 mt-1 font-mono text-[0.48rem] uppercase tracking-[0.06em] text-[var(--red)] transition-colors hover:text-[var(--red-dim)]"
+                                                >
+                                                  Delete
+                                                </button>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -898,7 +1246,7 @@ export default function FeedPage() {
           )}
         </div>
 
-        {!showEmptyState && (
+        {!showEmptyState && !showFfInterstitial && (
           <div className="swipe-hints flex items-center justify-center gap-[18px] py-[8px]">
             <span className="hint inline-flex items-center gap-[5px] font-mono text-[0.46rem] uppercase tracking-[0.06em] text-[var(--text-muted)]">
               <span className="hint-dot no h-[5px] w-[5px] rounded-full bg-[var(--red)]" />

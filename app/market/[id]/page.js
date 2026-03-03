@@ -26,7 +26,6 @@ import ToastStack from '@/app/components/ToastStack';
 import useToastQueue from '@/app/hooks/useToastQueue';
 import { getPublicDisplayName } from '@/utils/displayName';
 import { ADMIN_EMAILS } from '@/utils/adminEmails';
-import { toMarketplaceMemberId } from '@/utils/marketplace';
 import { ANALYTICS_EVENTS, trackEvent } from '@/utils/analytics';
 import {
   ResponsiveContainer,
@@ -112,20 +111,18 @@ export default function MarketPage() {
   const [marketStats, setMarketStats] = useState({ totalTraded: 0, bettors: 0 });
   const [topBettors, setTopBettors] = useState([]);
   const [relatedMarkets, setRelatedMarkets] = useState([]);
-  const [marketplaceMembership, setMarketplaceMembership] = useState(null);
   const [viewTrackedForMarket, setViewTrackedForMarket] = useState(null);
   const { toasts, notifyError, notifySuccess, confirmToast, removeToast, resolveConfirm } = useToastQueue();
 
   const marketStatus = getMarketStatus(market);
-  const marketScopeId = market?.marketplaceId || null;
-  const canReadScopedMarketData = !!market && (!market?.marketplaceId || !!marketplaceMembership);
-  const canTrade = currentUser
-    && isTradeableMarket(market)
-    && (!market?.marketplaceId || !!marketplaceMembership);
+  const canReadScopedMarketData = !!market;
+  const canTrade = currentUser && isTradeableMarket(market);
   const isLocked = marketStatus === MARKET_STATUS.LOCKED;
   const isResolved = marketStatus === MARKET_STATUS.RESOLVED;
   const isCancelled = marketStatus === MARKET_STATUS.CANCELLED;
   const userSide = userPosition.yesShares > 0 ? 'YES' : userPosition.noShares > 0 ? 'NO' : null;
+  const betAmountNumber = Number(betAmount);
+  const isBetAmountValid = Number.isFinite(betAmountNumber) && betAmountNumber > 0;
 
   const isAdminUser = useMemo(() => {
     return !!(currentUser?.email && ADMIN_EMAILS.includes(currentUser.email));
@@ -200,40 +197,6 @@ export default function MarketPage() {
   }, []);
 
   useEffect(() => {
-    async function verifyMarketplaceAccess() {
-      if (!market?.marketplaceId) {
-        setMarketplaceMembership(null);
-        return;
-      }
-
-      if (!currentUser) {
-        setMarketplaceMembership(null);
-        router.push(`/marketplace/enter?marketplace=${market.marketplaceId}`);
-        return;
-      }
-
-      try {
-        const memberSnap = await getDoc(
-          doc(db, 'marketplaceMembers', toMarketplaceMemberId(market.marketplaceId, currentUser.uid))
-        );
-        if (!memberSnap.exists()) {
-          setMarketplaceMembership(null);
-          notifyError('This market belongs to a private marketplace. Join to view and trade.');
-          router.push(`/marketplace/enter?marketplace=${market.marketplaceId}`);
-          return;
-        }
-        setMarketplaceMembership({ id: memberSnap.id, ...memberSnap.data() });
-      } catch (error) {
-        if (!isPermissionDenied(error)) {
-          console.error('Error checking marketplace membership:', error);
-        }
-      }
-    }
-
-    verifyMarketplaceAccess();
-  }, [market?.marketplaceId, currentUser, notifyError, router]);
-
-  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const media = window.matchMedia('(max-width: 767px)');
     const apply = () => setIsMobile(media.matches);
@@ -249,19 +212,34 @@ export default function MarketPage() {
         const docRef = doc(db, 'markets', params.id);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          setMarket({ id: docSnap.id, ...docSnap.data() });
+          const marketData = docSnap.data();
+          if (marketData?.marketplaceId) {
+            if (typeof window !== 'undefined') {
+              window.sessionStorage.setItem(
+                'predictcornell_market_notice',
+                'This market was part of a retired private marketplace. Showing global markets instead.'
+              );
+            }
+            setMarket(null);
+            router.replace('/markets');
+            return;
+          }
+          setMarket({ id: docSnap.id, ...marketData });
         } else {
           setMarket(null);
         }
       } catch (error) {
-        if (!isPermissionDenied(error)) {
-          console.error('Error fetching market:', error);
-        }
         if (isPermissionDenied(error)) {
-          setMarketLoadError('This market is private to a marketplace. Join the marketplace to view it.');
-          router.push('/marketplace/enter');
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(
+              'predictcornell_market_notice',
+              'This market is unavailable in the retired marketplace scope. Showing global markets instead.'
+            );
+          }
+          router.replace('/markets');
           return;
         }
+        console.error('Error fetching market:', error);
         setMarketLoadError('Unable to load this market right now.');
       } finally {
         setLoading(false);
@@ -275,7 +253,7 @@ export default function MarketPage() {
     if (viewTrackedForMarket === market.id) return;
     trackEvent(ANALYTICS_EVENTS.MARKET_VIEWED, {
       marketId: market.id,
-      marketplaceId: market.marketplaceId || null,
+      marketplaceId: null,
       category: market.category || null
     });
     setViewTrackedForMarket(market.id);
@@ -289,7 +267,7 @@ export default function MarketPage() {
         const betsQuery = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
-          where('marketplaceId', '==', marketScopeId),
+          where('marketplaceId', '==', null),
           where('userId', '==', currentUser.uid)
         );
         const snapshot = await getDocs(betsQuery);
@@ -337,7 +315,7 @@ export default function MarketPage() {
     }
 
     fetchUserPosition();
-  }, [canReadScopedMarketData, currentUser, market, market?.probability, marketScopeId, params.id]);
+  }, [canReadScopedMarketData, currentUser, market, market?.probability, params.id]);
 
   useEffect(() => {
     if (!market?.outstandingShares) return;
@@ -370,7 +348,7 @@ export default function MarketPage() {
         const betsQuery = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
-          where('marketplaceId', '==', marketScopeId),
+          where('marketplaceId', '==', null),
           orderBy('timestamp', 'desc'),
           limit(500)
         );
@@ -425,7 +403,7 @@ export default function MarketPage() {
     }
 
     fetchBetHistory();
-  }, [canReadScopedMarketData, market, marketScopeId, params.id]);
+  }, [canReadScopedMarketData, market, params.id]);
 
   useEffect(() => {
     async function fetchRecentTrades() {
@@ -434,7 +412,7 @@ export default function MarketPage() {
         const q = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
-          where('marketplaceId', '==', marketScopeId),
+          where('marketplaceId', '==', null),
           orderBy('timestamp', 'desc'),
           limit(15)
         );
@@ -468,7 +446,7 @@ export default function MarketPage() {
     }
 
     fetchRecentTrades();
-  }, [canReadScopedMarketData, market, market?.probability, marketScopeId, params.id]);
+  }, [canReadScopedMarketData, market, market?.probability, params.id]);
 
   useEffect(() => {
     async function fetchSidebarData() {
@@ -477,7 +455,7 @@ export default function MarketPage() {
         const betsQ = query(
           collection(db, 'bets'),
           where('marketId', '==', params.id),
-          where('marketplaceId', '==', marketScopeId)
+          where('marketplaceId', '==', null)
         );
         const betsSnap = await getDocs(betsQ);
 
@@ -535,19 +513,12 @@ export default function MarketPage() {
         );
         setTopBettors(bettorRows);
 
-        const relatedQ = market?.marketplaceId
-          ? query(
-            collection(db, 'markets'),
-            where('marketplaceId', '==', market.marketplaceId),
-            orderBy('createdAt', 'desc'),
-            limit(18)
-          )
-          : query(
-            collection(db, 'markets'),
-            where('marketplaceId', '==', null),
-            orderBy('createdAt', 'desc'),
-            limit(18)
-          );
+        const relatedQ = query(
+          collection(db, 'markets'),
+          where('marketplaceId', '==', null),
+          orderBy('createdAt', 'desc'),
+          limit(18)
+        );
         const relatedSnap = await getDocs(relatedQ);
         setRelatedMarkets(
           relatedSnap.docs
@@ -563,7 +534,7 @@ export default function MarketPage() {
       }
     }
     fetchSidebarData();
-  }, [canReadScopedMarketData, market, market?.marketplaceId, market?.probability, marketScopeId, params.id]);
+  }, [canReadScopedMarketData, market, market?.probability, params.id]);
 
   useEffect(() => {
     async function fetchComments() {
@@ -577,7 +548,7 @@ export default function MarketPage() {
         const commentsQuery = query(
           collection(db, 'comments'),
           where('marketId', '==', params.id),
-          where('marketplaceId', '==', marketScopeId),
+          where('marketplaceId', '==', null),
           limit(200)
         );
         const snapshot = await getDocs(commentsQuery);
@@ -596,7 +567,7 @@ export default function MarketPage() {
     }
 
     fetchComments();
-  }, [canReadScopedMarketData, market, marketScopeId, params.id]);
+  }, [canReadScopedMarketData, market, params.id]);
 
   useEffect(() => {
     async function fetchNewsItems() {
@@ -608,7 +579,7 @@ export default function MarketPage() {
         const newsQuery = query(
           collection(db, 'newsItems'),
           where('marketId', '==', params.id),
-          where('marketplaceId', '==', marketScopeId),
+          where('marketplaceId', '==', null),
           limit(100)
         );
         const snapshot = await getDocs(newsQuery);
@@ -624,12 +595,12 @@ export default function MarketPage() {
       }
     }
     fetchNewsItems();
-  }, [canReadScopedMarketData, market, marketScopeId, params.id]);
+  }, [canReadScopedMarketData, market, params.id]);
 
   useEffect(() => {
-    if (market && betAmount && parseFloat(betAmount) > 0 && currentUser) {
+    if (market && isBetAmountValid && currentUser) {
       try {
-        const result = calculateBet(market.outstandingShares, parseFloat(betAmount), selectedSide, market.b);
+        const result = calculateBet(market.outstandingShares, betAmountNumber, selectedSide, market.b);
         setPreview(result);
       } catch (error) {
         setPreview(null);
@@ -637,7 +608,7 @@ export default function MarketPage() {
     } else {
       setPreview(null);
     }
-  }, [betAmount, selectedSide, market, currentUser]);
+  }, [betAmountNumber, currentUser, isBetAmountValid, market, selectedSide]);
 
   useEffect(() => {
     if (market && sellAmount && parseFloat(sellAmount) > 0) {
@@ -672,20 +643,20 @@ export default function MarketPage() {
       return;
     }
 
-    if (!betAmount || parseFloat(betAmount) <= 0) {
+    if (!isBetAmountValid) {
       notifyError('Please enter a valid amount');
       return;
     }
 
     setSubmitting(true);
     try {
-      const amount = parseFloat(betAmount);
+      const amount = betAmountNumber;
       const placeBetCallable = httpsCallable(functions, 'placeBet');
       const response = await placeBetCallable({
         marketId: params.id,
         side: selectedSide,
         amount,
-        marketplaceId: market?.marketplaceId || null
+        marketplaceId: null
       });
       const txResult = response?.data;
 
@@ -703,7 +674,7 @@ export default function MarketPage() {
           window.localStorage.setItem(firstBetKey, '1');
           trackEvent(ANALYTICS_EVENTS.FIRST_BET_PLACED, {
             marketId: params.id,
-            marketplaceId: market?.marketplaceId || null,
+            marketplaceId: null,
             side: selectedSide,
             amount
           });
@@ -749,7 +720,7 @@ export default function MarketPage() {
         marketId,
         side: sellSide,
         sharesToSell,
-        marketplaceId: market?.marketplaceId || null
+        marketplaceId: null
       });
       const txResult = response?.data;
 
@@ -782,7 +753,7 @@ export default function MarketPage() {
       const displayName = userDoc.exists() ? getPublicDisplayName({ id: currentUser.uid, ...userDoc.data() }) : (currentUser.email?.split('@')[0] || 'user');
       await addDoc(collection(db, 'comments'), {
         marketId: params.id,
-        marketplaceId: market?.marketplaceId || null,
+        marketplaceId: null,
         userId: currentUser.uid,
         username: displayName,
         userName: displayName,
@@ -799,7 +770,7 @@ export default function MarketPage() {
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        where('marketplaceId', '==', marketScopeId),
+        where('marketplaceId', '==', null),
         limit(200)
       );
       const snapshot = await getDocs(commentsQuery);
@@ -820,13 +791,16 @@ export default function MarketPage() {
     if (!currentUser) return;
     if (!replyText.trim()) return;
 
+    const parentComment = comments.find((comment) => comment.id === parentId);
+    const rootParentId = parentComment?.replyTo || parentComment?.id || parentId;
+
     setPostingComment(true);
     try {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       const displayName = userDoc.exists() ? getPublicDisplayName({ id: currentUser.uid, ...userDoc.data() }) : (currentUser.email?.split('@')[0] || 'user');
       await addDoc(collection(db, 'comments'), {
         marketId: params.id,
-        marketplaceId: market?.marketplaceId || null,
+        marketplaceId: null,
         userId: currentUser.uid,
         username: displayName,
         userName: displayName,
@@ -834,7 +808,7 @@ export default function MarketPage() {
         createdAt: new Date(),
         timestamp: new Date(),
         likedBy: [],
-        replyTo: parentId,
+        replyTo: rootParentId,
         userSide
       });
       setReplyText('');
@@ -844,7 +818,7 @@ export default function MarketPage() {
       const commentsQuery = query(
         collection(db, 'comments'),
         where('marketId', '==', params.id),
-        where('marketplaceId', '==', marketScopeId),
+        where('marketplaceId', '==', null),
         limit(200)
       );
       const snapshot = await getDocs(commentsQuery);
@@ -1098,19 +1072,21 @@ export default function MarketPage() {
             >
               ♥ {Array.isArray(comment.likedBy) ? comment.likedBy.length : Number(comment.likes || 0)}
             </button>
-            <button
-              onClick={() => {
-                if (!currentUser) {
-                  notifyError('Sign in to reply.');
-                  return;
-                }
-                setReplyingTo(comment.id);
-                setReplyText('');
-              }}
-              className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]"
-            >
-              ↩ reply
-            </button>
+            {!isReply && (
+              <button
+                onClick={() => {
+                  if (!currentUser) {
+                    notifyError('Sign in to reply.');
+                    return;
+                  }
+                  setReplyingTo(comment.id);
+                  setReplyText('');
+                }}
+                className="font-mono text-[0.58rem] text-[var(--text-muted)] hover:text-[var(--text-dim)]"
+              >
+                ↩ reply
+              </button>
+            )}
             {currentUser && editingCommentId !== comment.id && isOwner && (
               <button
                 onClick={() => {
@@ -1129,7 +1105,7 @@ export default function MarketPage() {
             )}
           </div>
         </div>
-        {renderReplyComposer(comment.id)}
+        {!isReply ? renderReplyComposer(comment.id) : null}
       </div>
     );
   };
@@ -1148,26 +1124,6 @@ export default function MarketPage() {
             <span>/</span>
             <span className="tracking-normal text-[var(--text)] normal-case">{truncatedQuestion}</span>
           </div>
-
-          {market.marketplaceId && (
-            <div className="mb-5 rounded border border-[var(--red-dim)] bg-[var(--red-glow)] px-4 py-3">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[var(--red)]">
-                    Marketplace Wallet
-                  </p>
-                  <p className="mt-1 font-mono text-[0.66rem] text-[var(--text-dim)]">
-                    This market uses your private marketplace balance.
-                  </p>
-                </div>
-                <p className="font-mono text-[1.35rem] font-bold tracking-[-0.03em] text-[var(--amber-bright)]">
-                  {marketplaceMembership
-                    ? `$${Number(marketplaceMembership.balance || 0).toFixed(2)}`
-                    : 'Loading…'}
-                </p>
-              </div>
-            </div>
-          )}
 
           <div className="mb-4 flex flex-wrap gap-2">
             {market?.category && (
@@ -1441,11 +1397,12 @@ export default function MarketPage() {
                     placeholder={currentUser ? '$0.00' : 'Sign in to trade'}
                     className="w-full flex-1 rounded border border-[var(--border2)] bg-[var(--surface2)] px-3 py-2 text-[var(--text)]"
                     min="1"
+                    step="0.01"
                     disabled={!canTrade}
                   />
                   <button
                     onClick={handlePlaceBet}
-                    disabled={!currentUser || !betAmount || submitting || !isTradeableMarket(market)}
+                    disabled={!currentUser || !isBetAmountValid || submitting || !isTradeableMarket(market)}
                     className="min-h-[52px] w-full whitespace-nowrap rounded bg-[var(--red)] px-5 py-2 font-mono text-[0.7rem] uppercase tracking-[0.06em] text-white hover:bg-[var(--red-dim)] disabled:bg-[var(--surface3)] disabled:cursor-not-allowed sm:w-auto"
                   >
                     {submitting ? 'Placing…' : `Bet ${selectedSide} →`}

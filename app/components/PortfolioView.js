@@ -78,10 +78,10 @@ export default function PortfolioView({ user, bets }) {
           tone="text-[var(--amber-bright)]"
         />
         <MetricCell
-          label="Weekly P&L"
-          value={`${summary.weeklyPnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(summary.weeklyPnl)).slice(1)}`}
-          sub="from $1,000 baseline"
-          tone={summary.weeklyPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}
+          label="Net P&L"
+          value={`${summary.netPnl >= 0 ? '+' : '-'}${fmtMoney(Math.abs(summary.netPnl)).slice(1)}`}
+          sub="portfolio value minus total deposits"
+          tone={summary.netPnl >= 0 ? 'text-[var(--green-bright)]' : 'text-[var(--red)]'}
         />
         <MetricCell
           label="Cash Available"

@@ -112,8 +112,8 @@ function calculatePortfolioRows({ users, bets, openMarkets }) {
       positionsValue += noShares * (1 - probability);
     }
 
-    const cashBalance = round2(toNumber(user.weeklyRep, 0));
-    const weeklyBaseline = round2(toNumber(user.weeklyStartingBalance, 1000));
+    const cashBalance = round2(toNumber(user.balance, 0));
+    const totalDeposits = round2(toNumber(user.totalDeposits, 1000));
     const roundedPositions = round2(positionsValue);
     const portfolioValue = round2(cashBalance + roundedPositions);
     return {
@@ -121,7 +121,7 @@ function calculatePortfolioRows({ users, bets, openMarkets }) {
       cashBalance,
       positionsValue: roundedPositions,
       portfolioValue,
-      weeklyNet: round2(portfolioValue - weeklyBaseline)
+      netPnl: round2(portfolioValue - totalDeposits)
     };
   });
 }
@@ -151,7 +151,7 @@ async function run() {
     userId: row.id,
     displayName: row.displayName || row.email || `Trader ${row.id.slice(0, 4)}`,
     portfolioValue: round2(row.portfolioValue),
-    netProfit: round2(row.weeklyNet),
+    netProfit: round2(row.netPnl),
     rank: index + 1
   }));
   const participants = new Set(openBets.map((bet) => bet.userId).filter(Boolean)).size;
