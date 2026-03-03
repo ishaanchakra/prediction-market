@@ -255,12 +255,41 @@ function getWalletMissingMessage(isMarketplaceMarket) {
     : 'User profile not found. Please log out and log back in.'
 }
 
-function getAvailableBalanceOrThrow(walletData, isMarketplaceMarket) {
-  const balance = Number(walletData?.balance)
-  if (!Number.isFinite(balance)) {
-    throw new HttpsError('failed-precondition', 'Balance data is invalid. Please contact an admin.')
+function parseNumericBalance(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
   }
-  return balance
+  if (typeof value === 'string') {
+    const cleaned = value.trim().replace(/[$,\s]/g, '')
+    if (!cleaned) return null
+    const parsed = Number(cleaned)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function getAvailableBalanceOrThrow(walletData, isMarketplaceMarket) {
+  const balance = parseNumericBalance(walletData?.balance)
+  if (Number.isFinite(balance)) {
+    return balance
+  }
+
+  // Legacy fallback for accounts that still have pre-migration fields.
+  const weeklyRep = parseNumericBalance(walletData?.weeklyRep)
+  if (Number.isFinite(weeklyRep)) {
+    return weeklyRep
+  }
+  const weeklyStartingBalance = parseNumericBalance(walletData?.weeklyStartingBalance)
+  const weeklyNet = parseNumericBalance(walletData?.weeklyNet)
+  if (Number.isFinite(weeklyStartingBalance) && Number.isFinite(weeklyNet)) {
+    return weeklyStartingBalance + weeklyNet
+  }
+
+  console.error('Invalid wallet balance shape', {
+    isMarketplaceMarket,
+    walletKeys: Object.keys(walletData || {})
+  })
+  throw new HttpsError('failed-precondition', 'Balance data is invalid. Please log out and sign back in.')
 }
 
 function getMarketLiquidityForSide(outstandingShares, side) {
