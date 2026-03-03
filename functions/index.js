@@ -124,28 +124,21 @@ function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT_B) {
   if (sharesToSell <= 0) {
     return { payout: 0, newPool: { yes: qYes, no: qNo }, newProbability: price(qYes, qNo, b) }
   }
-  let safeSharesToSell = sharesToSell
-  if (side === 'YES') {
-    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qYes))
-  }
-  if (side === 'NO') {
-    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qNo))
-  }
 
   const currentCost = cost(qYes, qNo, b)
 
   let newCost
   if (side === 'YES') {
-    newCost = cost(qYes - safeSharesToSell, qNo, b)
+    newCost = cost(qYes - sharesToSell, qNo, b)
   } else {
-    newCost = cost(qYes, qNo - safeSharesToSell, b)
+    newCost = cost(qYes, qNo - sharesToSell, b)
   }
 
   let payout = currentCost - newCost
   if (payout < 0 && Math.abs(payout) < 1e-9) payout = 0
 
-  const newQYes = side === 'YES' ? qYes - safeSharesToSell : qYes
-  const newQNo = side === 'NO' ? qNo - safeSharesToSell : qNo
+  const newQYes = side === 'YES' ? qYes - sharesToSell : qYes
+  const newQNo = side === 'NO' ? qNo - sharesToSell : qNo
   if (newQYes < -b * 20 || newQNo < -b * 20) {
     throw new Error('Sell amount exceeds safe pool bounds')
   }
@@ -290,13 +283,6 @@ function getAvailableBalanceOrThrow(walletData, isMarketplaceMarket) {
     walletKeys: Object.keys(walletData || {})
   })
   throw new HttpsError('failed-precondition', 'Balance data is invalid. Please log out and sign back in.')
-}
-
-function getMarketLiquidityForSide(outstandingShares, side) {
-  const sideValue = side === 'YES'
-    ? Number(outstandingShares?.yes ?? 0)
-    : Number(outstandingShares?.no ?? 0)
-  return Number.isFinite(sideValue) ? Math.max(0, sideValue) : 0
 }
 
 function aggregateHeldShares(bets) {
@@ -643,11 +629,6 @@ export const sellShares = onCall(async (request) => {
       throw new HttpsError('failed-precondition', `Insufficient shares. You have ${availableShares.toFixed(2)} ${side} shares.`)
     }
 
-    const sideLiquidity = getMarketLiquidityForSide(marketData?.outstandingShares, side)
-    if (sharesToSell > sideLiquidity) {
-      throw new HttpsError('failed-precondition', 'Sell amount exceeds current market liquidity. Please try a smaller amount.')
-    }
-
     try {
       calculateSell(
         marketData?.outstandingShares || { yes: 0, no: 0 },
@@ -684,11 +665,6 @@ export const sellShares = onCall(async (request) => {
       const latestAvailableShares = side === 'YES' ? latestHeldShares.yesShares : latestHeldShares.noShares
       if (sharesToSell > latestAvailableShares) {
         throw new HttpsError('failed-precondition', `Insufficient shares. You have ${latestAvailableShares.toFixed(2)} ${side} shares.`)
-      }
-
-      const latestSideLiquidity = getMarketLiquidityForSide(latestMarket?.outstandingShares, side)
-      if (sharesToSell > latestSideLiquidity) {
-        throw new HttpsError('failed-precondition', 'Sell amount exceeds current market liquidity. Please try a smaller amount.')
       }
 
       let result

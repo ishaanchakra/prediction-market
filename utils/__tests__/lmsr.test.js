@@ -279,6 +279,15 @@ describe('calculateSell', () => {
     expect(sell.newProbability).toBeCloseTo(0.7, 3);
   });
 
+  test('buy-then-sell round-trip on seeded 45% market (no solo-trader haircut)', () => {
+    const pool = seededPool(0.45);
+    const betAmount = 100;
+    const buy = calculateBet(pool, betAmount, 'YES');
+    const sell = calculateSell(buy.newPool, buy.shares, 'YES');
+    expect(sell.payout).toBeCloseTo(betAmount, 0);
+    expect(sell.newProbability).toBeCloseTo(0.45, 3);
+  });
+
   test('buy-then-sell round-trip on seeded 95% market', () => {
     const pool = seededPool(0.95);
     const betAmount = 30;

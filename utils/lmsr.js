@@ -103,28 +103,21 @@ export function calculateSell(outstandingShares, sharesToSell, side, b = DEFAULT
   if (sharesToSell <= 0) {
     return { payout: 0, newPool: { yes: qYes, no: qNo }, newProbability: price(qYes, qNo, b) };
   }
-  let safeSharesToSell = sharesToSell;
-  if (side === 'YES') {
-    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qYes));
-  }
-  if (side === 'NO') {
-    safeSharesToSell = Math.min(sharesToSell, Math.max(0, qNo));
-  }
 
   const currentCost = cost(qYes, qNo, b);
 
   let newCost;
   if (side === 'YES') {
-    newCost = cost(qYes - safeSharesToSell, qNo, b);
+    newCost = cost(qYes - sharesToSell, qNo, b);
   } else {
-    newCost = cost(qYes, qNo - safeSharesToSell, b);
+    newCost = cost(qYes, qNo - sharesToSell, b);
   }
 
   let payout = currentCost - newCost;
   if (payout < 0 && Math.abs(payout) < 1e-9) payout = 0;
 
-  const newQYes = side === 'YES' ? qYes - safeSharesToSell : qYes;
-  const newQNo = side === 'NO' ? qNo - safeSharesToSell : qNo;
+  const newQYes = side === 'YES' ? qYes - sharesToSell : qYes;
+  const newQNo = side === 'NO' ? qNo - sharesToSell : qNo;
   if (newQYes < -b * 20 || newQNo < -b * 20) {
     throw new Error('Sell amount exceeds safe pool bounds');
   }

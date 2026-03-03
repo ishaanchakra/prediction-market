@@ -321,17 +321,11 @@ export default function MarketPage() {
     if (!market?.outstandingShares) return;
 
     try {
-      const poolYes = Math.max(0, market.outstandingShares.yes ?? 0);
-      const poolNo = Math.max(0, market.outstandingShares.no ?? 0);
-
-      const clampedYesShares = Math.min(userPosition.yesShares, poolYes);
-      const clampedNoShares = Math.min(userPosition.noShares, poolNo);
-
-      const yesExit = clampedYesShares > 0
-        ? calculateSell(market.outstandingShares, clampedYesShares, 'YES', market.b).payout
+      const yesExit = userPosition.yesShares > 0
+        ? calculateSell(market.outstandingShares, userPosition.yesShares, 'YES', market.b).payout
         : 0;
-      const noExit = clampedNoShares > 0
-        ? calculateSell(market.outstandingShares, clampedNoShares, 'NO', market.b).payout
+      const noExit = userPosition.noShares > 0
+        ? calculateSell(market.outstandingShares, userPosition.noShares, 'NO', market.b).payout
         : 0;
       setExitValues({ yesExit, noExit });
     } catch (error) {
