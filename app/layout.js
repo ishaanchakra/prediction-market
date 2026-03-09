@@ -56,6 +56,7 @@ export default function RootLayout({ children }) {
             {children}
           </div>
         </LaunchGate>
+        <Analytics />
       </body>
     </html>
   );
