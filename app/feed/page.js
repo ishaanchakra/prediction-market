@@ -179,6 +179,7 @@ export default function FeedPage() {
   const [balance, setBalance] = useState(0);
   const [decisions, setDecisions] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [feedLoadError, setFeedLoadError] = useState('');
   const [dragState, setDragState] = useState({ active: false, startX: 0, startY: 0, dx: 0, dy: 0 });
   const [exitDirection, setExitDirection] = useState(null);
   const [animatingOut, setAnimatingOut] = useState(false);
@@ -308,15 +309,22 @@ export default function FeedPage() {
       globalMarketDocs = fallbackGlobalSnap.docs;
     }
 
-    const ffSnap = await getDocs(
-      query(
-        collection(db, 'markets'),
-        where('isFiveFutures', '==', true),
-        where('fiveFuturesWeek', '==', currentWeek)
-      )
-    );
+    let ffDocs = [];
+    try {
+      const ffSnap = await getDocs(
+        query(
+          collection(db, 'markets'),
+          where('isFiveFutures', '==', true),
+          where('fiveFuturesWeek', '==', currentWeek),
+          where('marketplaceId', '==', null)
+        )
+      );
+      ffDocs = ffSnap.docs;
+    } catch (error) {
+      console.error('Error querying Five Futures for feed, continuing without featured cards:', error);
+    }
 
-    const ffIds = new Set(ffSnap.docs.map((d) => d.id));
+    const ffIds = new Set(ffDocs.map((d) => d.id));
 
     const markets = globalMarketDocs
       .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
@@ -325,7 +333,7 @@ export default function FeedPage() {
       .filter((market) => market.resolution == null)
       .slice(0, MAX_MARKETS);
 
-    ffSnap.docs.forEach((d) => {
+    ffDocs.forEach((d) => {
       if (!markets.find((m) => m.id === d.id)) {
         const data = { id: d.id, ...d.data() };
         if (!data.marketplaceId && getMarketStatus(data) === MARKET_STATUS.OPEN && data.resolution == null) {
@@ -486,6 +494,7 @@ export default function FeedPage() {
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
       setUser(currentUser);
       setErrorMessage('');
+      setFeedLoadError('');
 
       if (unsubscribeBalance) {
         unsubscribeBalance();
@@ -529,12 +538,13 @@ export default function FeedPage() {
         setDecisions(Array(nextCards.length).fill(null));
         setCurrentIndex(0);
         setShowFfInterstitial(false);
+        setFeedLoadError('');
       } catch (error) {
         console.error('Error loading feed cards:', error);
         setCards([]);
         setDecisions([]);
         setCurrentIndex(0);
-        setErrorMessage('Unable to load markets right now.');
+        setFeedLoadError('Unable to load markets right now.');
       } finally {
         setLoading(false);
       }
@@ -803,6 +813,7 @@ export default function FeedPage() {
   }
 
   const showEmptyState = !showFfInterstitial && (cards.length === 0 || currentIndex >= cards.length);
+  const showLoadErrorState = showEmptyState && Boolean(feedLoadError);
   const hasMoreCards = currentIndex < cards.length;
 
   return (
@@ -849,6 +860,20 @@ export default function FeedPage() {
                   Browse all markets →
                 </Link>
               )}
+            </div>
+          ) : showLoadErrorState ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+              <h2 className="font-display text-[1.5rem] italic text-[var(--red)]">Unable to load feed right now</h2>
+              <p className="mt-2 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                {feedLoadError}
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-6 inline-flex items-center rounded-[6px] border border-[var(--red)] bg-[var(--red)] px-4 py-2 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-white transition-colors hover:bg-[var(--red-dim)]"
+              >
+                Retry feed
+              </button>
             </div>
           ) : showEmptyState ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">

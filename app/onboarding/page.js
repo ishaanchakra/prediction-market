@@ -206,7 +206,8 @@ export default function OnboardingPage() {
         query(
           collection(db, 'markets'),
           where('isFiveFutures', '==', true),
-          where('fiveFuturesWeek', '==', currentWeek)
+          where('fiveFuturesWeek', '==', currentWeek),
+          where('marketplaceId', '==', null)
         )
       );
 
