@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { auth, db, googleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -11,6 +11,7 @@ import { sanitizeInternalRedirectPath } from '@/utils/redirect';
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const signingInRef = useRef(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = useMemo(
@@ -24,7 +25,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (!user) return;
+      if (!user || signingInRef.current) return;
       try {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists() && userDoc.data()?.onboardingComplete === false) {
@@ -42,6 +43,7 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     setLoading(true);
     setError('');
+    signingInRef.current = true;
 
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -118,6 +120,7 @@ export default function LoginPage() {
 
       router.push(nextPath);
     } catch (signInError) {
+      signingInRef.current = false;
       if (signInError.code === 'auth/popup-closed-by-user') {
         setError('');
         setLoading(false);

@@ -2426,7 +2426,7 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">Liquidity (b)</label>
+              <label className="mb-2 block font-mono text-[0.62rem] uppercase tracking-[0.05em] text-[var(--text-muted)]">Sensitivity (b parameter in LMSR)</label>
               <input
                 type="number"
                 value={bValue}
