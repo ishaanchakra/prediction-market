@@ -299,14 +299,18 @@ export default function FeedPage() {
       globalMarketDocs = latestGlobalSnap.docs;
     } catch (error) {
       console.error('Error querying latest global markets, falling back to unordered scan:', error);
-      const fallbackGlobalSnap = await getDocs(
-        query(
-          collection(db, 'markets'),
-          where('marketplaceId', '==', null),
-          limit(MARKET_SCAN_LIMIT)
-        )
-      );
-      globalMarketDocs = fallbackGlobalSnap.docs;
+      try {
+        const fallbackGlobalSnap = await getDocs(
+          query(
+            collection(db, 'markets'),
+            where('marketplaceId', '==', null),
+            limit(MARKET_SCAN_LIMIT)
+          )
+        );
+        globalMarketDocs = fallbackGlobalSnap.docs;
+      } catch (fallbackError) {
+        console.error('Fallback market query also failed:', fallbackError);
+      }
     }
 
     let ffDocs = [];
@@ -349,21 +353,25 @@ export default function FeedPage() {
 
     const marketIdChunks = chunkArray(marketIds, 10);
     for (const chunk of marketIdChunks) {
-      const userBetsSnap = await getDocs(
-        query(
-          collection(db, 'bets'),
-          where('userId', '==', currentUser.uid),
-          where('marketId', 'in', chunk),
-          where('marketplaceId', '==', null)
-        )
-      );
+      try {
+        const userBetsSnap = await getDocs(
+          query(
+            collection(db, 'bets'),
+            where('userId', '==', currentUser.uid),
+            where('marketId', 'in', chunk),
+            where('marketplaceId', '==', null)
+          )
+        );
 
-      userBetsSnap.docs.forEach((snapshotDoc) => {
-        const bet = { id: snapshotDoc.id, ...snapshotDoc.data() };
-        const existing = userBetsByMarket.get(bet.marketId) || [];
-        existing.push(bet);
-        userBetsByMarket.set(bet.marketId, existing);
-      });
+        userBetsSnap.docs.forEach((snapshotDoc) => {
+          const bet = { id: snapshotDoc.id, ...snapshotDoc.data() };
+          const existing = userBetsByMarket.get(bet.marketId) || [];
+          existing.push(bet);
+          userBetsByMarket.set(bet.marketId, existing);
+        });
+      } catch (error) {
+        console.error('Error fetching user bets chunk, continuing without:', error);
+      }
     }
 
     userBetsByMarket.forEach((bets, marketId) => {
@@ -373,21 +381,26 @@ export default function FeedPage() {
 
     const sparklineEntries = await Promise.all(
       markets.map(async (market) => {
-        const betsSnap = await getDocs(
-          query(
-            collection(db, 'bets'),
-            where('marketId', '==', market.id),
-            where('marketplaceId', '==', null),
-            orderBy('timestamp', 'asc'),
-            limit(50)
-          )
-        );
+        try {
+          const betsSnap = await getDocs(
+            query(
+              collection(db, 'bets'),
+              where('marketId', '==', market.id),
+              where('marketplaceId', '==', null),
+              orderBy('timestamp', 'asc'),
+              limit(50)
+            )
+          );
 
-        const probabilities = betsSnap.docs
-          .map((snapshotDoc) => Number(snapshotDoc.data()?.probability))
-          .filter((probability) => Number.isFinite(probability));
+          const probabilities = betsSnap.docs
+            .map((snapshotDoc) => Number(snapshotDoc.data()?.probability))
+            .filter((probability) => Number.isFinite(probability));
 
-        return [market.id, probabilities];
+          return [market.id, probabilities];
+        } catch (error) {
+          console.error(`Error fetching sparkline for market ${market.id}, using empty:`, error);
+          return [market.id, []];
+        }
       })
     );
 

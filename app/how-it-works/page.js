@@ -195,6 +195,38 @@ export default function HowItWorksPage() {
           </div>
         </section>
 
+        {/* Five Futures */}
+        <section style={{ marginBottom: '3rem' }}>
+          <p style={sectionLabel}>
+            <span style={{ width: '14px', height: '1px', background: 'var(--red)', display: 'inline-block' }} />
+            Five Futures
+          </p>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: '8px', padding: '1.5rem'
+          }}>
+            <p style={bodyText}>
+              Every week, we publish <strong style={{ color: 'var(--text)' }}>five curated markets</strong> on
+              the biggest questions facing campus. Five Futures appear first in your{' '}
+              <Link href="/feed" style={{ color: 'var(--red)', textDecoration: 'underline' }}>feed</Link>,
+              so you can weigh in quickly by swiping right (YES), left (NO), or up (SKIP).
+            </p>
+            <p style={bodyText}>
+              After the week&apos;s Five Futures resolve, we score every participant using a prediction accuracy
+              metric. The closer your trades were to the actual outcome, the higher you rank on the weekly
+              predictors leaderboard.
+            </p>
+            <p style={{
+              fontFamily: 'var(--mono)', fontSize: '0.72rem', lineHeight: 1.5,
+              color: 'var(--text-muted)', borderTop: '1px solid var(--border)',
+              paddingTop: '1rem', marginTop: '0'
+            }}>
+              Think of it as a weekly prediction challenge: five questions, one week, and a leaderboard
+              that rewards accuracy over volume.
+            </p>
+          </div>
+        </section>
+
         {/* What the % actually means */}
         <section style={{ marginBottom: '3rem' }}>
           <p style={sectionLabel}>
